@@ -1,1 +1,152 @@
-[]
+[
+  {
+    "id": 1,
+    "titulo": "Frontend Developer Junior",
+    "empresa": "Cabify",
+    "ubicacion": "Madrid (Híbrido)",
+    "descripcion": "Buscamos un/a desarrollador/a frontend junior para unirse a nuestro equipo de producto. Trabajarás en la mejora de la experiencia de usuario de nuestra app de movilidad, colaborando con diseñadores y backend engineers. Se valorará experiencia con testing y metodologías ágiles.",
+    "requisitos": ["React", "JavaScript", "CSS", "Git", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "20.000 - 25.000€"
+  },
+  {
+    "id": 2,
+    "titulo": "Desarrollador/a Python Junior",
+    "empresa": "Idealista",
+    "ubicacion": "Madrid",
+    "descripcion": "Incorporamos un perfil junior con conocimientos de Python para desarrollar y mantener microservicios internos del portal inmobiliario líder en España. Participarás en el diseño de APIs REST y en la integración con bases de datos relacionales.",
+    "requisitos": ["Python", "SQL", "API REST", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "19.000 - 23.000€"
+  },
+  {
+    "id": 3,
+    "titulo": "Full Stack Junior (React + Node)",
+    "empresa": "Glovo",
+    "ubicacion": "Barcelona (Híbrido)",
+    "descripcion": "Únete al equipo de ingeniería de Glovo para trabajar en funcionalidades end-to-end. Desarrollarás tanto la interfaz de usuario como los servicios backend que alimentan nuestra plataforma de delivery. Ambiente internacional y dinámico.",
+    "requisitos": ["React", "Node", "JavaScript", "SQL", "2 años de experiencia"],
+    "anos_experiencia": 2,
+    "salario": "24.000 - 30.000€"
+  },
+  {
+    "id": 4,
+    "titulo": "Junior Backend Developer",
+    "empresa": "Factorial HR",
+    "ubicacion": "Barcelona (Remoto)",
+    "descripcion": "Buscamos desarrollador/a backend junior para nuestro producto SaaS de recursos humanos. Trabajarás con Python y bases de datos SQL en un equipo ágil, contribuyendo a funcionalidades que usan miles de empresas en Europa.",
+    "requisitos": ["Python", "SQL", "Git", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "21.000 - 26.000€"
+  },
+  {
+    "id": 5,
+    "titulo": "Desarrollador/a Vue.js Junior",
+    "empresa": "Holaluz",
+    "ubicacion": "Barcelona",
+    "descripcion": "En Holaluz apostamos por la energía verde y la tecnología. Buscamos un perfil frontend junior con conocimientos de Vue.js para trabajar en nuestro portal de clientes y herramientas internas de gestión energética.",
+    "requisitos": ["Vue", "JavaScript", "CSS", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "19.000 - 24.000€"
+  },
+  {
+    "id": 6,
+    "titulo": "Junior Web Developer",
+    "empresa": "Telefónica Digital",
+    "ubicacion": "Madrid (Híbrido)",
+    "descripcion": "Participa en el desarrollo de plataformas digitales para uno de los mayores operadores de telecomunicaciones del mundo. Trabajarás con React y servicios Node.js en un entorno corporativo con formación continua y plan de carrera.",
+    "requisitos": ["JavaScript", "React", "Node", "2 años de experiencia"],
+    "anos_experiencia": 2,
+    "salario": "22.000 - 27.000€"
+  },
+  {
+    "id": 7,
+    "titulo": "Programador/a Junior Python + IA",
+    "empresa": "Accenture",
+    "ubicacion": "Valencia (Híbrido)",
+    "descripcion": "Colaborarás en proyectos de inteligencia artificial y automatización para grandes clientes. Se requieren conocimientos de Python y nociones de machine learning. Ofrecemos formación interna y certificaciones cloud.",
+    "requisitos": ["Python", "SQL", "Git", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "18.000 - 22.000€"
+  },
+  {
+    "id": 8,
+    "titulo": "Frontend Junior Angular/React",
+    "empresa": "Indra",
+    "ubicacion": "Sevilla",
+    "descripcion": "Buscamos perfil junior para desarrollo de aplicaciones web en proyectos del sector público y defensa. Se trabajará con Angular o React según proyecto. Contrato indefinido desde el primer día y jornada intensiva en verano.",
+    "requisitos": ["React", "JavaScript", "CSS", "SQL", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "18.000 - 22.000€"
+  },
+  {
+    "id": 9,
+    "titulo": "Desarrollador/a Junior Remoto",
+    "empresa": "CARTO",
+    "ubicacion": "Remoto (España)",
+    "descripcion": "CARTO busca un/a junior developer para su equipo de plataforma. Trabajarás en herramientas de visualización de datos geoespaciales con JavaScript y Python. Empresa 100% remota con equipo distribuido internacionalmente.",
+    "requisitos": ["JavaScript", "Python", "Git", "2 años de experiencia"],
+    "anos_experiencia": 2,
+    "salario": "25.000 - 30.000€"
+  },
+  {
+    "id": 10,
+    "titulo": "Junior Software Engineer",
+    "empresa": "Wallapop",
+    "ubicacion": "Barcelona (Híbrido)",
+    "descripcion": "Forma parte del equipo que desarrolla la app de compraventa líder en España. Trabajarás en el backend con Python y Node, participando en el diseño de APIs de alto rendimiento que sirven a millones de usuarios.",
+    "requisitos": ["Python", "Node", "SQL", "2 años de experiencia"],
+    "anos_experiencia": 2,
+    "salario": "24.000 - 29.000€"
+  },
+  {
+    "id": 11,
+    "titulo": "Full Stack Developer Junior",
+    "empresa": "NTT Data",
+    "ubicacion": "Bilbao",
+    "descripcion": "Se requiere perfil full stack con experiencia demostrable de 5 años en React, Angular, Vue, Node, Python, Java, AWS, Docker y Kubernetes. Puesto junior con responsabilidades de arquitectura y liderazgo técnico de equipos.",
+    "requisitos": ["React", "Angular", "Vue", "Node", "Python", "Java", "AWS", "Docker", "Kubernetes", "5 años de experiencia"],
+    "anos_experiencia": 5,
+    "salario": "18.000 - 21.000€"
+  },
+  {
+    "id": 12,
+    "titulo": "Desarrollador/a Junior (10 tecnologías)",
+    "empresa": "Everis",
+    "ubicacion": "Madrid",
+    "descripcion": "Buscamos junior que domine React, Angular, Vue, Node, Python, Java, C#, Go, Rust y Swift. Imprescindible 7 años de experiencia, certificaciones AWS y Azure, y nivel nativo de inglés, alemán y francés. Incorporación inmediata.",
+    "requisitos": ["React", "Angular", "Vue", "Node", "Python", "Java", "C#", "Go", "7 años de experiencia"],
+    "anos_experiencia": 7,
+    "salario": "16.000 - 19.000€"
+  },
+  {
+    "id": 13,
+    "titulo": "Junior React Developer",
+    "empresa": "Spotahome",
+    "ubicacion": "Madrid (Remoto)",
+    "descripcion": "Únete a nuestro equipo frontend para desarrollar la plataforma de alquiler de pisos online. Trabajarás con React y TypeScript en un entorno startup con despliegues frecuentes. Valoramos ganas de aprender y proactividad.",
+    "requisitos": ["React", "JavaScript", "CSS", "Git", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "20.000 - 24.000€"
+  },
+  {
+    "id": 14,
+    "titulo": "Ingeniero/a de Software Junior",
+    "empresa": "Consultoría XYZ",
+    "ubicacion": "Málaga",
+    "descripcion": "Se necesita junior con mínimo 6 años de experiencia liderando equipos, conocimiento experto en microservicios, DevOps avanzado y arquitectura cloud. Disponibilidad para viajar el 80% del tiempo. Salario según convenio.",
+    "requisitos": ["Python", "Node", "AWS", "Docker", "Terraform", "6 años de experiencia"],
+    "anos_experiencia": 6,
+    "salario": "17.000 - 20.000€"
+  },
+  {
+    "id": 15,
+    "titulo": "Desarrollador/a Backend Junior",
+    "empresa": "Flywire",
+    "ubicacion": "Valencia (Híbrido)",
+    "descripcion": "Flywire procesa pagos internacionales para universidades y sanidad. Buscamos un/a junior para nuestro equipo backend en Valencia. Trabajarás con Python y SQL en un entorno fintech con buenas prácticas de desarrollo y code review.",
+    "requisitos": ["Python", "SQL", "Git", "1 año de experiencia"],
+    "anos_experiencia": 1,
+    "salario": "21.000 - 25.000€"
+  }
+]
