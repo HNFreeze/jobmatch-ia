@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.matching_service import match_profile_with_offers
+from app.services.adzuna_service import fetch_offers_from_adzuna
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ class ProfileRequest(BaseModel):
 
 
 @router.post("/api/match")
-def match_offers(profile: ProfileRequest):
+async def match_offers(profile: ProfileRequest):
     api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
         return JSONResponse(
@@ -30,8 +31,14 @@ def match_offers(profile: ProfileRequest):
             media_type="application/json; charset=utf-8"
         )
 
-    with open(OFFERS_PATH, encoding="utf-8") as f:
-        offers = json.load(f)
+    # Intenta obtener ofertas reales de Adzuna
+    offers = await fetch_offers_from_adzuna(profile.stack)
+
+    # Fallback a mock_offers.json si Adzuna falla
+    if not offers:
+        print("DEBUG: Usando mock_offers.json como fallback")
+        with open(OFFERS_PATH, encoding="utf-8") as f:
+            offers = json.load(f)
 
     try:
         results = match_profile_with_offers(profile.model_dump(), offers, api_key)
