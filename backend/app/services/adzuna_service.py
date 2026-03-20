@@ -50,6 +50,8 @@ async def fetch_offers_from_adzuna(skills: list[str], location: str = "Madrid") 
 
             # Mapear respuesta de Adzuna al formato interno
             mapped_offers = _map_adzuna_to_internal_format(data.get("results", []))
+            if mapped_offers:
+                print(f"✅ USANDO ADZUNA REAL ({len(mapped_offers)} ofertas)")
             return mapped_offers
 
     except httpx.HTTPStatusError as e:
