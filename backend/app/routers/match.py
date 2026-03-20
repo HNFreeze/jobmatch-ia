@@ -32,11 +32,13 @@ async def match_offers(profile: ProfileRequest):
         )
 
     # Intenta obtener ofertas reales de Adzuna
+    print(f"[MATCH] Intentando Adzuna con skills: {profile.stack}")
     offers = await fetch_offers_from_adzuna(profile.stack)
+    print(f"[MATCH] Adzuna devolvio: {len(offers) if offers else 0} ofertas")
 
     # Fallback a mock_offers.json si Adzuna falla
     if not offers:
-        print("⚠️  USANDO MOCK FALLBACK")
+        print("USANDO MOCK FALLBACK")
         with open(OFFERS_PATH, encoding="utf-8") as f:
             offers = json.load(f)
 
