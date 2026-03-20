@@ -5,7 +5,6 @@ import {
   typography,
   spacing,
   border,
-  componentStyles,
   shadow,
   transition,
 } from "../constants/theme";
@@ -84,42 +83,57 @@ export default function Profile({ onBackClick }) {
   }
 
   if (results) {
+    // Separar por categoría PRIMERO
     const aplica = results.filter((r) => r.resultado === "APLICA");
     const quiza = results.filter((r) => r.resultado === "QUIZÁ");
     const noEncaja = results.filter((r) => r.resultado === "NO_ENCAJA");
 
-    // Filtrar según selección
-    let filtered = results;
+    // Concatenar en orden: APLICA → QUIZÁ → NO_ENCAJA
+    const sortedResults = [...aplica, ...quiza, ...noEncaja];
+
+    // Filtrar según selección del usuario
+    let filtered = sortedResults;
     if (filter === "aplica") filtered = aplica;
     else if (filter === "quiza") filtered = quiza;
     else if (filter === "no-encaja") filtered = noEncaja;
 
-    // Ordenar: APLICA, QUIZÁ, NO_ENCAJA
-    filtered.sort((a, b) => {
-      const order = { APLICA: 0, QUIZÁ: 1, NO_ENCAJA: 2 };
-      return (order[a.resultado] || 3) - (order[b.resultado] || 3);
-    });
+    // Mapear nivel inglés a texto legible
+    const englishMap = { basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado" };
+    const englishLabel = englishMap[english] || english;
 
     return (
-      <div style={styles.container}>
-        <h2 style={styles.title}>Resultados del análisis IA</h2>
+      <div style={styles.resultsWrapper}>
+        {/* Header del dashboard con perfil y botón */}
+        <div style={styles.resultsHeader}>
+          <div>
+            <h2 style={styles.resultsTitle}>Resultados del análisis IA</h2>
+            <p style={styles.profileSummary}>
+              Analizando para: <strong>{experience} año{experience !== "1" ? "s" : ""}</strong> ·
+              <strong> {stack.join(", ")}</strong> ·
+              <strong> Inglés {englishLabel}</strong>
+            </p>
+          </div>
+          <button style={styles.resetButton} onClick={handleReset}>
+            + Nueva búsqueda
+          </button>
+        </div>
 
-        {/* Header con contadores */}
+        {/* Contadores mejorados */}
         <div style={styles.summaryGrid}>
-          <div style={{ ...styles.summaryCard, borderLeftColor: "#22c55e" }}>
+          <div style={{ ...styles.summaryCard, backgroundColor: "#dcfce7", borderColor: "#22c55e" }}>
+            <div style={styles.summaryIcon}>✓</div>
             <div style={styles.summaryNumber}>{aplica.length}</div>
             <div style={styles.summaryLabel}>APLICA</div>
-            <div style={styles.summaryColor} style={{ backgroundColor: "#22c55e" }}></div>
           </div>
-          <div style={{ ...styles.summaryCard, borderLeftColor: "#eab308" }}>
+          <div style={{ ...styles.summaryCard, backgroundColor: "#fef9c3", borderColor: "#eab308" }}>
+            <div style={{ ...styles.summaryIcon, color: "#333" }}>△</div>
             <div style={styles.summaryNumber}>{quiza.length}</div>
             <div style={styles.summaryLabel}>QUIZÁ</div>
-            <div style={styles.summaryColor} style={{ backgroundColor: "#eab308" }}></div>
           </div>
-          <div style={{ ...styles.summaryCard, borderLeftColor: "#ef4444" }}>
+          <div style={{ ...styles.summaryCard, backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>
+            <div style={styles.summaryIcon}>✗</div>
             <div style={styles.summaryNumber}>{noEncaja.length}</div>
             <div style={styles.summaryLabel}>NO ENCAJA</div>
-            <div style={styles.summaryColor} style={{ backgroundColor: "#ef4444" }}></div>
           </div>
         </div>
 
@@ -144,26 +158,30 @@ export default function Profile({ onBackClick }) {
           ))}
         </div>
 
-        {/* Tarjetas */}
-        <div style={styles.cardsContainer}>
+        {/* Tarjetas en grid */}
+        <div style={styles.cardsGrid}>
           {filtered.length > 0 ? (
-            filtered.map((offer) => {
+            filtered.map((offer, index) => {
               const rs = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
               return (
                 <div
                   key={offer.id}
+                  className="job-card"
                   style={{
                     ...styles.card,
                     borderLeftColor: rs.border,
+                    animation: `fadeInUp 0.5s ease-out ${index * 0.1}s both`,
                   }}
                 >
                   <div style={styles.cardTop}>
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <h3 style={styles.cardTitle}>{offer.titulo}</h3>
                       <p style={styles.cardMeta}>
                         {offer.empresa} · {offer.ubicacion}
                       </p>
-                      <p style={styles.cardSalario}>{offer.salario}</p>
+                      <p style={styles.cardSalario}>
+                        {offer.salario ? offer.salario : "Salario no especificado"}
+                      </p>
                     </div>
                     <span
                       style={{
@@ -175,7 +193,9 @@ export default function Profile({ onBackClick }) {
                       {rs.label}
                     </span>
                   </div>
-                  <p style={styles.cardMotivo}>"{offer.motivo}"</p>
+                  <div style={styles.cardMotivoBlock}>
+                    <p style={styles.cardMotivo}>{offer.motivo}</p>
+                  </div>
                 </div>
               );
             })
@@ -183,10 +203,6 @@ export default function Profile({ onBackClick }) {
             <p style={styles.emptyState}>No hay ofertas en esta categoría</p>
           )}
         </div>
-
-        <button style={styles.button} onClick={handleReset}>
-          ← Nueva búsqueda
-        </button>
       </div>
     );
   }
@@ -477,36 +493,36 @@ const styles = {
   summaryCard: {
     padding: spacing.xxl,
     borderRadius: border.radius.xl,
-    backgroundColor: colors.background.card,
-    border: `1px solid ${colors.border.active}`,
-    borderLeft: `4px solid`,
-    position: "relative",
-    overflow: "hidden",
+    border: `2px solid`,
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+
+  summaryIcon: {
+    fontSize: 28,
+    fontWeight: typography.weights.bold,
+    color: "#22c55e",
+    margin: "0 0 8px",
   },
 
   summaryNumber: {
-    fontSize: 36,
+    fontSize: 48,
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
-    margin: "0 0 4px",
+    margin: 0,
+    lineHeight: 1,
   },
 
   summaryLabel: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.semibold,
-    color: colors.text.disabled,
+    color: colors.text.secondary,
     textTransform: "uppercase",
     letterSpacing: typography.letterSpacing.wide,
-  },
-
-  summaryColor: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    width: 3,
-    height: 3,
-    borderRadius: border.radius.circle,
-    opacity: 0.2,
+    margin: 0,
   },
 
   filterContainer: {
@@ -550,7 +566,7 @@ const styles = {
     backgroundColor: colors.background.card,
     border: `1px solid ${colors.border.active}`,
     borderLeft: `4px solid`,
-    transition: `all ${transition.fast}`,
+    cursor: "pointer",
   },
 
   cardTop: {
@@ -575,21 +591,22 @@ const styles = {
   },
 
   cardSalario: {
-    fontSize: typography.sizes.small,
-    fontWeight: typography.weights.semibold,
-    color: colors.success,
-    margin: `${spacing.sm}px 0 0`,
+    fontSize: typography.sizes.normal,
+    fontWeight: typography.weights.bold,
+    color: "#15803d",
+    margin: `${spacing.md}px 0 0`,
   },
 
   badge: {
-    fontSize: typography.sizes.xs,
+    fontSize: "11px",
     fontWeight: typography.weights.bold,
-    padding: `${spacing.sm}px ${spacing.md}px`,
+    padding: `6px 10px`,
     borderRadius: border.radius.sm,
     whiteSpace: "nowrap",
     textTransform: "uppercase",
-    letterSpacing: typography.letterSpacing.wide,
+    letterSpacing: "0.5px",
     flexShrink: 0,
+    display: "inline-block",
   },
 
   cardMotivo: {
@@ -619,4 +636,95 @@ const styles = {
     textAlign: "left",
     boxShadow: shadow.subtle,
   },
+
+  // Results view
+  resultsWrapper: {
+    maxWidth: 1000,
+    margin: "0 auto",
+    padding: spacing.huge,
+    fontFamily: typography.family,
+  },
+
+  resultsHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: spacing.xxxl,
+    gap: spacing.xl,
+  },
+
+  resultsTitle: {
+    margin: 0,
+    fontSize: typography.sizes.h1,
+    fontWeight: typography.weights.bold,
+    color: colors.text.primary,
+    letterSpacing: typography.letterSpacing.tight,
+  },
+
+  profileSummary: {
+    margin: `${spacing.sm}px 0 0`,
+    fontSize: typography.sizes.normal,
+    color: colors.text.secondary,
+    lineHeight: 1.6,
+  },
+
+  resetButton: {
+    padding: `${spacing.md}px ${spacing.xl}px`,
+    fontSize: typography.sizes.normal,
+    fontWeight: typography.weights.semibold,
+    color: colors.background.white,
+    backgroundColor: colors.primary,
+    border: "none",
+    borderRadius: border.radius.md,
+    cursor: "pointer",
+    transition: `all ${transition.fast}`,
+    fontFamily: typography.family,
+    whiteSpace: "nowrap",
+  },
+
+  cardsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))",
+    gap: spacing.xl,
+    marginBottom: spacing.xxl,
+  },
+
+  cardMotivoBlock: {
+    backgroundColor: "#f3f4f6",
+    padding: spacing.md,
+    borderRadius: border.radius.sm,
+    marginTop: spacing.md,
+  },
 };
+
+// Inyectar estilos dinámicos en el head
+if (typeof document !== "undefined" && !document.getElementById("profile-animations")) {
+  const style = document.createElement("style");
+  style.id = "profile-animations";
+  style.innerHTML = `
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    [style*="animation: fadeInUp"] {
+      will-change: transform, opacity;
+    }
+
+    .job-card {
+      transition: all 150ms ease-out;
+    }
+
+    .job-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+    }
+  `;
+  document.head.appendChild(style);
+}
