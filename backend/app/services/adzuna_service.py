@@ -24,8 +24,8 @@ async def fetch_offers_from_adzuna(skills: list[str], location: str = "Madrid") 
         return None
 
     # Construir query de búsqueda con los skills del usuario
-    # Ejemplo: "javascript react" OR "python" OR "sql"
-    search_query = " OR ".join(skills) if skills else "junior developer"
+    # Ejemplo: "javascript" OR "react" OR "python"
+    search_query = " OR ".join(skills) if skills else "developer"
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -34,7 +34,7 @@ async def fetch_offers_from_adzuna(skills: list[str], location: str = "Madrid") 
             params = {
                 "app_id": app_id,
                 "app_key": app_key,
-                "results_per_page": 20,
+                "results_per_page": 50,
                 "what": search_query,
                 "content-type": "application/json",
                 "sort_by": "date",
