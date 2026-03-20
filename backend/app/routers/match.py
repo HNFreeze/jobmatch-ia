@@ -36,7 +36,7 @@ async def match_offers(profile: ProfileRequest):
 
     # Fallback a mock_offers.json si Adzuna falla
     if not offers:
-        print("DEBUG: Usando mock_offers.json como fallback")
+        print("⚠️  USANDO MOCK FALLBACK")
         with open(OFFERS_PATH, encoding="utf-8") as f:
             offers = json.load(f)
 
