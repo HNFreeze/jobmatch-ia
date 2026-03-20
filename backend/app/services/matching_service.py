@@ -9,10 +9,10 @@ def match_profile_with_offers(profile: dict, offers: list, api_key: str) -> list
 
     prompt = f"""Eres un experto en selección de talento tech en España.
 
-Analiza el perfil de este candidato junior y cada una de las ofertas de trabajo.
-Para cada oferta, decide si el candidato debería aplicar.
+Analiza el perfil de este desarrollador y cada una de las ofertas de trabajo.
+Para cada oferta, decide si el candidato debería aplicar considerando el fit real entre su experiencia y los requisitos de la oferta.
 
-## Perfil del candidato
+## Perfil del desarrollador
 - Años de experiencia: {profile["experience"]}
 - Stack tecnológico: {", ".join(profile["stack"])}
 - Nivel de inglés: {profile["english"]}
@@ -22,11 +22,14 @@ Para cada oferta, decide si el candidato debería aplicar.
 
 ## Instrucciones
 Para CADA oferta (usa su "id"), devuelve uno de estos resultados:
-- "APLICA": el perfil encaja bien con los requisitos.
-- "QUIZÁ": encaja parcialmente, podría intentarlo.
-- "NO_ENCAJA": los requisitos no se corresponden con el perfil (por experiencia, stack, o requisitos irreales para un junior).
+- "APLICA": el perfil encaja bien con los requisitos de la oferta.
+- "QUIZÁ": encaja parcialmente, el candidato podría intentarlo y aprender.
+- "NO_ENCAJA": los requisitos no se corresponden con el perfil (por experiencia, stack, o requisitos irreales para el nivel de experiencia del candidato).
 
-Detecta ofertas con requisitos absurdos para un puesto junior (pedir 5+ años, 10 tecnologías, etc.) y márcalas como NO_ENCAJA explicando por qué.
+Evalúa cada oferta de forma realista:
+- Considera si el candidato tiene el stack necesario
+- Verifica si la experiencia requerida es realista para el nivel de la oferta
+- Detecta ofertas con requisitos absurdos (pedir mucha más experiencia de la que tiene sentido, 10+ tecnologías, etc.) y márcalas como NO_ENCAJA
 
 Responde ÚNICAMENTE con un array JSON válido, sin texto adicional ni bloques de código:
 [

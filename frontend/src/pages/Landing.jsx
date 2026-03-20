@@ -45,12 +45,10 @@ export default function Landing({ onStartClick }) {
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <h1 style={styles.heroTitle}>
-            Encuentra trabajo sin frustrarte
+            Encuentra tu próximo trabajo como developer
           </h1>
           <p style={styles.heroSubtitle}>
-            LinkedIn te muestra ofertas junior que piden 5 años de experiencia y
-            10 tecnologías. Eso es absurdo. JobMatch IA analiza inteligentemente
-            cuáles son tus ofertas reales.
+            Deja que la IA analice las ofertas y te diga cuáles encajan realmente con tu perfil y experiencia
           </p>
           <button style={styles.heroCTAButton} onClick={onStartClick}>
             → Analizar mi perfil
@@ -97,10 +95,10 @@ export default function Landing({ onStartClick }) {
       <section style={styles.problemSection}>
         <div style={styles.problemContent}>
           <h2 style={styles.problemTitle}>
-            ¿Cansado de ofertas "junior" que piden 5 años de experiencia?
+            ¿Perdes tiempo analizando ofertas que no encajan?
           </h2>
           <p style={styles.problemImpact}>
-            El 73% de ofertas junior en LinkedIn piden más de 3 años de experiencia
+            La mayoría de ofertas en el mercado tienen requisitos irreales o desalineados con tu perfil
           </p>
           <p style={styles.problemSubtext}>
             Encontramos las ofertas que realmente encajan con lo que sabes.
@@ -119,7 +117,7 @@ export default function Landing({ onStartClick }) {
       {/* Footer */}
       <footer style={styles.footer}>
         <p style={styles.footerText}>
-          JobMatch IA • Análisis inteligente de ofertas para juniors
+          JobMatch IA • Análisis inteligente de ofertas de trabajo
         </p>
       </footer>
     </div>
