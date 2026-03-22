@@ -1,356 +1,525 @@
 import {
-  colors,
+  gradients,
   typography,
-  spacing,
-  border,
-  shadow,
   transition,
 } from "../constants/theme";
 
-// SVG Icons as components
+// Inject Landing-specific animations
+if (typeof document !== "undefined" && !document.getElementById("landing-styles")) {
+  const s = document.createElement("style");
+  s.id = "landing-styles";
+  s.innerHTML = `
+    @keyframes floatA {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50%       { transform: translateY(-30px) scale(1.05); }
+    }
+    @keyframes floatB {
+      0%, 100% { transform: translateY(0px) scale(1) rotate(0deg); }
+      50%       { transform: translateY(20px) scale(0.95) rotate(5deg); }
+    }
+    @keyframes floatC {
+      0%, 100% { transform: translateY(-10px) scale(1); }
+      50%       { transform: translateY(15px) scale(1.08); }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(32px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .landing-hero-title  { animation: fadeUp 0.8s ease-out 0.1s both; }
+    .landing-hero-sub    { animation: fadeUp 0.8s ease-out 0.3s both; }
+    .landing-hero-cta    { animation: fadeUp 0.8s ease-out 0.5s both; }
+    .landing-step:hover  {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.08) !important;
+    }
+    .landing-cta-btn {
+      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+      position: relative;
+      overflow: hidden;
+    }
+    .landing-cta-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(37,99,235,0.35) !important;
+    }
+    .landing-navbar-btn {
+      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    }
+    .landing-navbar-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(37,99,235,0.3) !important;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+// SVG Icons
 const PersonIcon = () => (
-  <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2">
+  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
     <circle cx="16" cy="10" r="4" />
-    <path d="M 8 24 Q 8 18 16 18 Q 24 18 24 24" />
+    <path d="M8 24 Q8 18 16 18 Q24 18 24 24" />
   </svg>
 );
-
 const SearchIcon = () => (
-  <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2">
+  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
     <circle cx="14" cy="14" r="8" />
-    <path d="M 20 20 L 26 26" />
+    <path d="M20 20 L26 26" />
   </svg>
 );
-
 const CheckIcon = () => (
-  <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="3">
-    <path d="M 6 16 L 12 22 L 26 8" />
+  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+    <path d="M6 16 L12 22 L26 8" />
   </svg>
 );
 
 export default function Landing({ onStartClick }) {
   return (
-    <div style={styles.page}>
+    <div style={S.page}>
       {/* Navbar */}
-      <nav style={styles.navbar}>
-        <div style={styles.navbarContent}>
-          <h1 style={styles.navbarLogo}>JobMatch IA</h1>
-          <button style={styles.navbarButton} onClick={onStartClick}>
+      <nav style={S.navbar}>
+        <div style={S.navbarContent}>
+          <h1 style={S.navbarLogo}>
+            <span style={S.logoGradient}>JobMatch</span>
+            <span style={{ opacity: 0.7 }}> IA</span>
+          </h1>
+          <button
+            className="landing-navbar-btn"
+            style={S.navbarButton}
+            onClick={onStartClick}
+          >
             Empezar
           </button>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <h1 style={styles.heroTitle}>
-            Encuentra tu próximo trabajo como developer
-          </h1>
-          <p style={styles.heroSubtitle}>
+      <section style={S.hero}>
+        <div style={{ ...S.circle, ...S.circleA }} />
+        <div style={{ ...S.circle, ...S.circleB }} />
+        <div style={{ ...S.circle, ...S.circleC }} />
+
+        <div style={S.heroContent}>
+          <div className="landing-hero-title">
+            <span style={S.heroBadge}>Análisis con IA · 2026</span>
+            <h1 style={S.heroTitle}>
+              Encuentra tu próximo trabajo como developer
+            </h1>
+          </div>
+          <p className="landing-hero-sub" style={S.heroSubtitle}>
             Deja que la IA analice las ofertas y te diga cuáles encajan realmente con tu perfil y experiencia
           </p>
-          <button style={styles.heroCTAButton} onClick={onStartClick}>
-            → Analizar mi perfil
-          </button>
+          <div className="landing-hero-cta">
+            <button
+              className="landing-cta-btn"
+              style={S.heroCTAButton}
+              onClick={onStartClick}
+            >
+              Analizar mi perfil
+            </button>
+          </div>
         </div>
       </section>
 
       {/* 3 Steps Section */}
-      <section style={styles.stepsSection}>
-        <h2 style={styles.stepsTitle}>Cómo funciona</h2>
-        <div style={styles.stepsContainer}>
+      <section style={S.stepsSection}>
+        <p style={S.stepsEyebrow}>Cómo funciona</p>
+        <h2 style={S.stepsTitle}>Tres pasos para tu próximo trabajo</h2>
+        <div style={S.stepsContainer}>
           {[
             {
-              number: "1",
               title: "Crea tu perfil",
               description: "Cuéntanos tu experiencia, stack y nivel de inglés",
               Icon: PersonIcon,
+              gradient: "linear-gradient(135deg, #2563eb, #7c3aed)",
             },
             {
-              number: "2",
               title: "La IA analiza",
               description: "Analizamos 15+ ofertas reales del mercado español",
               Icon: SearchIcon,
+              gradient: "linear-gradient(135deg, #7c3aed, #ec4899)",
             },
             {
-              number: "3",
               title: "Aplica donde encajas",
               description: "Descubre solo las ofertas que son realistas para ti",
               Icon: CheckIcon,
+              gradient: "linear-gradient(135deg, #10b981, #2563eb)",
             },
-          ].map((step) => (
-            <div key={step.number} style={styles.step}>
-              <div style={styles.stepNumber}>
+          ].map((step, i) => (
+            <div key={i} className="landing-step" style={{ ...S.step, transition: `all ${transition.smooth}` }}>
+              <div style={{ ...S.stepIcon, background: step.gradient }}>
                 <step.Icon />
               </div>
-              <h3 style={styles.stepTitle}>{step.title}</h3>
-              <p style={styles.stepDescription}>{step.description}</p>
+              <h3 style={S.stepTitle}>{step.title}</h3>
+              <p style={S.stepDescription}>{step.description}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* Problem Section */}
-      <section style={styles.problemSection}>
-        <div style={styles.problemContent}>
-          <h2 style={styles.problemTitle}>
-            ¿Perdes tiempo analizando ofertas que no encajan?
+      <section style={S.problemSection}>
+        <div style={S.problemContent}>
+          <p style={S.problemEyebrow}>El problema</p>
+          <h2 style={S.problemTitle}>
+            ¿Pierdes tiempo analizando ofertas que no encajan?
           </h2>
-          <p style={styles.problemImpact}>
-            La mayoría de ofertas en el mercado tienen requisitos irreales o desalineados con tu perfil
+          <p style={S.problemImpact}>
+            La mayoría de ofertas tienen requisitos desalineados con tu perfil
           </p>
-          <p style={styles.problemSubtext}>
+          <p style={S.problemSubtext}>
             Encontramos las ofertas que realmente encajan con lo que sabes.
           </p>
         </div>
       </section>
 
       {/* Bottom CTA */}
-      <section style={styles.bottomCtaSection}>
-        <h2 style={styles.bottomCtaTitle}>¿Listo para encontrar tu oferta?</h2>
-        <button style={styles.bottomCTAButton} onClick={onStartClick}>
-          → Comenzar análisis
-        </button>
+      <section style={S.bottomCtaSection}>
+        <div style={{ ...S.circle, ...S.ctaCircleA }} />
+        <div style={{ ...S.circle, ...S.ctaCircleB }} />
+
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <h2 style={S.bottomCtaTitle}>¿Listo para encontrar tu oferta?</h2>
+          <p style={S.bottomCtaSubtitle}>Empieza gratis · Sin tarjeta de crédito</p>
+          <button
+            className="landing-cta-btn"
+            style={S.bottomCTAButton}
+            onClick={onStartClick}
+          >
+            Comenzar análisis
+          </button>
+        </div>
       </section>
 
       {/* Footer */}
-      <footer style={styles.footer}>
-        <p style={styles.footerText}>
-          JobMatch IA • Análisis inteligente de ofertas de trabajo
+      <footer style={S.footer}>
+        <p style={S.footerText}>
+          JobMatch IA · Análisis inteligente de ofertas de trabajo
         </p>
       </footer>
     </div>
   );
 }
 
-const styles = {
+const S = {
   page: {
     minHeight: "100vh",
-    backgroundColor: colors.background.page,
+    backgroundColor: "#f8f9fc",
     fontFamily: typography.family,
   },
 
   // Navbar
   navbar: {
-    backgroundColor: colors.background.white,
-    boxShadow: shadow.subtle,
+    backgroundColor: "rgba(255,255,255,0.97)",
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    borderBottom: "1px solid #e8ecf1",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     position: "sticky",
     top: 0,
     zIndex: 100,
   },
-
   navbarContent: {
     maxWidth: 1200,
     margin: "0 auto",
-    padding: `${spacing.lg}px ${spacing.xxl}px`,
+    padding: "14px 24px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   navbarLogo: {
     margin: 0,
     fontSize: 24,
-    fontWeight: typography.weights.bold,
-    color: colors.primary,
-    letterSpacing: "-0.5px",
+    fontWeight: 800,
+    letterSpacing: "-0.03em",
+    display: "flex",
+    alignItems: "center",
   },
-
+  logoGradient: {
+    background: gradients.text,
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
+  },
   navbarButton: {
-    padding: `${spacing.sm}px ${spacing.lg}px`,
-    fontSize: typography.sizes.small,
-    fontWeight: typography.weights.semibold,
-    color: colors.background.white,
-    backgroundColor: colors.primary,
+    padding: "8px 20px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#fff",
+    background: gradients.primary,
     border: "none",
-    borderRadius: border.radius.md,
+    borderRadius: 50,
     cursor: "pointer",
-    transition: `all ${transition.fast}`,
     fontFamily: typography.family,
   },
 
-  // Hero Section
+  // Hero
   hero: {
-    background: `linear-gradient(135deg, #1e3a5f 0%, ${colors.primary} 100%)`,
+    background: gradients.hero,
     paddingTop: 120,
     paddingBottom: 120,
-    paddingLeft: spacing.xxl,
-    paddingRight: spacing.xxl,
+    paddingLeft: 24,
+    paddingRight: 24,
+    position: "relative",
+    overflow: "hidden",
   },
-
+  circle: {
+    position: "absolute",
+    borderRadius: "50%",
+    filter: "blur(80px)",
+    opacity: 0.25,
+    pointerEvents: "none",
+  },
+  circleA: {
+    width: 500,
+    height: 500,
+    background: "radial-gradient(circle, #7c3aed, transparent 70%)",
+    top: -150,
+    right: -100,
+    animation: "floatA 8s ease-in-out infinite",
+  },
+  circleB: {
+    width: 400,
+    height: 400,
+    background: "radial-gradient(circle, #2563eb, transparent 70%)",
+    bottom: -100,
+    left: -80,
+    animation: "floatB 10s ease-in-out infinite",
+  },
+  circleC: {
+    width: 300,
+    height: 300,
+    background: "radial-gradient(circle, #ec4899, transparent 70%)",
+    top: "40%",
+    left: "50%",
+    animation: "floatC 12s ease-in-out infinite",
+  },
   heroContent: {
-    maxWidth: 700,
+    maxWidth: 720,
     margin: "0 auto",
     textAlign: "center",
+    position: "relative",
+    zIndex: 1,
   },
-
+  heroBadge: {
+    display: "inline-block",
+    padding: "6px 16px",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    backdropFilter: "blur(8px)",
+    color: "rgba(255,255,255,0.9)",
+    borderRadius: 50,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    marginBottom: 20,
+    border: "1px solid rgba(255,255,255,0.2)",
+  },
   heroTitle: {
-    margin: `0 0 ${spacing.xl}px`,
-    fontSize: 64,
-    fontWeight: 700,
-    color: colors.background.white,
-    letterSpacing: "-1.5px",
-    lineHeight: 1.2,
+    margin: "0 0 20px",
+    fontSize: 62,
+    fontWeight: 800,
+    color: "#fff",
+    letterSpacing: "-0.03em",
+    lineHeight: 1.15,
   },
-
   heroSubtitle: {
-    margin: `0 0 ${spacing.xxl}px`,
-    fontSize: typography.sizes.normal,
-    color: "rgba(255, 255, 255, 0.9)",
-    lineHeight: 1.7,
-    fontWeight: typography.weights.normal,
+    margin: "0 0 28px",
+    fontSize: 18,
+    color: "rgba(255,255,255,0.85)",
+    lineHeight: 1.75,
+    fontWeight: 400,
+    maxWidth: 560,
+    marginLeft: "auto",
+    marginRight: "auto",
   },
-
   heroCTAButton: {
-    padding: `${spacing.md}px ${spacing.xxl}px`,
-    fontSize: typography.sizes.normal,
-    fontWeight: typography.weights.bold,
-    color: colors.primary,
-    backgroundColor: colors.background.white,
+    padding: "16px 48px",
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#2563eb",
+    backgroundColor: "#fff",
     border: "none",
-    borderRadius: border.radius.md,
+    borderRadius: 50,
     cursor: "pointer",
-    transition: `all ${transition.fast}`,
     fontFamily: typography.family,
     display: "inline-block",
     minWidth: 220,
+    letterSpacing: "-0.01em",
   },
 
-  // Steps Section
+  // Steps
   stepsSection: {
-    padding: `${spacing.massive * 2}px ${spacing.xxl}px`,
-    backgroundColor: colors.background.white,
+    padding: "96px 24px",
+    backgroundColor: "#fff",
   },
-
+  stepsEyebrow: {
+    textAlign: "center",
+    margin: "0 0 10px",
+    fontSize: 13,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    background: gradients.text,
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
+  },
   stepsTitle: {
     textAlign: "center",
-    margin: `0 0 ${spacing.massive * 2}px`,
-    fontSize: 44,
-    fontWeight: 700,
-    color: colors.text.primary,
+    margin: "0 0 64px",
+    fontSize: 42,
+    fontWeight: 800,
+    color: "#111827",
+    letterSpacing: "-0.02em",
   },
-
   stepsContainer: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: spacing.xxl,
+    gap: 24,
     maxWidth: 1100,
     margin: "0 auto",
   },
-
   step: {
-    padding: spacing.xxl,
+    padding: 32,
     textAlign: "center",
-    backgroundColor: colors.background.card,
-    borderRadius: border.radius.xl,
-    border: `1px solid ${colors.border.active}`,
-    transition: `all ${transition.fast}`,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    border: "1px solid #e8ecf1",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     cursor: "pointer",
   },
-
-  stepNumber: {
+  stepIcon: {
     display: "inline-flex",
     justifyContent: "center",
     alignItems: "center",
     width: 80,
     height: 80,
-    backgroundColor: colors.primary,
-    color: colors.background.white,
-    borderRadius: border.radius.circle,
-    marginBottom: spacing.xl,
+    borderRadius: "50%",
+    marginBottom: 20,
     flexShrink: 0,
+    boxShadow: "0 6px 20px rgba(37,99,235,0.2)",
   },
-
   stepTitle: {
-    margin: `0 0 ${spacing.sm}px`,
-    fontSize: typography.sizes.h2,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
+    margin: "0 0 8px",
+    fontSize: 16,
+    fontWeight: 700,
+    color: "#111827",
+    letterSpacing: "-0.01em",
   },
-
   stepDescription: {
     margin: 0,
-    fontSize: typography.sizes.small,
-    color: colors.text.secondary,
-    lineHeight: 1.6,
+    fontSize: 13,
+    color: "#6b7280",
+    lineHeight: 1.65,
   },
 
-  // Problem Section
+  // Problem section
   problemSection: {
-    backgroundColor: "#f8fafc",
-    padding: `${spacing.massive * 2}px ${spacing.xxl}px`,
+    backgroundColor: "#f8f9fc",
+    padding: "96px 24px",
   },
-
   problemContent: {
     maxWidth: 700,
     margin: "0 auto",
     textAlign: "center",
   },
-
-  problemTitle: {
-    margin: `0 0 ${spacing.xl}px`,
-    fontSize: 44,
-    fontWeight: 700,
-    color: colors.text.primary,
-    letterSpacing: "-0.5px",
+  problemEyebrow: {
+    margin: "0 0 10px",
+    fontSize: 13,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    background: "linear-gradient(135deg, #7c3aed, #f43f5e)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
   },
-
+  problemTitle: {
+    margin: "0 0 20px",
+    fontSize: 42,
+    fontWeight: 800,
+    color: "#111827",
+    letterSpacing: "-0.02em",
+  },
   problemImpact: {
-    margin: `0 0 ${spacing.lg}px`,
+    margin: "0 0 14px",
     fontSize: 20,
-    fontWeight: typography.weights.semibold,
-    color: colors.primary,
+    fontWeight: 600,
+    background: gradients.text,
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
     lineHeight: 1.6,
   },
-
   problemSubtext: {
     margin: 0,
-    fontSize: typography.sizes.normal,
-    color: colors.text.secondary,
-    fontWeight: typography.weights.normal,
+    fontSize: 15,
+    color: "#6b7280",
+    fontWeight: 400,
   },
 
-  // Bottom CTA Section
+  // Bottom CTA
   bottomCtaSection: {
-    background: colors.primary,
-    padding: `${spacing.massive * 2}px ${spacing.xxl}px`,
+    background: gradients.hero,
+    padding: "96px 24px",
     textAlign: "center",
+    position: "relative",
+    overflow: "hidden",
   },
-
+  ctaCircleA: {
+    width: 400,
+    height: 400,
+    background: "radial-gradient(circle, #7c3aed, transparent)",
+    top: -100,
+    left: -80,
+    animation: "floatB 10s ease-in-out infinite",
+  },
+  ctaCircleB: {
+    width: 350,
+    height: 350,
+    background: "radial-gradient(circle, #2563eb, transparent)",
+    bottom: -80,
+    right: -60,
+    animation: "floatA 8s ease-in-out infinite",
+  },
   bottomCtaTitle: {
-    margin: `0 0 ${spacing.xl}px`,
+    margin: "0 0 10px",
     fontSize: 44,
-    fontWeight: 700,
-    color: colors.background.white,
+    fontWeight: 800,
+    color: "#fff",
+    letterSpacing: "-0.02em",
   },
-
+  bottomCtaSubtitle: {
+    margin: "0 0 28px",
+    fontSize: 13,
+    color: "rgba(255,255,255,0.7)",
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+  },
   bottomCTAButton: {
-    padding: `${spacing.md}px ${spacing.xxl}px`,
-    fontSize: typography.sizes.normal,
-    fontWeight: typography.weights.bold,
-    color: colors.primary,
-    backgroundColor: colors.background.white,
+    padding: "16px 48px",
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#2563eb",
+    backgroundColor: "#fff",
     border: "none",
-    borderRadius: border.radius.md,
+    borderRadius: 50,
     cursor: "pointer",
-    transition: `all ${transition.fast}`,
     fontFamily: typography.family,
     display: "inline-block",
     minWidth: 220,
+    letterSpacing: "-0.01em",
   },
 
   // Footer
   footer: {
-    backgroundColor: colors.background.white,
-    borderTop: `1px solid ${colors.border.active}`,
-    padding: `${spacing.xxl}px`,
+    backgroundColor: "#fff",
+    borderTop: "1px solid #e8ecf1",
+    padding: 24,
     textAlign: "center",
   },
-
   footerText: {
     margin: 0,
-    fontSize: typography.sizes.small,
-    color: colors.text.disabled,
+    fontSize: 13,
+    color: "#9ca3af",
   },
 };
