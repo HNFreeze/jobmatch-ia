@@ -3,22 +3,61 @@ import os
 import smtplib
 from email.message import EmailMessage
 
+import httpx
+
+
+BREVO_SMTP_API_URL = "https://api.brevo.com/v3/smtp/email"
+
 
 def _delivery_mode() -> str:
     return os.getenv("EMAIL_DELIVERY_MODE", "smtp").strip().lower()
 
 
-def send_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
-    mode = _delivery_mode()
+def _from_email() -> str:
+    return os.getenv("SMTP_FROM_EMAIL", "").strip()
 
-    if mode == "console":
-        print(f"[EMAIL][console] to={to_email} subject={subject}\n{text_body}")
-        return
 
+def _from_name() -> str:
+    return os.getenv("EMAIL_FROM_NAME", "JobMatch IA").strip() or "JobMatch IA"
+
+
+def _send_via_brevo_api(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    from_email = _from_email()
+
+    if not api_key or not from_email:
+        raise RuntimeError("Brevo API no configurada")
+
+    payload = {
+        "sender": {
+            "name": _from_name(),
+            "email": from_email,
+        },
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": text_body,
+    }
+    if html_body:
+        payload["htmlContent"] = html_body
+
+    response = httpx.post(
+        BREVO_SMTP_API_URL,
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": api_key,
+        },
+        json=payload,
+        timeout=15.0,
+    )
+    response.raise_for_status()
+
+
+def _send_via_smtp(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
+    from_email = _from_email()
     host = os.getenv("SMTP_HOST", "").strip()
     username = os.getenv("SMTP_USERNAME", "").strip()
     password = os.getenv("SMTP_PASSWORD", "").strip()
-    from_email = os.getenv("SMTP_FROM_EMAIL", "").strip()
     port = int(os.getenv("SMTP_PORT", "587"))
     use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() == "true"
 
@@ -45,6 +84,20 @@ def send_email(to_email: str, subject: str, text_body: str, html_body: str | Non
         if username:
             server.login(username, password)
         server.send_message(message)
+
+
+def send_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
+    mode = _delivery_mode()
+
+    if mode == "console":
+        print(f"[EMAIL][console] to={to_email} subject={subject}\n{text_body}")
+        return
+
+    if mode == "brevo_api":
+        _send_via_brevo_api(to_email, subject, text_body, html_body)
+        return
+
+    _send_via_smtp(to_email, subject, text_body, html_body)
 
 
 def build_verification_email(email: str, verification_url: str) -> tuple[str, str, str]:
