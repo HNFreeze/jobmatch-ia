@@ -109,7 +109,7 @@ def register(body: RegisterRequest, request: Request):
             RateLimitRule(
                 action="auth_register_ip",
                 bucket_key=f"ip:{client_ip}",
-                limit=5,
+                limit=20,
                 window_seconds=3600,
                 detail="Has alcanzado el límite de registros desde esta IP. Inténtalo más tarde.",
             ),
