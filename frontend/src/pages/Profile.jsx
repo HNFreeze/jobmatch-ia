@@ -1,736 +1,1791 @@
-import { useState } from "react";
-import { matchOffers } from "../services/api";
+import { useState, useEffect, useRef } from "react";
 import {
-  colors,
+  matchOffers, getUserProfile,
+  getFavorites, addFavorite, removeFavorite,
+  saveHistory, getHistory, generateCoverLetter, createApplication, getApplications, deleteApplication, getAiQuota,
+} from "../services/api";
+import {
+  gradients,
   typography,
-  spacing,
-  border,
-  shadow,
   transition,
 } from "../constants/theme";
+import CompanyLogo from "../components/CompanyLogo";
 
-const STACK_OPTIONS = ["JavaScript", "Python", "React", "Vue", "Node", "SQL", "Otros"];
+// ── Constants ────────────────────────────────────────────────────────────────────
 
-const EXPERIENCE_OPTIONS = [
-  { value: "1", label: "1 año" },
-  { value: "2", label: "2 años" },
-  { value: "3", label: "3 años" },
-  { value: "4", label: "4 años" },
-  { value: "5", label: "5 años" },
-  { value: "6", label: "6 años" },
-  { value: "7", label: "7 años" },
-  { value: "8", label: "8 años" },
-  { value: "9", label: "9 años" },
-  { value: "10+", label: "10+ años" },
-];
-
-const ENGLISH_OPTIONS = [
-  { value: "basico", label: "Básico" },
-  { value: "intermedio", label: "Intermedio" },
-  { value: "avanzado", label: "Avanzado" },
-];
+const TEAL = "#00758A";
 
 const RESULT_STYLES = {
-  APLICA: { bg: "#dcfce7", border: "#22c55e", label: "APLICA" },
-  QUIZÁ: { bg: "#fef9c3", border: "#eab308", label: "QUIZÁ" },
-  NO_ENCAJA: { bg: "#fee2e2", border: "#ef4444", label: "NO ENCAJA" },
+  APLICA:    { bg: "#ecfdf5", border: "#10b981", label: "APLICA",     icon: "✓", iconBg: "#d1fae5", iconColor: "#10b981" },
+  QUIZÁ:     { bg: "#f1f5f9", border: "#64748b", label: "QUIZÁ",      icon: "?", iconBg: "#f1f5f9", iconColor: "#64748b" },
+  NO_ENCAJA: { bg: "#fff1f2", border: "#ef4444", label: "NO ENCAJA",  icon: "✗", iconBg: "#fee2e2", iconColor: "#ef4444" },
 };
 
-export default function Profile({ onBackClick }) {
-  const [experience, setExperience] = useState("");
-  const [stack, setStack] = useState([]);
-  const [english, setEnglish] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
-  const [filter, setFilter] = useState("todos");
+const MARKET_DATA = {
+  "JavaScript": 1240, "Python": 980, "Java": 870, "React": 760,
+  "SQL": 720, "TypeScript": 640, "Node.js": 520, "Docker": 480,
+  "AWS": 410, "C#": 390, "PHP": 340, "Angular": 310,
+  "Vue": 270, "Go": 195, "Kotlin": 160, "Swift": 120,
+  "Django": 110, "Spring": 290, "Laravel": 180, "MongoDB": 200,
+  "PostgreSQL": 350, "Redis": 180, "Kubernetes": 220, "Git": 890,
+  ".NET": 380, "Azure": 320, "GCP": 190, "Flutter": 140,
+  "React Native": 210, "GraphQL": 155, "Rust": 95, "Scala": 85,
+};
 
-  function handleStackChange(tech) {
-    setStack((prev) =>
-      prev.includes(tech) ? prev.filter((t) => t !== tech) : [...prev, tech]
-    );
+const LOADING_PHASES = [
+  { icon: "🔍", text: "Buscando ofertas en España..." },
+  { icon: "🤖", text: "Analizando compatibilidad con IA..." },
+  { icon: "📊", text: "Calculando puntuaciones..." },
+];
+
+const TAG_COLORS = [
+  { bg: "#ede9fe", color: "#7c3aed", border: "#ddd6fe" },
+  { bg: "#dbeafe", color: "#1d4ed8", border: "#bfdbfe" },
+  { bg: "#dcfce7", color: "#15803d", border: "#bbf7d0" },
+  { bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
+  { bg: "#ffe4e6", color: "#be123c", border: "#fecdd3" },
+];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────────
+
+function getTechTagColor(tech) {
+  const idx = tech.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % TAG_COLORS.length;
+  return TAG_COLORS[idx];
+}
+
+function avgScore(arr) {
+  const withScore = arr.filter(r => r.puntuacion != null);
+  if (!withScore.length) return null;
+  return Math.round(withScore.reduce((s, r) => s + r.puntuacion, 0) / withScore.length);
+}
+
+function getEnglishForMatch(idiomas) {
+  if (!idiomas || idiomas.length === 0) return "";
+  const eng = idiomas.find((i) => i.idioma.toLowerCase().includes("ingl"));
+  if (!eng) return "";
+  return eng.nivel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function hasProfile(profile) {
+  return profile && ((profile.stack && profile.stack.length > 0) || profile.anos_experiencia);
+}
+
+function formatSearchDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    const date = d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+    const time = d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+    return `${date} · ${time}`;
+  } catch {
+    return "";
   }
+}
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setResults(null);
-
-    try {
-      const data = await matchOffers({ experience, stack, english });
-      setResults(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+function parseSalaryValue(str) {
+  if (!str) return null;
+  const kMatch = str.match(/(\d+)\s*k/gi);
+  if (kMatch) {
+    const vals = kMatch.map(m => parseInt(m));
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
   }
+  const cleaned = str.replace(/[€$£]/g, " ").replace(/\./g, "");
+  const nums = cleaned.match(/\d{4,}/g);
+  if (!nums) return null;
+  const values = nums.map(Number);
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  return avg / 1000;
+}
 
-  function handleReset() {
-    setExperience("");
-    setStack([]);
-    setEnglish("");
-    setResults(null);
-    setError(null);
-  }
+function detectContract(offer) {
+  const text = ((offer.titulo || "") + " " + (offer.descripcion || "")).toLowerCase();
+  if (/freelance|autónom|autónom|self.employ/.test(text)) return "freelance";
+  if (/temporal|prácticas|becario|intern|sustitución/.test(text)) return "temporal";
+  return "indefinido";
+}
 
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.loading}>
-          <div style={styles.spinner} />
-          <p style={{ fontSize: 16, color: "#444" }}>Analizando ofertas con IA...</p>
-          <p style={{ fontSize: 13, color: "#888" }}>
-            Esto puede tardar unos segundos
-          </p>
+function extractTechTags(offer, userStack) {
+  if (!userStack?.length) return [];
+  const text = ((offer.titulo || "") + " " + (offer.descripcion || "")).toLowerCase();
+  return userStack.filter(tech => text.includes(tech.toLowerCase())).slice(0, 5);
+}
+
+function isNewOffer(dateStr) {
+  if (!dateStr) return false;
+  try {
+    return (new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24) < 3;
+  } catch { return false; }
+}
+
+// ── Sub-components ───────────────────────────────────────────────────────────────
+
+function ScoreCircle({ score, color, size = 60 }) {
+  const r = size * 0.38;
+  const cx = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = Math.min(100, Math.max(0, score ?? 0));
+  const offset = circumference * (1 - pct / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth={size * 0.1} />
+      <circle
+        cx={cx} cy={cx} r={r} fill="none"
+        stroke={color} strokeWidth={size * 0.1}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cx})`}
+        style={{ transition: "stroke-dashoffset 0.6s ease" }}
+      />
+      <text x={cx} y={cx} textAnchor="middle" dominantBaseline="central"
+        fontSize={size * 0.22} fontWeight="700" fill={color}>
+        {score != null ? score : "?"}
+      </text>
+    </svg>
+  );
+}
+
+function SkeletonCard({ darkMode }) {
+  return (
+    <div style={{
+      padding: "24px 28px", borderRadius: 16,
+      backgroundColor: darkMode ? "#1e293b" : "#fff",
+      border: `1px solid ${darkMode ? "rgba(255,255,255,0.06)" : "#e8ecf1"}`,
+      animation: "skeletonPulse 1.5s ease-in-out infinite",
+    }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: darkMode ? "#334155" : "#e8ecf1" }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ height: 18, backgroundColor: darkMode ? "#334155" : "#e8ecf1", borderRadius: 8, marginBottom: 10, width: "65%" }} />
+          <div style={{ height: 14, backgroundColor: darkMode ? "#2d3b4f" : "#f1f3f5", borderRadius: 6, width: "40%" }} />
         </div>
+        <div style={{ width: 90, height: 28, borderRadius: 20, backgroundColor: darkMode ? "#334155" : "#e8ecf1" }} />
       </div>
-    );
-  }
-
-  if (results) {
-    // Separar por categoría PRIMERO
-    const aplica = results.filter((r) => r.resultado === "APLICA");
-    const quiza = results.filter((r) => r.resultado === "QUIZÁ");
-    const noEncaja = results.filter((r) => r.resultado === "NO_ENCAJA");
-
-    // Concatenar en orden: APLICA → QUIZÁ → NO_ENCAJA
-    const sortedResults = [...aplica, ...quiza, ...noEncaja];
-
-    // Filtrar según selección del usuario
-    let filtered = sortedResults;
-    if (filter === "aplica") filtered = aplica;
-    else if (filter === "quiza") filtered = quiza;
-    else if (filter === "no-encaja") filtered = noEncaja;
-
-    // Mapear nivel inglés a texto legible
-    const englishMap = { basico: "Básico", intermedio: "Intermedio", avanzado: "Avanzado" };
-    const englishLabel = englishMap[english] || english;
-
-    return (
-      <div style={styles.resultsWrapper}>
-        {/* Header del dashboard con perfil y botón */}
-        <div style={styles.resultsHeader}>
-          <div>
-            <h2 style={styles.resultsTitle}>Resultados del análisis IA</h2>
-            <p style={styles.profileSummary}>
-              Analizando para: <strong>{experience} año{experience !== "1" ? "s" : ""}</strong> ·
-              <strong> {stack.join(", ")}</strong> ·
-              <strong> Inglés {englishLabel}</strong>
-            </p>
-          </div>
-          <button style={styles.resetButton} onClick={handleReset}>
-            + Nueva búsqueda
-          </button>
-        </div>
-
-        {/* Contadores mejorados */}
-        <div style={styles.summaryGrid}>
-          <div style={{ ...styles.summaryCard, backgroundColor: "#dcfce7", borderColor: "#22c55e" }}>
-            <div style={styles.summaryIcon}>✓</div>
-            <div style={styles.summaryNumber}>{aplica.length}</div>
-            <div style={styles.summaryLabel}>APLICA</div>
-          </div>
-          <div style={{ ...styles.summaryCard, backgroundColor: "#fef9c3", borderColor: "#eab308" }}>
-            <div style={{ ...styles.summaryIcon, color: "#333" }}>△</div>
-            <div style={styles.summaryNumber}>{quiza.length}</div>
-            <div style={styles.summaryLabel}>QUIZÁ</div>
-          </div>
-          <div style={{ ...styles.summaryCard, backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>
-            <div style={styles.summaryIcon}>✗</div>
-            <div style={styles.summaryNumber}>{noEncaja.length}</div>
-            <div style={styles.summaryLabel}>NO ENCAJA</div>
-          </div>
-        </div>
-
-        {/* Filtros */}
-        <div style={styles.filterContainer}>
-          {[
-            { value: "todos", label: "Todas" },
-            { value: "aplica", label: "✓ APLICA" },
-            { value: "quiza", label: "⚠ QUIZÁ" },
-            { value: "no-encaja", label: "✗ NO ENCAJA" },
-          ].map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              style={{
-                ...styles.filterButton,
-                ...(filter === f.value ? styles.filterButtonActive : styles.filterButtonInactive),
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tarjetas en grid */}
-        <div style={styles.cardsGrid}>
-          {filtered.length > 0 ? (
-            filtered.map((offer, index) => {
-              const rs = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
-              return (
-                <div
-                  key={offer.id}
-                  className="job-card"
-                  style={{
-                    ...styles.card,
-                    borderLeftColor: rs.border,
-                    animation: `fadeInUp 0.5s ease-out ${index * 0.1}s both`,
-                  }}
-                >
-                  <div style={styles.cardTop}>
-                    <div style={{ flex: 1 }}>
-                      <h3 style={styles.cardTitle}>{offer.titulo}</h3>
-                      <p style={styles.cardMeta}>
-                        {offer.empresa} · {offer.ubicacion}
-                      </p>
-                      <p style={styles.cardSalario}>
-                        {offer.salario ? offer.salario : "Salario no especificado"}
-                      </p>
-                    </div>
-                    <span
-                      style={{
-                        ...styles.badge,
-                        backgroundColor: rs.border,
-                        color: rs.border === "#eab308" ? "#333" : "#fff",
-                      }}
-                    >
-                      {rs.label}
-                    </span>
-                  </div>
-                  <div style={styles.cardMotivoBlock}>
-                    <p style={styles.cardMotivo}>{offer.motivo}</p>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <p style={styles.emptyState}>No hay ofertas en esta categoría</p>
-          )}
-        </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[80, 70, 60].map((w, i) => (
+          <div key={i} style={{ height: 26, width: w, backgroundColor: darkMode ? "#2d3b4f" : "#f1f3f5", borderRadius: 20 }} />
+        ))}
       </div>
-    );
-  }
+      <div style={{ height: 60, backgroundColor: darkMode ? "#2d3b4f" : "#f1f3f5", borderRadius: 10 }} />
+    </div>
+  );
+}
+
+function QuotaCard({ quota, darkMode, compact = false }) {
+  const dm = darkMode;
+  const used = quota?.used || 0;
+  const limit = quota?.daily_limit || 0;
+  const remaining = quota?.remaining || 0;
+  const width = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
 
   return (
-    <div style={styles.pageWrapper}>
-      {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.mainTitle}>JobMatch IA</h1>
-        <p style={styles.subtitle}>
-          Encuentra ofertas que realmente encajan con tu perfil
-        </p>
+    <div style={{
+      marginBottom: compact ? 18 : 20,
+      padding: compact ? "14px 16px" : "16px 18px",
+      borderRadius: 12,
+      backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#fff",
+      border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e8ecf1"}`,
+      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", marginBottom: 8 }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: typography.family }}>
+            Cuota diaria IA
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: compact ? 12 : 13, color: dm ? "#94a3b8" : "#6b7280", lineHeight: 1.5, fontFamily: typography.family }}>
+            {remaining > 0 ? `Te quedan ${remaining} uso${remaining !== 1 ? "s" : ""} hoy.` : "Has agotado tu cuota diaria de IA."}
+          </p>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: compact ? 22 : 24, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1, fontFamily: typography.family }}>
+            {used}/{limit}
+          </div>
+          <div style={{ fontSize: 11, color: dm ? "#64748b" : "#94a3af", marginTop: 4, fontFamily: typography.family }}>
+            {quota?.date || ""}
+          </div>
+        </div>
       </div>
-
-      {/* Form Card */}
-      <div style={styles.formCard}>
-        <h2 style={styles.formTitle}>Tu perfil profesional</h2>
-
-        {error && <div style={styles.error}>{error}</div>}
-
-        <form onSubmit={handleSubmit} style={styles.form}>
-          {/* Experience Field */}
-          <div style={styles.field}>
-            <label style={styles.label}>Años de experiencia</label>
-            <select
-              value={experience}
-              onChange={(e) => setExperience(e.target.value)}
-              required
-              style={styles.select}
-            >
-              <option value="" disabled>
-                Selecciona...
-              </option>
-              {EXPERIENCE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Stack Field with Pills */}
-          <div style={styles.field}>
-            <label style={styles.label}>Stack tecnológico</label>
-            <div style={styles.stackContainer}>
-              {STACK_OPTIONS.map((tech) => (
-                <button
-                  key={tech}
-                  type="button"
-                  onClick={() => handleStackChange(tech)}
-                  style={{
-                    ...styles.stackPill,
-                    ...(stack.includes(tech)
-                      ? styles.stackPillActive
-                      : styles.stackPillInactive),
-                  }}
-                >
-                  {stack.includes(tech) && "✓ "}
-                  {tech}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* English Field */}
-          <div style={styles.field}>
-            <label style={styles.label}>Nivel de inglés</label>
-            <select
-              value={english}
-              onChange={(e) => setEnglish(e.target.value)}
-              required
-              style={styles.select}
-            >
-              <option value="" disabled>
-                Selecciona...
-              </option>
-              {ENGLISH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Submit Button */}
-          <button type="submit" style={styles.submitButton}>
-            Analizar ofertas
-          </button>
-        </form>
-
-        {onBackClick && (
-          <button
-            type="button"
-            onClick={onBackClick}
-            style={styles.backButton}
-          >
-            ← Volver a inicio
-          </button>
-        )}
+      <div style={{ height: 8, borderRadius: 999, overflow: "hidden", backgroundColor: dm ? "#334155" : "#eef2f7" }}>
+        <div style={{
+          width: `${width}%`,
+          height: "100%",
+          borderRadius: 999,
+          background: width >= 85 ? "linear-gradient(90deg, #f97316, #ef4444)" : `linear-gradient(90deg, ${TEAL}, #2563eb)`,
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11, color: dm ? "#94a3b8" : "#64748b", fontFamily: typography.family }}>
+        <span>Análisis: {quota?.match_count || 0}</span>
+        <span>Cartas: {quota?.cover_letter_count || 0}</span>
       </div>
     </div>
   );
 }
 
-const styles = {
-  // Page layout
-  pageWrapper: {
-    minHeight: "100vh",
-    backgroundColor: colors.background.page,
-    paddingTop: spacing.massive,
-    paddingBottom: spacing.massive,
-  },
+// ═══════════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════════
 
-  // Header section
-  header: {
-    maxWidth: 700,
-    margin: "0 auto",
-    paddingBottom: spacing.xxxl,
-    textAlign: "center",
-  },
-  mainTitle: {
-    margin: "0 0 12px",
-    fontSize: 48,
-    fontWeight: 700,
-    color: colors.text.primary,
+export default function Profile({ analysisResults, setAnalysisResults, addToast, darkMode, forceAnalyze, onAnalyzeStarted }) {
+  const analyzeBtnRef = useRef(null);
+  const [profile,             setProfile]             = useState(null);
+  const [profileLoading,      setProfileLoading]      = useState(true);
+  const [loading,             setLoading]             = useState(false);
+  const [loadingPhase,        setLoadingPhase]        = useState(0);
+  const [results,             setResults]             = useState(() => {
+    if (!analysisResults) return null;
+    return Array.isArray(analysisResults) ? analysisResults : (analysisResults.offers || null);
+  });
+  const [error,               setError]               = useState(null);
+  const [filter,              setFilter]              = useState("todos");
+  const [selectedOffer,       setSelectedOffer]       = useState(null);
+  const [favorites,           setFavorites]           = useState(new Set());
+  const [tracked,             setTracked]             = useState(new Map()); // adzuna_id → app_id
+  const [discarded,           setDiscarded]           = useState(new Set());
+  const [searchHistory,       setSearchHistory]       = useState([]);
+  const [rerunningHistoryId,  setRerunningHistoryId]  = useState(null);
+  const [coverLetter,         setCoverLetter]         = useState(null);
+  const [coverLetterLoading,  setCoverLetterLoading]  = useState(false);
+  const [coverLetterError,    setCoverLetterError]    = useState(null);
+  const [showCoverLetter,     setShowCoverLetter]     = useState(false);
+  const [analysisTime,        setAnalysisTime]        = useState(null);
+  const [aiQuota,             setAiQuota]             = useState(null);
+  const [,                     setAiQuotaLoading]      = useState(true);
+  const [skillsGap,           setSkillsGap]           = useState(() => {
+    if (!analysisResults || Array.isArray(analysisResults)) return null;
+    return analysisResults.skills_gap || null;
+  });
+  // Sidebar filters
+  const [keywordFilter,       setKeywordFilter]       = useState("");
+  const [locationFilter,      setLocationFilter]      = useState("");
+  const [salaryMin,           setSalaryMin]           = useState("");
+  const [salaryMax,           setSalaryMax]           = useState("");
+  const [contractFilter,      setContractFilter]      = useState("todos");
+  const [sortBy,              setSortBy]              = useState("relevancia");
+  const [showMobileFilters,   setShowMobileFilters]   = useState(false);
+  const [isMobile,            setIsMobile]            = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
+
+  async function refreshAiQuota() {
+    try {
+      const quota = await getAiQuota();
+      setAiQuota(quota);
+    } catch {
+      // ignore
+    } finally {
+      setAiQuotaLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    getUserProfile()
+      .then(setProfile)
+      .catch(() => setProfile({}))
+      .finally(() => setProfileLoading(false));
+    getFavorites()
+      .then(list => setFavorites(new Set(list.map(f => f.adzuna_id))))
+      .catch(() => {});
+    getApplications()
+      .then(list => setTracked(new Map(list.map(a => [a.adzuna_id, a.id]))))
+      .catch(() => {});
+    getHistory()
+      .then(setSearchHistory)
+      .catch(() => {});
+    refreshAiQuota();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 900);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  useEffect(() => {
+    setCoverLetter(null);
+    setCoverLetterLoading(false);
+    setCoverLetterError(null);
+    setShowCoverLetter(false);
+  }, [selectedOffer]);
+
+  useEffect(() => {
+    if (forceAnalyze && profile && Object.keys(profile).length > 0 && !loading) {
+      if (onAnalyzeStarted) onAnalyzeStarted();
+      setTimeout(() => {
+        handleAnalyzeWith(profile);
+      }, 0);
+    }
+  }, [forceAnalyze, profile, loading]);
+
+  function calculateDaysAgo(dateString) {
+    if (!dateString) return "";
+    try {
+      const date = new Date(dateString);
+      const diffDays = Math.ceil(Math.abs(new Date() - date) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) return "Hoy";
+      if (diffDays === 1) return "Hace 1 día";
+      return `Hace ${diffDays} días`;
+    } catch {
+      return "";
+    }
+  }
+
+  async function toggleFavorite(offer) {
+    if (!offer.adzuna_id) return;
+    const isFav = favorites.has(offer.adzuna_id);
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(offer.adzuna_id);
+      else next.add(offer.adzuna_id);
+      return next;
+    });
+    try {
+      if (isFav) {
+        await removeFavorite(offer.adzuna_id);
+        addToast?.("Oferta eliminada de favoritos", "info");
+      } else {
+        await addFavorite({
+          adzuna_id:    offer.adzuna_id,
+          titulo:       offer.titulo,
+          empresa:      offer.empresa,
+          url:          offer.redirect_url,
+          resultado_ia: offer.resultado,
+        });
+        addToast?.("Oferta guardada en favoritos", "success");
+      }
+    } catch {
+      setFavorites(prev => {
+        const next = new Set(prev);
+        if (isFav) next.add(offer.adzuna_id);
+        else next.delete(offer.adzuna_id);
+        return next;
+      });
+    }
+  }
+
+  async function handleTrackOffer(offer) {
+    const aid = offer.adzuna_id || offer.id;
+    if (!aid) return;
+    if (tracked.has(aid)) {
+      // Dejar de seguir
+      const appId = tracked.get(aid);
+      setTracked(prev => { const next = new Map(prev); next.delete(aid); return next; });
+      try {
+        await deleteApplication(appId);
+        addToast?.("Dejaste de seguir esta oferta", "info");
+      } catch {
+        setTracked(prev => new Map(prev).set(aid, appId));
+        addToast?.("Error al dejar de seguir", "error");
+      }
+      return;
+    }
+    // Empezar a seguir (optimista)
+    setTracked(prev => new Map(prev).set(aid, null));
+    try {
+      const created = await createApplication({
+        adzuna_id: aid,
+        titulo:    offer.titulo,
+        empresa:   offer.empresa,
+        url:       offer.redirect_url || offer.url,
+      });
+      setTracked(prev => new Map(prev).set(aid, created.id));
+      addToast?.("Candidatura añadida al seguimiento", "success");
+    } catch {
+      setTracked(prev => { const next = new Map(prev); next.delete(aid); return next; });
+      addToast?.("Error al añadir candidatura", "error");
+    }
+  }
+
+  async function handleDiscardOffer(offer) {
+    const aid = offer.adzuna_id || offer.id;
+    if (!aid) return;
+    setDiscarded(prev => new Set([...prev, aid]));
+    // Si estaba en candidaturas, eliminarla también
+    if (tracked.has(aid)) {
+      const appId = tracked.get(aid);
+      setTracked(prev => { const next = new Map(prev); next.delete(aid); return next; });
+      if (appId) {
+        try { await deleteApplication(appId); } catch { /* silent */ }
+      }
+    }
+    addToast?.("Oferta descartada", "info");
+  }
+
+  async function handleAnalyzeWith(profileObj, options = {}) {
+    const { historyId = null } = options;
+    if (historyId != null) setRerunningHistoryId(historyId);
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    setSkillsGap(null);
+    setAnalysisTime(null);
+    setLoadingPhase(0);
+    const startTime = Date.now();
+    const phaseInterval = setInterval(() => {
+      setLoadingPhase(p => (p + 1) % LOADING_PHASES.length);
+    }, 3000);
+    try {
+      const data = await matchOffers({
+        experience:  profileObj.anos_experiencia,
+        stack:       profileObj.stack,
+        english:     getEnglishForMatch(profileObj.idiomas),
+        ubicaciones: profileObj.ubicaciones || [],
+      });
+      const offersData = Array.isArray(data) ? data : (data.offers || []);
+      const skillsGapData = Array.isArray(data) ? null : (data.skills_gap || null);
+      setResults(offersData);
+      setSkillsGap(skillsGapData);
+      setAnalysisResults(data);
+      setAnalysisTime(Math.round((Date.now() - startTime) / 1000));
+      saveHistory({
+        stack:            profileObj.stack || [],
+        anos_experiencia: profileObj.anos_experiencia || "",
+        ubicaciones:      profileObj.ubicaciones || [],
+        modalidad:        profileObj.modalidad || [],
+        num_aplica:       offersData.filter(r => r.resultado === "APLICA").length,
+        num_quiza:        offersData.filter(r => r.resultado === "QUIZÁ").length,
+        num_no_encaja:    offersData.filter(r => r.resultado === "NO_ENCAJA").length,
+      })
+        .then(() => getHistory().then(setSearchHistory).catch(() => {}))
+        .catch(() => {});
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      clearInterval(phaseInterval);
+      setLoading(false);
+      if (historyId != null) setRerunningHistoryId(null);
+      refreshAiQuota();
+    }
+  }
+
+  function handleAnalyze() { return handleAnalyzeWith(profile); }
+
+  function buildRerunProfile(item) {
+    const currentStack = Array.isArray(profile?.stack) && profile.stack.length > 0
+      ? profile.stack
+      : (item.stack || []);
+    const currentExperience = profile?.anos_experiencia || item.anos_experiencia || "";
+    const currentIdiomas = Array.isArray(profile?.idiomas) ? profile.idiomas : [];
+    const rerunLocations = Array.isArray(item.ubicaciones) && item.ubicaciones.length > 0
+      ? item.ubicaciones
+      : (profile?.ubicaciones || []);
+    const rerunModalidad = Array.isArray(item.modalidad) && item.modalidad.length > 0
+      ? item.modalidad
+      : (profile?.modalidad || []);
+
+    if (!currentStack.length) {
+      addToast?.("No se puede re-ejecutar: falta stack tecnológico en tu perfil actual o en la búsqueda histórica", "warning");
+      return null;
+    }
+
+    if (!currentExperience) {
+      addToast?.("No se puede re-ejecutar: falta experiencia en tu perfil actual o en la búsqueda histórica", "warning");
+      return null;
+    }
+
+    return {
+      anos_experiencia: currentExperience,
+      stack: currentStack,
+      idiomas: currentIdiomas,
+      ubicaciones: rerunLocations,
+      modalidad: rerunModalidad,
+    };
+  }
+
+  function handleRepeat(item) {
+    const rerunProfile = buildRerunProfile(item);
+    if (!rerunProfile) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    return handleAnalyzeWith(rerunProfile, { historyId: item.id });
+  }
+
+  function handleReset() {
+    setResults(null);
+    setSkillsGap(null);
+    setError(null);
+    setFilter("todos");
+    setKeywordFilter("");
+    setLocationFilter("");
+    setSalaryMin("");
+    setSalaryMax("");
+    setContractFilter("todos");
+    setSortBy("relevancia");
+  }
+
+  function handleShare() {
+    if (!results) return;
+    const aplica   = results.filter(r => r.resultado === "APLICA").length;
+    const quiza    = results.filter(r => r.resultado === "QUIZÁ").length;
+    const noEncaja = results.filter(r => r.resultado === "NO_ENCAJA").length;
+    const stack    = profile?.stack?.slice(0, 4).join(", ") || "";
+    const text = `Mi análisis JobMatch.IA 🤖\n✓ APLICA: ${aplica}  △ QUIZÁ: ${quiza}  ✗ NO ENCAJA: ${noEncaja}\nStack: ${stack}${analysisTime != null ? `\n⚡ Analizado en ${analysisTime}s` : ""}`;
+    navigator.clipboard.writeText(text).then(() => addToast?.("Resultados copiados", "success")).catch(() => {});
+  }
+
+  async function handleGenerateCoverLetter() {
+    if (!selectedOffer || !profile) return;
+    setShowCoverLetter(true);
+    setCoverLetterLoading(true);
+    setCoverLetterError(null);
+    setCoverLetter(null);
+    try {
+      const result = await generateCoverLetter(
+        {
+          titulo:      selectedOffer.titulo || "",
+          empresa:     selectedOffer.empresa || "",
+          descripcion: selectedOffer.descripcion || "",
+        },
+        {
+          stack:            profile.stack || [],
+          anos_experiencia: profile.anos_experiencia || null,
+          email:            profile.email || null,
+        }
+      );
+      setCoverLetter(result.carta);
+    } catch (err) {
+      setCoverLetterError(err.message || "Error al generar la carta");
+    } finally {
+      setCoverLetterLoading(false);
+      refreshAiQuota();
+    }
+  }
+
+  // ── Loading state ──────────────────────────────────────────────────────────────
+  if (profileLoading) {
+    return (
+      <div style={S.centeredContainer}>
+        <div style={S.spinner} />
+      </div>
+    );
+  }
+
+  // ── Analyzing — skeleton loader ────────────────────────────────────────────────
+  if (loading) {
+    const phase = LOADING_PHASES[loadingPhase];
+    return (
+      <div style={{ ...S.resultsPage, ...(darkMode ? S.dmPage : {}) }}>
+        <div style={{ textAlign: "center", marginBottom: 48, paddingTop: 24 }}>
+          <div style={{ fontSize: 56, marginBottom: 20, display: "inline-block", animation: "floatBounce 2s ease-in-out infinite" }}>
+            {phase.icon}
+          </div>
+          <p style={{ fontSize: 22, fontWeight: 700, color: darkMode ? "#f1f5f9" : "#111827", margin: "0 0 8px" }}>
+            {phase.text}
+          </p>
+          <p style={{ fontSize: 14, color: darkMode ? "#64748b" : "#9ca3af", margin: 0 }}>
+            Esto puede tardar unos segundos...
+          </p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 20 }}>
+            {LOADING_PHASES.map((_, i) => (
+              <div key={i} style={{
+                width: i === loadingPhase ? 28 : 8, height: 8,
+                borderRadius: 4, transition: "all 0.3s ease",
+                backgroundColor: i === loadingPhase ? TEAL : (darkMode ? "#334155" : "#e5e7eb"),
+              }} />
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto" }}>
+          {[1, 2, 3, 4].map(i => <SkeletonCard key={i} darkMode={darkMode} />)}
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // RESULTS VIEW
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (results) {
+    const allSorted = [
+      ...results.filter(r => r.resultado === "APLICA"),
+      ...results.filter(r => r.resultado === "QUIZÁ"),
+      ...results.filter(r => r.resultado === "NO_ENCAJA"),
+    ];
+    const visible  = allSorted.filter(r => !discarded.has(r.adzuna_id || r.id));
+    const aplica   = visible.filter(r => r.resultado === "APLICA");
+    const quiza    = visible.filter(r => r.resultado === "QUIZÁ");
+    const noEncaja = visible.filter(r => r.resultado === "NO_ENCAJA");
+    const favCount = visible.filter(r => r.adzuna_id && favorites.has(r.adzuna_id)).length;
+
+    let filtered = visible.slice();
+    if (filter === "aplica")         filtered = aplica.slice();
+    else if (filter === "quiza")     filtered = quiza.slice();
+    else if (filter === "no-encaja") filtered = noEncaja.slice();
+    else if (filter === "favoritas") filtered = visible.filter(r => r.adzuna_id && favorites.has(r.adzuna_id));
+
+    // Keyword filter
+    if (keywordFilter.trim()) {
+      const kw = keywordFilter.toLowerCase().trim();
+      filtered = filtered.filter(offer =>
+        (offer.titulo || "").toLowerCase().includes(kw) ||
+        (offer.empresa || "").toLowerCase().includes(kw) ||
+        (offer.descripcion || "").toLowerCase().includes(kw)
+      );
+    }
+    // Location filter
+    if (locationFilter.trim()) {
+      const loc = locationFilter.toLowerCase().trim();
+      filtered = filtered.filter(offer =>
+        (offer.ubicacion || "").toLowerCase().includes(loc)
+      );
+    }
+    // Salary filter
+    if (salaryMin !== "" || salaryMax !== "") {
+      filtered = filtered.filter(offer => {
+        const sal = parseSalaryValue(offer.salario);
+        if (sal == null) return salaryMin === "";
+        const min = salaryMin !== "" ? Number(salaryMin) : 0;
+        const max = salaryMax !== "" ? Number(salaryMax) : 999;
+        return sal >= min && sal <= max;
+      });
+    }
+    if (contractFilter !== "todos") {
+      filtered = filtered.filter(offer => detectContract(offer) === contractFilter);
+    }
+    if (sortBy === "fecha") {
+      filtered.sort((a, b) => new Date(b.fecha_publicacion || 0) - new Date(a.fecha_publicacion || 0));
+    } else if (sortBy === "salario") {
+      filtered.sort((a, b) => (parseSalaryValue(b.salario) || 0) - (parseSalaryValue(a.salario) || 0));
+    } else if (sortBy === "puntuacion") {
+      filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0));
+    }
+
+    const dm = darkMode;
+    const userStack = profile?.stack || [];
+
+    return (
+      <div style={{ ...S.resultsPage, ...(dm ? S.dmPage : {}) }}>
+        {aiQuota && (
+          <div style={{ maxWidth: isMobile ? "100%" : 320, marginBottom: 18 }}>
+            <QuotaCard quota={aiQuota} darkMode={dm} compact />
+          </div>
+        )}
+
+        {/* ── Two-column layout ────────────────────────────────────── */}
+        <div style={S.twoCol}>
+
+          {/* LEFT — Filter Panel */}
+          {!isMobile && (
+            <div style={{ ...S.filterPanel, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}) }}>
+              <div style={{ marginBottom: 24 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>
+                  Filtros Avanzados
+                </h2>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: dm ? "#475569" : "#9ca3af", fontFamily: typography.family }}>
+                  Refina tu búsqueda IA
+                </p>
+              </div>
+
+              {/* Keyword */}
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🔍 Palabra clave</label>
+                <input
+                  type="text"
+                  placeholder="Ej: React, Node, UX..."
+                  value={keywordFilter}
+                  onChange={e => setKeywordFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
+                />
+              </div>
+
+              {/* Location */}
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📍 Ubicación</label>
+                <input
+                  type="text"
+                  placeholder="Madrid, Barcelona..."
+                  value={locationFilter}
+                  onChange={e => setLocationFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
+                />
+              </div>
+
+              {/* Contract (as Modalidad) */}
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🏠 Modalidad</label>
+                <select
+                  value={contractFilter}
+                  onChange={e => setContractFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
+                >
+                  <option value="todos">Cualquiera</option>
+                  <option value="indefinido">Indefinido</option>
+                  <option value="temporal">Temporal / Prácticas</option>
+                  <option value="freelance">Freelance</option>
+                </select>
+              </div>
+
+              {/* Sort (as Experiencia) */}
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📊 Ordenar por</label>
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
+                >
+                  <option value="relevancia">Relevancia</option>
+                  <option value="puntuacion">Puntuación</option>
+                  <option value="fecha">Más recientes</option>
+                  <option value="salario">Mayor salario</option>
+                </select>
+              </div>
+
+              {/* Salary */}
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>💰 Salario</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={salaryMin}
+                    onChange={e => setSalaryMin(e.target.value)}
+                    style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), flex: 1 }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={salaryMax}
+                    onChange={e => setSalaryMax(e.target.value)}
+                    style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), flex: 1 }}
+                  />
+                </div>
+              </div>
+
+              {/* Tech Stack chips */}
+              {userStack.length > 0 && (
+                <div style={S.filterGroup}>
+                  <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>&lt;/&gt; Tech Stack</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {userStack.slice(0, 8).map(tech => (
+                      <span key={tech} style={{
+                        padding: "4px 12px", borderRadius: 20,
+                        fontSize: 12, fontWeight: 500,
+                        backgroundColor: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
+                        color: TEAL,
+                        border: `1px solid ${dm ? "rgba(0,117,138,0.25)" : "rgba(0,117,138,0.2)"}`,
+                        whiteSpace: "nowrap",
+                      }}>
+                        {tech}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Apply button */}
+              <button
+                style={{
+                  width: "100%", padding: "10px 16px", fontSize: 14, fontWeight: 600,
+                  color: "#fff", backgroundColor: TEAL, border: "none", borderRadius: 10,
+                  cursor: "pointer", fontFamily: typography.family, marginTop: 8,
+                  boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
+                }}
+                onClick={() => { /* filters applied reactively */ }}
+              >
+                Aplicar Filtros
+              </button>
+            </div>
+          )}
+
+          {/* RIGHT — Content */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+
+            {/* ── Header ──────────────────────────────────────────────── */}
+            <div style={{ marginBottom: 24 }}>
+              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.01em", fontFamily: typography.family }}>
+                Explora tus coincidencias
+              </h1>
+              <p style={{ margin: "6px 0 0", fontSize: 14, color: dm ? "#64748b" : "#6b7280", fontFamily: typography.family, lineHeight: 1.5 }}>
+                Análisis en tiempo real impulsado por IA basado en tu stack tecnológico
+                {analysisTime != null && <span style={{ marginLeft: 12, color: dm ? "#475569" : "#9ca3af" }}>· {analysisTime}s</span>}
+              </p>
+            </div>
+
+            {/* ── Metrics Row ─────────────────────────────────────────── */}
+            <div style={S.metricsRow} className="metrics-row-responsive">
+              {[
+                { label: "TOTAL ANALIZADAS", value: visible.length, accent: TEAL,      iconBg: "#e0f2f4", iconColor: TEAL,      icon: "📊" },
+                { label: "APLICA",           value: aplica.length,  accent: "#10b981", iconBg: "#d1fae5", iconColor: "#10b981", icon: "✓" },
+                { label: "QUIZÁ",            value: quiza.length,   accent: "#64748b", iconBg: "#f1f5f9", iconColor: "#64748b", icon: "?" },
+                { label: "NO ENCAJA",        value: noEncaja.length, accent: "#ef4444", iconBg: "#fee2e2", iconColor: "#ef4444", icon: "✗" },
+              ].map((m, i) => (
+                <div key={i} style={{
+                  ...S.metricCard,
+                  borderLeft: `3px solid ${m.accent}`,
+                  ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)", borderLeftColor: m.accent } : {}),
+                }}>
+                  <div style={{
+                    width: 42, height: 42, borderRadius: "50%",
+                    backgroundColor: dm ? "rgba(255,255,255,0.06)" : m.iconBg,
+                    color: m.iconColor,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 18, fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {m.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: dm ? "#64748b" : "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: typography.family }}>
+                      {m.label}
+                    </div>
+                    <div className="summary-number-anim" style={{ fontSize: 28, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1, marginTop: 4, fontFamily: typography.family }}>
+                      {m.value}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Mobile filters toggle */}
+            {isMobile && (
+              <div style={{ marginBottom: 12 }}>
+                <button
+                  style={{
+                    padding: "10px 18px", borderRadius: 10,
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"}`,
+                    backgroundColor: dm ? "#1e293b" : "white", color: dm ? "#f1f5f9" : "#374151",
+                    fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                    fontFamily: typography.family,
+                  }}
+                  onClick={() => setShowMobileFilters(f => !f)}
+                >
+                  Filtros
+                  <span style={{ fontSize: 10 }}>{showMobileFilters ? "▲" : "▼"}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Tab filters */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+              {[
+                { value: "todos",      label: `Todas (${visible.length})` },
+                { value: "aplica",     label: `Aplica (${aplica.length})` },
+                { value: "quiza",      label: `Quizá (${quiza.length})` },
+                { value: "no-encaja",  label: `No encaja (${noEncaja.length})` },
+                { value: "favoritas",  label: `Favoritas${favCount > 0 ? ` (${favCount})` : ""}` },
+              ].map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setFilter(f.value)}
+                  style={{
+                    padding: "7px 14px", fontSize: 13, fontWeight: 600, borderRadius: 8,
+                    border: `1px solid ${filter === f.value ? "transparent" : (dm ? "rgba(255,255,255,0.1)" : "#e2e8f0")}`,
+                    cursor: "pointer", fontFamily: typography.family,
+                    transition: `all ${transition.fast}`,
+                    ...(filter === f.value
+                      ? { backgroundColor: TEAL, color: "#fff", boxShadow: "0 2px 6px rgba(0,117,138,0.25)" }
+                      : { backgroundColor: dm ? "#1e293b" : "#fff", color: dm ? "#94a3b8" : "#6b7280" }),
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Offer Cards (list layout) ─────────────────────────── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {filtered.length > 0 ? (
+                filtered.map((offer, index) => {
+                  const rs    = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+                  const isFav = offer.adzuna_id && favorites.has(offer.adzuna_id);
+                  const tags  = extractTechTags(offer, profile?.stack);
+                  const isNew = isNewOffer(offer.fecha_publicacion);
+                  return (
+                    <div
+                      key={offer.id}
+                      className="job-card"
+                      onClick={() => setSelectedOffer(offer)}
+                      style={{
+                        ...S.offerCard,
+                        borderLeftColor: rs.border,
+                        animation: `fadeInUp 0.4s ease-out ${index * 0.04}s both`,
+                        ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)", borderLeftColor: rs.border } : {}),
+                      }}
+                    >
+                      {/* Row 1: Logo + Title/Company + Badge + Salary */}
+                      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                        <CompanyLogo
+                          name={offer.empresa}
+                          logoUrl={offer.company_logo_url}
+                          size={52}
+                          darkMode={dm}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.35, fontFamily: typography.family }}>
+                            {offer.titulo}
+                          </h3>
+                          <p style={{ margin: "5px 0 0", fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 500, fontFamily: typography.family, display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 13 }}>🏢</span> {offer.empresa}
+                          </p>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                            backgroundColor: dm ? `${rs.border}18` : rs.bg,
+                            color: rs.border, border: `1px solid ${dm ? `${rs.border}40` : `${rs.border}30`}`,
+                            whiteSpace: "nowrap",
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: rs.border, display: "inline-block" }} />
+                            {rs.label}{offer.puntuacion != null ? ` - ${offer.puntuacion}% Match` : ""}
+                          </span>
+                          {offer.salario && offer.salario !== "Salario no especificado" && (
+                            <span style={{ fontSize: 17, fontWeight: 700, color: dm ? "#f1f5f9" : "#1e293b", whiteSpace: "nowrap", fontFamily: typography.family }}>
+                              {offer.salario}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Row 2: Context chips */}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0 0" }}>
+                        {offer.ubicacion && (
+                          <span style={{ ...S.chip, ...(dm ? S.chipDm : {}) }}>
+                            <span style={{ fontSize: 11, opacity: 0.6 }}>📍</span> {offer.ubicacion}
+                          </span>
+                        )}
+                        {isNew && (
+                          <span style={{ ...S.chip, ...(dm ? S.chipDm : {}), backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7", color: "#92400e", borderColor: dm ? "rgba(245,158,11,0.25)" : "#fde68a" }}>
+                            🔥 Nueva
+                          </span>
+                        )}
+                        {tags.slice(0, 3).map(tag => (
+                          <span key={tag} style={{ ...S.chip, ...(dm ? S.chipDm : {}) }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Row 3: IA Insight */}
+                      {offer.motivo && (
+                        <div style={{
+                          margin: "16px 0 0",
+                          padding: "14px 18px",
+                          borderRadius: 12,
+                          backgroundColor: dm ? "rgba(0,117,138,0.08)" : "rgba(0,117,138,0.04)",
+                          border: `1px solid ${dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.1)"}`,
+                        }}>
+                          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
+                            <strong style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 700 }}>IA Insight: </strong>
+                            {offer.motivo}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Row 4: Actions */}
+                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 18, gap: 12 }}>
+                        <button
+                          style={{ ...S.starBtn, color: isFav ? "#f59e0b" : (dm ? "#475569" : "#d1d5db"), marginRight: "auto" }}
+                          onClick={e => { e.stopPropagation(); toggleFavorite(offer); }}
+                          title={isFav ? "Quitar de favoritas" : "Añadir a favoritas"}
+                        >
+                          {isFav ? "★" : "☆"}
+                        </button>
+                        <span style={{ fontSize: 11, color: dm ? "#475569" : "#9ca3af", fontFamily: typography.family }}>
+                          {calculateDaysAgo(offer.fecha_publicacion)}
+                        </span>
+                        <button
+                          style={{
+                            background: "none", border: "none",
+                            fontSize: 13, fontWeight: 500,
+                            color: dm ? "#64748b" : "#6b7280",
+                            cursor: "pointer", fontFamily: typography.family,
+                            padding: "6px 12px",
+                          }}
+                          onClick={e => { e.stopPropagation(); handleDiscardOffer(offer); }}
+                        >
+                          Descartar
+                        </button>
+                        {(() => {
+                          const aid = offer.adzuna_id || offer.id;
+                          const isTracked = tracked.has(aid);
+                          return (
+                            <button
+                              style={{
+                                background: "none", border: "none",
+                                fontSize: 13, fontWeight: 500,
+                                color: isTracked ? (dm ? "#34d399" : "#059669") : (dm ? "#5eead4" : TEAL),
+                                cursor: isTracked ? "default" : "pointer",
+                                fontFamily: typography.family,
+                                padding: "6px 12px",
+                                opacity: isTracked ? 0.8 : 1,
+                              }}
+                              onClick={e => { e.stopPropagation(); handleTrackOffer(offer); }}
+                            >
+                              {isTracked ? "✓ Siguiendo" : "Seguir"}
+                            </button>
+                          );
+                        })()}
+                        <button
+                          onClick={e => { e.stopPropagation(); setSelectedOffer(offer); }}
+                          style={S.btnDetail}
+                        >
+                          Ver detalle
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={S.emptyState}>
+                  {filter === "favoritas" ? (
+                    <>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>⭐</div>
+                      <p style={{ ...S.emptyTitle, color: dm ? "#f1f5f9" : "#374151" }}>Aún no has guardado ninguna oferta</p>
+                      <p style={{ ...S.emptySub, color: dm ? "#64748b" : "#9ca3af" }}>Marca las ofertas que más te interesen con la estrella</p>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+                      <p style={{ ...S.emptyTitle, color: dm ? "#f1f5f9" : "#374151" }}>No hay ofertas con estos filtros</p>
+                      <p style={{ ...S.emptySub, color: dm ? "#64748b" : "#9ca3af" }}>Prueba a ajustar los filtros o el tipo de contrato</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Action buttons row ─────────────────────────────────── */}
+            <div style={{ display: "flex", gap: 10, marginTop: 28, justifyContent: "flex-end" }}>
+              <button onClick={handleShare} style={{ ...S.btnOutline, ...(dm ? { color: "#94a3b8", borderColor: "rgba(255,255,255,0.12)" } : {}) }}>
+                Compartir
+              </button>
+              <button onClick={handleReset} style={S.btnPrimary}>
+                + Nueva búsqueda
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Skills Gap Section ───────────────────────────────────── */}
+        {skillsGap?.recommended_skills?.length > 0 && (() => {
+          const CAT = {
+            tecnica:     { label: "Técnica",     bg: "#ede9fe", color: "#7c3aed", bgDm: "rgba(124,58,237,0.15)", colorDm: "#a78bfa" },
+            idioma:      { label: "Idioma",      bg: "#dbeafe", color: "#1d4ed8", bgDm: "rgba(37,99,235,0.15)",  colorDm: "#93c5fd" },
+            experiencia: { label: "Experiencia", bg: "#fef3c7", color: "#92400e", bgDm: "rgba(245,158,11,0.15)", colorDm: "#fbbf24" },
+            modalidad:   { label: "Modalidad",   bg: "#dcfce7", color: "#15803d", bgDm: "rgba(16,185,129,0.15)", colorDm: "#6ee7b7" },
+          };
+          return (
+            <div style={{
+              marginTop: 36, borderRadius: 16, overflow: "hidden",
+              backgroundColor: dm ? "#1e293b" : "#fff",
+              border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e8ecf1"}`,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{
+                padding: "24px 28px 20px",
+                background: dm
+                  ? "linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(37,99,235,0.12) 100%)"
+                  : "linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(37,99,235,0.06) 100%)",
+                borderBottom: `1px solid ${dm ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"}`,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <span style={{ fontSize: 24 }}>🎯</span>
+                  <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>
+                    {skillsGap.title || "Tu plan de mejora"}
+                  </h3>
+                </div>
+                {skillsGap.summary && (
+                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b", maxWidth: 700, fontFamily: typography.family }}>
+                    {skillsGap.summary}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14, padding: "20px 24px 24px" }}>
+                {skillsGap.recommended_skills.map((skill, idx) => {
+                  const cat = CAT[skill.category] || CAT.tecnica;
+                  return (
+                    <div key={idx} className="job-card" style={{
+                      padding: "16px 18px", borderRadius: 12,
+                      backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
+                      border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e2e8f0"}`,
+                      cursor: "default",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: dm ? "#f1f5f9" : "#1e293b", flex: 1, fontFamily: typography.family }}>{skill.name}</span>
+                        <span style={{
+                          padding: "3px 10px", borderRadius: 20, fontSize: 10, fontWeight: 700, letterSpacing: "0.02em",
+                          backgroundColor: dm ? cat.bgDm : cat.bg, color: dm ? cat.colorDm : cat.color, whiteSpace: "nowrap",
+                        }}>{cat.label}</span>
+                      </div>
+                      <p style={{ margin: "0 0 8px", fontSize: 12, lineHeight: 1.55, color: dm ? "#94a3b8" : "#64748b", fontFamily: typography.family }}>{skill.reason}</p>
+                      {skill.demand_count > 0 && (
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 6,
+                          backgroundColor: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
+                          fontSize: 11, fontWeight: 600, color: dm ? "#5eead4" : TEAL,
+                        }}>
+                          Detectada en {skill.demand_count} oferta{skill.demand_count !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Offer Detail Modal ───────────────────────────────────── */}
+        {selectedOffer && (
+          <div style={S.modalOverlay} onClick={() => setSelectedOffer(null)}>
+            <div style={{ ...S.modalContent, ...(dm ? { backgroundColor: "#1e293b" } : {}) }} onClick={e => e.stopPropagation()}>
+              <div style={{ ...S.modalHeader, borderBottomColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                    backgroundColor: RESULT_STYLES[selectedOffer.resultado]?.bg || "#ffe4e6",
+                    color: RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e",
+                    border: `1px solid ${(RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e")}30`,
+                  }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: RESULT_STYLES[selectedOffer.resultado]?.border, display: "inline-block" }} />
+                    {RESULT_STYLES[selectedOffer.resultado]?.label || "SIN EVALUAR"}
+                    {selectedOffer.puntuacion != null ? ` - ${selectedOffer.puntuacion}%` : ""}
+                  </span>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button
+                      style={{ ...S.starBtn, fontSize: 22, color: selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id) ? "#f59e0b" : "#9ca3af" }}
+                      onClick={() => toggleFavorite(selectedOffer)}
+                    >
+                      {selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id) ? "★" : "☆"}
+                    </button>
+                    <button style={S.modalCloseX} onClick={() => setSelectedOffer(null)}>✕</button>
+                  </div>
+                </div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>{selectedOffer.titulo}</h2>
+                <p style={{ margin: "4px 0 0", fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 500, fontFamily: typography.family }}>
+                  🏢 {selectedOffer.empresa} · {selectedOffer.ubicacion}
+                </p>
+              </div>
+
+              <div style={{ padding: "20px 24px" }}>
+                {selectedOffer.puntuacion != null && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "14px 18px",
+                    backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8f9fc", borderRadius: 12,
+                  }}>
+                    <ScoreCircle score={selectedOffer.puntuacion} color={RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e"} size={80} />
+                    <div>
+                      <div style={{ fontSize: 11, color: dm ? "#64748b" : "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Compatibilidad</div>
+                      <div style={{ fontSize: 32, fontWeight: 800, color: RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e", lineHeight: 1.1 }}>
+                        {selectedOffer.puntuacion}%
+                      </div>
+                      <div style={{ fontSize: 12, color: dm ? "#64748b" : "#6b7280", marginTop: 2 }}>
+                        {selectedOffer.puntuacion >= 80 ? "Excelente encaje" : selectedOffer.puntuacion >= 50 ? "Encaje parcial" : "Encaje bajo"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {selectedOffer.salario && selectedOffer.salario !== "Salario no especificado" && (
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#059669", margin: "0 0 4px" }}>{selectedOffer.salario}</p>
+                )}
+                <p style={{ fontSize: 13, color: dm ? "#64748b" : "#9ca3af", margin: "0 0 16px" }}>{calculateDaysAgo(selectedOffer.fecha_publicacion)}</p>
+
+                {selectedOffer.motivo && (
+                  <div style={{
+                    padding: "14px 18px", borderRadius: 12, marginBottom: 20,
+                    backgroundColor: dm ? "rgba(0,117,138,0.08)" : "rgba(0,117,138,0.04)",
+                    border: `1px solid ${dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.1)"}`,
+                  }}>
+                    <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
+                      <strong style={{ color: dm ? "#5eead4" : TEAL }}>Análisis IA: </strong>
+                      {selectedOffer.motivo}
+                    </p>
+                  </div>
+                )}
+
+                <div style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, paddingTop: 16 }}>
+                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>Descripción de la oferta</h3>
+                  <p style={{ fontSize: 14, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.8, margin: 0, whiteSpace: "pre-wrap", wordWrap: "break-word", fontFamily: typography.family }}>
+                    {selectedOffer.descripcion}
+                  </p>
+                </div>
+              </div>
+
+              {showCoverLetter && (
+                <div style={{ padding: "16px 24px", borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, background: dm ? "rgba(255,255,255,0.02)" : "rgba(238,242,255,0.5)" }}>
+                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827" }}>Carta de presentación</h3>
+                  {coverLetterLoading ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0" }}>
+                      <div style={S.spinner} />
+                      <span style={{ fontSize: 14, color: dm ? "#94a3b8" : "#6b7280" }}>Generando carta personalizada...</span>
+                    </div>
+                  ) : coverLetterError ? (
+                    <div style={{ padding: "8px 12px", backgroundColor: "#fee2e2", color: "#991b1b", borderRadius: 8, fontSize: 13, border: "1px solid #fecaca" }}>{coverLetterError}</div>
+                  ) : coverLetter ? (
+                    <>
+                      <textarea
+                        style={{
+                          width: "100%", minHeight: 260, padding: 14, fontSize: 14, fontFamily: "Georgia, 'Times New Roman', serif",
+                          lineHeight: 1.7, color: dm ? "#f1f5f9" : "#111827", border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                          borderRadius: 8, resize: "vertical", boxSizing: "border-box", outline: "none",
+                          backgroundColor: dm ? "#0f172a" : "#fff",
+                        }}
+                        value={coverLetter}
+                        onChange={e => setCoverLetter(e.target.value)}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+                        <button style={S.btnOutline} onClick={() => { navigator.clipboard.writeText(coverLetter); addToast?.("Carta copiada", "success"); }}>
+                          Copiar
+                        </button>
+                        <button style={S.btnPrimary} onClick={handleGenerateCoverLetter}>Regenerar</button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
+
+              <div style={{ padding: "16px 24px", borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
+                <button style={{ ...S.btnOutline, marginRight: "auto", ...(dm ? { color: "#94a3b8", borderColor: "rgba(255,255,255,0.12)" } : {}) }} onClick={() => setSelectedOffer(null)}>Cerrar</button>
+                <button style={{ ...S.btnOutline, ...(dm ? { color: "#5eead4", borderColor: "rgba(94,234,212,0.3)" } : { color: TEAL, borderColor: `${TEAL}50` }) }} onClick={() => handleTrackOffer(selectedOffer)}>
+                  Seguir oferta
+                </button>
+                <button style={{ ...S.btnPrimary, background: "linear-gradient(135deg, #7c3aed, #2563eb)" }} onClick={handleGenerateCoverLetter}>
+                  Generar carta
+                </button>
+                {selectedOffer.redirect_url && (
+                  <a href={selectedOffer.redirect_url} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                    Ver en Adzuna →
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // NO PROFILE STATE
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (!hasProfile(profile)) {
+    const dm = darkMode;
+    return (
+      <div style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
+        <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}), textAlign: "center", padding: "48px 32px" }}>
+          <div style={{ fontSize: 52, marginBottom: 16 }}>👤</div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", margin: "0 0 12px", fontFamily: typography.family }}>Completa tu perfil primero</h2>
+          <p style={{ color: dm ? "#94a3b8" : "#6b7280", marginBottom: 28, lineHeight: 1.6, fontSize: 15, fontFamily: typography.family }}>
+            Para analizar ofertas necesitamos conocer tu stack tecnológico y experiencia.
+          </p>
+          <button style={S.btnPrimary} onClick={() => { window.location.hash = "user-profile"; }}>
+            Completar mi perfil →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // PRE-ANALYSIS VIEW
+  // ══════════════════════════════════════════════════════════════════════════════
+  const dm = darkMode;
+  const englishEntryReady = profile.idiomas?.find(i => i.idioma.toLowerCase().includes("ingl"));
+  const stackPreview =
+    profile.stack?.slice(0, 5).join(", ") +
+    (profile.stack?.length > 5 ? ` +${profile.stack.length - 5} más` : "");
+
+  const chartData = profile.stack
+    ?.filter(t => MARKET_DATA[t] != null)
+    .sort((a, b) => (MARKET_DATA[b] || 0) - (MARKET_DATA[a] || 0))
+    .slice(0, 6) || [];
+  const maxVal = chartData.length ? Math.max(...chartData.map(t => MARKET_DATA[t] || 0)) : 1;
+  const totalEstimated = chartData.reduce((s, t) => s + (MARKET_DATA[t] || 0), 0);
+
+  return (
+    <div style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
+      <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}) }}>
+        <h2 style={{ margin: "0 0 24px", fontSize: 26, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.02em", fontFamily: typography.family }}>
+          Buscar ofertas
+        </h2>
+
+        {error && <div style={S.errorBox}>{error}</div>}
+        {aiQuota && <QuotaCard quota={aiQuota} darkMode={dm} />}
+
+        {/* Profile summary */}
+        <div style={{
+          backgroundColor: dm ? "rgba(0,117,138,0.1)" : "rgba(0,117,138,0.04)",
+          border: `1px solid ${dm ? "rgba(0,117,138,0.2)" : "rgba(0,117,138,0.15)"}`,
+          borderRadius: 12, padding: "14px 18px", marginBottom: 20,
+        }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: TEAL, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 6px", fontFamily: typography.family }}>
+            Analizando ofertas para:
+          </p>
+          <p style={{ margin: 0, fontSize: 14, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.6, fontFamily: typography.family }}>
+            {[
+              profile.anos_experiencia ? `${profile.anos_experiencia} año${profile.anos_experiencia !== "1" ? "s" : ""} de experiencia` : null,
+              profile.stack?.length > 0 ? `Stack: ${stackPreview}` : null,
+              englishEntryReady ? `Inglés: ${englishEntryReady.nivel}` : null,
+              `📍 ${profile.ubicaciones?.length > 0 ? profile.ubicaciones.join(", ") : "Toda España"}`,
+              `💼 ${profile.modalidad?.length > 0 ? profile.modalidad.join(", ") : "Cualquier modalidad"}`,
+            ].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+
+        {/* Market chart */}
+        {chartData.length > 0 && (
+          <div style={{
+            backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8faff",
+            border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e0e7ff"}`,
+            borderRadius: 12, padding: "16px 20px", marginBottom: 20,
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.04em", fontFamily: typography.family }}>
+              📈 Tu stack en el mercado español
+            </p>
+            <p style={{ fontSize: 11, color: dm ? "#64748b" : "#6b7280", margin: "0 0 14px" }}>
+              Estimación de ofertas activas en España
+            </p>
+            {chartData.map(tech => (
+              <div key={tech} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: dm ? "#cbd5e1" : "#374151" }}>{tech}</span>
+                  <span style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af" }}>{MARKET_DATA[tech]}+ ofertas</span>
+                </div>
+                <div style={{ height: 6, backgroundColor: dm ? "#334155" : "#f3f4f6", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(MARKET_DATA[tech] / maxVal) * 100}%`, background: `linear-gradient(90deg, ${TEAL}, #2563eb)`, borderRadius: 3, transition: "width 1s ease" }} />
+                </div>
+              </div>
+            ))}
+            {totalEstimated > 0 && (
+              <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, margin: "14px 0 0", textAlign: "center", padding: 8, backgroundColor: "rgba(0,117,138,0.06)", borderRadius: 8 }}>
+                💼 Con tu perfil hay ~{totalEstimated.toLocaleString()}+ ofertas activas
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Search history */}
+        {searchHistory.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: dm ? "#64748b" : "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 10px", fontFamily: typography.family }}>
+              Últimas búsquedas
+            </p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {searchHistory.slice(0, 3).map(item => (
+                <div key={item.id} style={{
+                  flex: "1 1 220px", padding: 14,
+                  backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#fff",
+                  borderRadius: 12, border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e8ecf1"}`,
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", gap: 4,
+                }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: typography.family }}>
+                    {item.stack.slice(0, 3).join(", ")}{item.stack.length > 3 ? "…" : ""}
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: dm ? "#94a3b8" : "#6b7280", fontFamily: typography.family }}>
+                    {item.anos_experiencia ? `${item.anos_experiencia} años exp.` : "Experiencia no indicada"}
+                  </p>
+                  {(item.ubicaciones?.length > 0 || item.modalidad?.length > 0) && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                      {(item.ubicaciones || []).slice(0, 2).map((ubicacion) => (
+                        <span key={ubicacion} style={{
+                          padding: "3px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                          backgroundColor: dm ? "rgba(94,234,212,0.08)" : "#ecfeff",
+                          color: dm ? "#5eead4" : TEAL,
+                          border: `1px solid ${dm ? "rgba(94,234,212,0.18)" : "#bae6fd"}`,
+                          fontFamily: typography.family,
+                        }}>
+                          📍 {ubicacion}
+                        </span>
+                      ))}
+                      {(item.modalidad || []).slice(0, 1).map((modo) => (
+                        <span key={modo} style={{
+                          padding: "3px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                          backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#f8fafc",
+                          color: dm ? "#cbd5e1" : "#475569",
+                          border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e2e8f0"}`,
+                          fontFamily: typography.family,
+                        }}>
+                          {modo}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 10, fontSize: 12, fontWeight: 600 }}>
+                    <span style={{ color: "#16a34a" }}>✓ {item.num_aplica}</span>
+                    <span style={{ color: "#64748b" }}>△ {item.num_quiza}</span>
+                    <span style={{ color: "#dc2626" }}>✗ {item.num_no_encaja}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 11, color: dm ? "#64748b" : "#94a3af", fontFamily: typography.family }}>
+                    {item.num_total || (item.num_aplica + item.num_quiza + item.num_no_encaja)} resultados en la última ejecución
+                  </p>
+                  <p style={{ margin: 0, fontSize: 11, color: "#9ca3af" }}>{formatSearchDate(item.created_at)}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 10, color: dm ? "#94a3b8" : "#6b7280", lineHeight: 1.5, fontFamily: typography.family }}>
+                    Se volverá a analizar con tu perfil actual y el contexto de esta búsqueda.
+                  </p>
+                  <button
+                    onClick={() => handleRepeat(item)}
+                    disabled={loading}
+                    style={{
+                      marginTop: 6, padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "#fff",
+                      backgroundColor: rerunningHistoryId === item.id ? "#0f766e" : TEAL,
+                      border: "none", borderRadius: 20, cursor: loading ? "not-allowed" : "pointer",
+                      fontFamily: typography.family, alignSelf: "flex-start",
+                      opacity: loading ? 0.8 : 1,
+                      boxShadow: rerunningHistoryId === item.id ? "0 4px 12px rgba(15,118,110,0.22)" : "0 4px 12px rgba(0,117,138,0.18)",
+                    }}
+                  >
+                    {rerunningHistoryId === item.id ? "Reanalizando..." : "Volver a analizar →"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Primary CTA */}
+        <button
+          ref={analyzeBtnRef}
+          className="analyze-ripple-btn"
+          style={{ ...S.btnAnalyze, opacity: loading ? 0.75 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+          disabled={loading}
+          onClick={(e) => {
+            if (loading) return;
+            const btn = analyzeBtnRef.current;
+            if (btn) {
+              btn.classList.remove("rippling");
+              void btn.offsetWidth;
+              btn.classList.add("rippling");
+              setTimeout(() => btn.classList.remove("rippling"), 600);
+            }
+            handleAnalyze(e);
+          }}
+        >
+          {loading ? "🤖 La IA está trabajando..." : "Analizar ofertas"}
+        </button>
+
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <button style={{ background: "none", border: "none", color: dm ? "#64748b" : "#6b7280", fontSize: 13, cursor: "pointer", fontFamily: typography.family, textDecoration: "underline", padding: 0 }}
+            onClick={() => { window.location.hash = "user-profile"; }}>
+            Modificar perfil →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+const S = {
+  dmPage: { background: "#0f172a" },
+
+  centeredContainer: {
+    minHeight: "60vh",
+    display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center",
     fontFamily: typography.family,
-    letterSpacing: "-1px",
   },
-  subtitle: {
-    margin: 0,
-    fontSize: typography.sizes.normal,
-    color: colors.text.secondary,
-    fontFamily: typography.family,
-    fontWeight: typography.weights.normal,
-    lineHeight: 1.6,
-  },
-
-  // Form Card
-  formCard: {
-    maxWidth: 700,
-    margin: "0 auto",
-    padding: spacing.huge,
-    backgroundColor: colors.background.white,
-    borderRadius: border.radius.full,
-    border: `1px solid ${colors.border.active}`,
-    boxShadow: shadow.subtle,
-    fontFamily: typography.family,
-  },
-
-  formTitle: {
-    margin: `0 0 ${spacing.xxxl}px`,
-    fontSize: typography.sizes.h1,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
-    letterSpacing: typography.letterSpacing.tight,
-  },
-
-  // Form layout
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: spacing.xl,
-  },
-
-  field: {
-    display: "flex",
-    flexDirection: "column",
-    gap: spacing.sm,
-  },
-
-  label: {
-    fontSize: typography.sizes.body,
-    fontWeight: typography.weights.semibold,
-    color: colors.text.secondary,
-  },
-
-  select: {
-    padding: `${spacing.sm}px ${spacing.md}px`,
-    fontSize: typography.sizes.body,
-    borderRadius: border.radius.md,
-    border: `${border.width.medium} solid ${colors.border.inactive}`,
-    backgroundColor: colors.background.white,
-    fontFamily: "inherit",
-    color: colors.text.primary,
-    cursor: "pointer",
-    transition: `border-color ${transition.fast}`,
-  },
-
-  // Stack pills container
-  stackContainer: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: spacing.md,
-  },
-
-  stackPill: {
-    padding: `${spacing.sm}px ${spacing.lg}px`,
-    fontSize: typography.sizes.small,
-    fontWeight: typography.weights.semibold,
-    border: `${border.width.medium} solid`,
-    borderRadius: border.radius.full,
-    cursor: "pointer",
-    transition: `all ${transition.fast}`,
-    fontFamily: typography.family,
-    whiteSpace: "nowrap",
-  },
-
-  stackPillActive: {
-    backgroundColor: colors.primary,
-    color: colors.background.white,
-    borderColor: colors.primary,
-  },
-
-  stackPillInactive: {
-    backgroundColor: colors.background.white,
-    color: colors.text.secondary,
-    borderColor: colors.border.inactive,
-  },
-
-  // Submit button
-  submitButton: {
-    marginTop: spacing.xxxl,
-    padding: `${spacing.md}px ${spacing.xl}px`,
-    fontSize: typography.sizes.normal,
-    fontWeight: typography.weights.semibold,
-    color: colors.background.white,
-    backgroundColor: colors.primary,
-    border: "none",
-    borderRadius: border.radius.md,
-    cursor: "pointer",
-    transition: `all ${transition.fast}`,
-    fontFamily: typography.family,
-    width: "100%",
-  },
-
-  // Back button
-  backButton: {
-    marginTop: spacing.md,
-    padding: `${spacing.sm}px ${spacing.lg}px`,
-    fontSize: typography.sizes.small,
-    fontWeight: typography.weights.semibold,
-    color: colors.text.secondary,
-    backgroundColor: "transparent",
-    border: `1px solid ${colors.border.inactive}`,
-    borderRadius: border.radius.md,
-    cursor: "pointer",
-    transition: `all ${transition.fast}`,
-    fontFamily: typography.family,
-    width: "100%",
-  },
-
-  // Error message
-  error: {
-    padding: `${spacing.md}px ${spacing.lg}px`,
-    backgroundColor: colors.error.bg,
-    color: colors.error.text,
-    borderRadius: border.radius.md,
-    fontSize: typography.sizes.small,
-    marginBottom: spacing.xl,
-    border: `1px solid ${colors.error.border}`,
-    fontFamily: typography.family,
-  },
-
-  // Loading state
-  loading: {
-    textAlign: "center",
-    padding: `${spacing.massive}px 0`,
-  },
-
   spinner: {
-    width: 40,
-    height: 40,
-    border: `4px solid ${colors.border.active}`,
-    borderTop: `4px solid ${colors.primary}`,
-    borderRadius: border.radius.circle,
-    margin: `0 auto ${spacing.xl}px`,
+    width: 36, height: 36,
+    border: `3px solid #e5e7eb`,
+    borderTop: `3px solid ${TEAL}`,
+    borderRadius: "50%",
     animation: "spin 1s linear infinite",
   },
 
-  // Results view styles
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: spacing.xl,
-    marginBottom: spacing.xxxl,
+  // ── Results page ───────────────────────────────────────────────────────────
+  resultsPage: {
+    maxWidth: 1280,
+    margin: "0 auto",
+    padding: "28px 24px",
+    fontFamily: typography.family,
+    minHeight: "100vh",
+    background: "#f8f9fc",
   },
 
-  summaryCard: {
-    padding: spacing.xxl,
-    borderRadius: border.radius.xl,
-    border: `2px solid`,
-    textAlign: "center",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: spacing.sm,
+  // ── Pre-analysis page ──────────────────────────────────────────────────────
+  prePage: {
+    minHeight: "100vh",
+    background: "#f8f9fc",
+    paddingTop: 40,
+    paddingBottom: 40,
   },
-
-  summaryIcon: {
-    fontSize: 28,
-    fontWeight: typography.weights.bold,
-    color: "#22c55e",
-    margin: "0 0 8px",
-  },
-
-  summaryNumber: {
-    fontSize: 48,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
-    margin: 0,
-    lineHeight: 1,
-  },
-
-  summaryLabel: {
-    fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.semibold,
-    color: colors.text.secondary,
-    textTransform: "uppercase",
-    letterSpacing: typography.letterSpacing.wide,
-    margin: 0,
-  },
-
-  filterContainer: {
-    display: "flex",
-    gap: spacing.sm,
-    marginBottom: spacing.xxxl,
-    flexWrap: "wrap",
-  },
-
-  filterButton: {
-    padding: `${spacing.sm}px ${spacing.md}px`,
-    fontSize: typography.sizes.small,
-    fontWeight: typography.weights.semibold,
-    border: `${border.width.medium} solid`,
-    borderRadius: border.radius.md,
-    cursor: "pointer",
-    transition: `all ${transition.fast}`,
-    backgroundColor: colors.background.white,
+  preCard: {
+    maxWidth: 700,
+    margin: "0 auto",
+    padding: 32,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    border: "1px solid #e8ecf1",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     fontFamily: typography.family,
   },
 
-  filterButtonActive: {
-    backgroundColor: colors.primary,
-    color: colors.background.white,
-    borderColor: colors.primary,
+  // ── Metrics ────────────────────────────────────────────────────────────────
+  metricsRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 14,
+    marginBottom: 24,
+  },
+  metricCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    padding: "16px 18px",
+    borderRadius: 12,
+    border: "1px solid #e8ecf1",
+    backgroundColor: "#fff",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
   },
 
-  filterButtonInactive: {
-    color: colors.text.disabled,
-    borderColor: colors.border.inactive,
+  // ── Two column ────────────────────────────────────────────────────────────
+  twoCol: {
+    display: "flex",
+    gap: 24,
+    alignItems: "flex-start",
   },
 
-  cardsContainer: {
-    marginBottom: spacing.xxl,
+  // ── Filter panel ──────────────────────────────────────────────────────────
+  filterPanel: {
+    width: 260,
+    flexShrink: 0,
+    position: "sticky",
+    top: 80,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: "20px 20px 24px",
+    border: "1px solid #e8ecf1",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+  },
+  filterGroup: {
+    marginBottom: 18,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    fontFamily: typography.family,
+    marginBottom: 6,
+    display: "block",
+  },
+  filterInput: {
+    width: "100%",
+    padding: "9px 12px",
+    fontSize: 13,
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
+    fontFamily: typography.family,
+    color: "#374151",
+    outline: "none",
+    boxSizing: "border-box",
+    transition: `border-color ${transition.fast}`,
+  },
+  filterInputDm: {
+    backgroundColor: "#0f172a",
+    borderColor: "rgba(255,255,255,0.1)",
+    color: "#e2e8f0",
   },
 
-  card: {
-    padding: spacing.xxl,
-    borderRadius: border.radius.lg,
-    marginBottom: spacing.xl,
-    backgroundColor: colors.background.card,
-    border: `1px solid ${colors.border.active}`,
-    borderLeft: `4px solid`,
+  // ── Offer card ────────────────────────────────────────────────────────────
+  offerCard: {
+    padding: "24px 28px",
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    border: "1px solid #e8ecf1",
+    borderLeft: "4px solid",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     cursor: "pointer",
   },
 
-  cardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.xl,
-    marginBottom: spacing.md,
-  },
-
-  cardTitle: {
-    margin: `0 0 ${spacing.sm}px`,
-    fontSize: typography.sizes.h2,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
-  },
-
-  cardMeta: {
-    fontSize: typography.sizes.small,
-    color: colors.text.disabled,
-    margin: `0 0 ${spacing.sm}px`,
-  },
-
-  cardSalario: {
-    fontSize: typography.sizes.normal,
-    fontWeight: typography.weights.bold,
-    color: "#15803d",
-    margin: `${spacing.md}px 0 0`,
-  },
-
-  badge: {
-    fontSize: "11px",
-    fontWeight: typography.weights.bold,
-    padding: `6px 10px`,
-    borderRadius: border.radius.sm,
+  // ── Chip ──────────────────────────────────────────────────────────────────
+  chip: {
+    display: "inline-flex", alignItems: "center", gap: 5,
+    padding: "5px 12px", borderRadius: 6,
+    fontSize: 12, fontWeight: 500,
+    backgroundColor: "#f8fafc",
+    color: "#475569",
+    border: "1px solid #e2e8f0",
     whiteSpace: "nowrap",
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-    flexShrink: 0,
-    display: "inline-block",
+    fontFamily: typography.family,
+  },
+  chipDm: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    color: "#94a3b8",
+    borderColor: "rgba(255,255,255,0.1)",
   },
 
-  cardMotivo: {
-    fontSize: typography.sizes.small,
-    color: colors.text.tertiary,
-    margin: 0,
-    fontStyle: "italic",
-    lineHeight: 1.5,
+  // ── Buttons ───────────────────────────────────────────────────────────────
+  btnPrimary: {
+    padding: "9px 20px",
+    fontSize: 14, fontWeight: 600,
+    color: "#fff",
+    backgroundColor: TEAL,
+    border: "none",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontFamily: typography.family,
+    boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
+    whiteSpace: "nowrap",
+    background: TEAL,
+  },
+  btnOutline: {
+    padding: "9px 20px",
+    fontSize: 14, fontWeight: 600,
+    color: "#374151",
+    backgroundColor: "#fff",
+    border: "1px solid #d1d5db",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontFamily: typography.family,
+    whiteSpace: "nowrap",
+  },
+  btnDetail: {
+    padding: "8px 20px",
+    fontSize: 13, fontWeight: 600,
+    color: "#fff",
+    backgroundColor: TEAL,
+    border: "none",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: typography.family,
+    boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
+  },
+  btnAnalyze: {
+    width: "100%",
+    padding: "14px 20px",
+    fontSize: 18, fontWeight: 800,
+    color: "#fff",
+    backgroundColor: TEAL,
+    background: TEAL,
+    border: "none",
+    borderRadius: 12,
+    cursor: "pointer",
+    fontFamily: typography.family,
+    letterSpacing: "-0.02em",
+    boxShadow: "0 4px 16px rgba(0,117,138,0.3)",
+    position: "relative",
+    overflow: "hidden",
+  },
+  starBtn: {
+    background: "none", border: "none",
+    fontSize: 20, cursor: "pointer",
+    padding: 4, lineHeight: 1,
+    transition: "color 0.2s ease",
   },
 
+  // ── Empty state ───────────────────────────────────────────────────────────
   emptyState: {
     textAlign: "center",
-    padding: `${spacing.massive}px ${spacing.xl}px`,
-    color: colors.text.hint,
-    fontSize: typography.sizes.normal,
+    padding: "48px 20px",
+    display: "flex", flexDirection: "column", alignItems: "center",
   },
-
-  container: {
-    // Legacy: kept for compatibility
-    maxWidth: 700,
-    margin: "40px auto",
-    padding: spacing.huge,
+  emptyTitle: {
+    margin: 0, fontSize: 16, fontWeight: 600,
     fontFamily: typography.family,
-    border: `1px solid ${colors.border.active}`,
-    borderRadius: border.radius.full,
-    backgroundColor: colors.background.white,
-    textAlign: "left",
-    boxShadow: shadow.subtle,
   },
-
-  // Results view
-  resultsWrapper: {
-    maxWidth: 1000,
-    margin: "0 auto",
-    padding: spacing.huge,
+  emptySub: {
+    margin: "6px 0 0", fontSize: 13,
     fontFamily: typography.family,
   },
 
-  resultsHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: spacing.xxxl,
-    gap: spacing.xl,
-  },
-
-  resultsTitle: {
-    margin: 0,
-    fontSize: typography.sizes.h1,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
-    letterSpacing: typography.letterSpacing.tight,
-  },
-
-  profileSummary: {
-    margin: `${spacing.sm}px 0 0`,
-    fontSize: typography.sizes.normal,
-    color: colors.text.secondary,
-    lineHeight: 1.6,
-  },
-
-  resetButton: {
-    padding: `${spacing.md}px ${spacing.xl}px`,
-    fontSize: typography.sizes.normal,
-    fontWeight: typography.weights.semibold,
-    color: colors.background.white,
-    backgroundColor: colors.primary,
-    border: "none",
-    borderRadius: border.radius.md,
-    cursor: "pointer",
-    transition: `all ${transition.fast}`,
+  // ── Error ─────────────────────────────────────────────────────────────────
+  errorBox: {
+    padding: "10px 14px",
+    backgroundColor: "#fee2e2", color: "#991b1b",
+    borderRadius: 8, fontSize: 13, marginBottom: 16,
+    border: "1px solid #fecaca",
     fontFamily: typography.family,
-    whiteSpace: "nowrap",
   },
 
-  cardsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))",
-    gap: spacing.xl,
-    marginBottom: spacing.xxl,
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  modalOverlay: {
+    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 1000, padding: 16,
   },
-
-  cardMotivoBlock: {
-    backgroundColor: "#f3f4f6",
-    padding: spacing.md,
-    borderRadius: border.radius.sm,
-    marginTop: spacing.md,
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    maxWidth: 640, width: "100%",
+    maxHeight: "90vh", overflow: "auto",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+  },
+  modalHeader: {
+    padding: "20px 24px",
+    borderBottom: "1px solid #e5e7eb",
+  },
+  modalCloseX: {
+    width: 36, height: 36,
+    border: "none", backgroundColor: "#f1f5f9",
+    borderRadius: "50%", fontSize: 18,
+    cursor: "pointer", color: "#6b7280",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: typography.family, flexShrink: 0,
   },
 };
 
-// Inyectar estilos dinámicos en el head
+// ═══════════════════════════════════════════════════════════════════════════════════
+// CSS ANIMATIONS
+// ═══════════════════════════════════════════════════════════════════════════════════
+
 if (typeof document !== "undefined" && !document.getElementById("profile-animations")) {
   const style = document.createElement("style");
   style.id = "profile-animations";
   style.innerHTML = `
     @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
-
-    [style*="animation: fadeInUp"] {
-      will-change: transform, opacity;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
-
+    @keyframes skeletonPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+    @keyframes floatBounce {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-10px); }
+    }
+    @keyframes rippleEffect {
+      0%   { transform: scale(0); opacity: 0.5; }
+      100% { transform: scale(3); opacity: 0; }
+    }
+    @keyframes countPop {
+      0%   { opacity: 0; transform: scale(0.4); }
+      70%  { transform: scale(1.1); }
+      100% { opacity: 1; transform: scale(1); }
+    }
     .job-card {
-      transition: all 150ms ease-out;
+      transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1);
     }
-
     .job-card:hover {
       transform: translateY(-2px);
-      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.07) !important;
+    }
+    .analyze-ripple-btn::after {
+      content: '';
+      position: absolute;
+      width: 80px; height: 80px;
+      top: 50%; left: 50%;
+      margin: -40px 0 0 -40px;
+      background: rgba(255,255,255,0.35);
+      border-radius: 50%;
+      transform: scale(0);
+      pointer-events: none;
+    }
+    .analyze-ripple-btn.rippling::after {
+      animation: rippleEffect 0.6s linear;
+    }
+    .analyze-ripple-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,117,138,0.35) !important;
+    }
+    .summary-number-anim {
+      animation: countPop 0.5s ease-out both;
+    }
+    /* ── Responsive metrics ──────────────────────────────────── */
+    @media (max-width: 900px) {
+      .metrics-row-responsive {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+    }
+    @media (max-width: 500px) {
+      .metrics-row-responsive {
+        grid-template-columns: 1fr !important;
+      }
     }
   `;
   document.head.appendChild(style);

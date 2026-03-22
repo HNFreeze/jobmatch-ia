@@ -1,5 +1,9 @@
 # Entorno
 .env
+.env.*
+!.env.example
+!frontend/.env.example
+!backend/.env.example
 
 # Python
 __pycache__/
@@ -8,6 +12,7 @@ __pycache__/
 
 # Node
 node_modules/
+frontend/build/
 
 # IDEs
 .vscode/
@@ -16,3 +21,8 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+backend/*.log
+frontend/*.log

@@ -4,69 +4,80 @@
 export const colors = {
   // Neutrals
   text: {
-    primary: "#111827",      // Títulos, texto principal
-    secondary: "#374151",    // Etiquetas
-    tertiary: "#4b5563",     // Motivos, descripción
-    disabled: "#6b7280",     // Deshabilitado, placeholders
-    hint: "#9ca3af",         // Estados vacíos
+    primary: "#111827",
+    secondary: "#374151",
+    tertiary: "#4b5563",
+    disabled: "#6b7280",
+    hint: "#9ca3af",
   },
   border: {
-    active: "#e5e7eb",       // Bordes normales
-    inactive: "#d1d5db",     // Bordes deshabilitados
+    active: "#e5e7eb",
+    inactive: "#d1d5db",
+    glass: "rgba(255,255,255,0.3)",
   },
   background: {
-    page: "#f5f5f5",         // Fondo de página
-    card: "#f9fafb",         // Tarjetas, contenedores suaves
-    white: "#fff",           // Blanco puro
+    page: "#f8faff",
+    card: "#f9fafb",
+    white: "#fff",
+    glass: "rgba(255,255,255,0.85)",
   },
 
-  // Semáforo (Matching Results)
+  // Semáforo (Matching Results) — 2026 vibrant palette
   semaphore: {
     aplica: {
-      main: "#22c55e",       // Verde
-      bg: "#dcfce7",         // Verde claro
+      main: "#10b981",   // Emerald
+      bg: "#d1fae5",
     },
     quiza: {
-      main: "#eab308",       // Amarillo
-      bg: "#fef9c3",         // Amarillo claro
+      main: "#f59e0b",   // Amber
+      bg: "#fef3c7",
     },
     noEncaja: {
-      main: "#ef4444",       // Rojo
-      bg: "#fee2e2",         // Rojo claro
+      main: "#f43f5e",   // Rose
+      bg: "#ffe4e6",
     },
   },
 
   // Estados
-  success: "#059669",        // Éxito, salarios
+  success: "#059669",
   error: {
-    text: "#991b1b",         // Texto error
-    border: "#fecaca",       // Borde error
-    bg: "#fee2e2",           // Fondo error
+    text: "#991b1b",
+    border: "#fecaca",
+    bg: "#fee2e2",
   },
 
   // Primario
-  primary: "#3b82f6",        // Botones, links
+  primary: "#2563eb",
+};
+
+export const gradients = {
+  primary: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
+  primaryHover: "linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%)",
+  hero: "linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4c1d95 100%)",
+  text: "linear-gradient(135deg, #2563eb, #7c3aed)",
+  page: "linear-gradient(180deg, #f0f4ff 0%, #e8f0fe 100%)",
 };
 
 export const typography = {
   family: "'Segoe UI', system-ui, sans-serif",
   sizes: {
-    h1: 26,    // Títulos principales
-    h2: 16,    // Subtítulos
+    h1: 26,
+    h2: 16,
     normal: 15,
     body: 14,
     small: 13,
-    xs: 11,    // Badges
+    xs: 11,
   },
   weights: {
+    extrabold: 800,
     bold: 700,
     semibold: 600,
     normal: 400,
   },
   letterSpacing: {
-    tight: "-0.5px",
+    tight: "-0.02em",
     normal: 0,
-    wide: "0.5px",
+    wide: "0.05em",
   },
 };
 
@@ -90,6 +101,7 @@ export const border = {
     lg: 10,
     xl: 12,
     full: 14,
+    pill: 50,
     circle: "50%",
   },
   width: {
@@ -100,11 +112,16 @@ export const border = {
 };
 
 export const shadow = {
-  subtle: "0 1px 3px rgba(0,0,0,0.08)",
+  subtle: "0 1px 3px rgba(0,0,0,0.06)",
+  card: "0 8px 32px rgba(0,0,0,0.08)",
+  elevated: "0 20px 60px rgba(0,0,0,0.15)",
+  glass: "0 8px 32px rgba(31,38,135,0.07)",
+  glow: "0 0 0 3px rgba(37,99,235,0.15)",
 };
 
 export const transition = {
   fast: "0.2s ease",
+  smooth: "0.3s cubic-bezier(0.4, 0, 0.2, 1)",
 };
 
 // Presets para componentes comunes
@@ -115,11 +132,11 @@ export const componentStyles = {
       fontSize: typography.sizes.normal,
       fontWeight: typography.weights.semibold,
       color: colors.background.white,
-      backgroundColor: colors.primary,
+      background: gradients.primary,
       border: "none",
       borderRadius: border.radius.md,
       cursor: "pointer",
-      transition: `all ${transition.fast}`,
+      transition: `all ${transition.smooth}`,
       fontFamily: typography.family,
     },
     filter: {
@@ -127,12 +144,12 @@ export const componentStyles = {
         padding: `${spacing.sm}px ${spacing.md}px`,
         fontSize: typography.sizes.small,
         fontWeight: typography.weights.semibold,
-        backgroundColor: colors.primary,
+        background: gradients.primary,
         color: colors.background.white,
-        borderColor: colors.primary,
+        borderColor: "transparent",
         borderRadius: border.radius.md,
         cursor: "pointer",
-        transition: `all ${transition.fast}`,
+        transition: `all ${transition.smooth}`,
       },
       inactive: {
         padding: `${spacing.sm}px ${spacing.md}px`,
@@ -143,7 +160,7 @@ export const componentStyles = {
         borderColor: colors.border.inactive,
         borderRadius: border.radius.md,
         cursor: "pointer",
-        transition: `all ${transition.fast}`,
+        transition: `all ${transition.smooth}`,
       },
     },
   },
@@ -158,9 +175,12 @@ export const componentStyles = {
   card: {
     padding: spacing.xxl,
     borderRadius: border.radius.lg,
-    backgroundColor: colors.background.card,
-    border: `${border.width.thin} solid ${colors.border.active}`,
-    transition: `all ${transition.fast}`,
+    backgroundColor: colors.background.glass,
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    border: `1px solid ${colors.border.glass}`,
+    boxShadow: shadow.glass,
+    transition: `all ${transition.smooth}`,
   },
   badge: {
     fontSize: typography.sizes.xs,
@@ -169,6 +189,6 @@ export const componentStyles = {
     borderRadius: border.radius.sm,
     whiteSpace: "nowrap",
     textTransform: "uppercase",
-    letterSpacing: typography.letterSpacing.wide,
+    letterSpacing: "0.05em",
   },
 };
