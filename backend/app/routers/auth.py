@@ -374,14 +374,14 @@ def resend_verification_email(body: ResendVerificationRequest, request: Request)
             RateLimitRule(
                 action="auth_resend_ip",
                 bucket_key=f"ip:{client_ip}",
-                limit=5,
+                limit=20,
                 window_seconds=3600,
                 detail="Has solicitado demasiados reenvíos desde esta IP. Inténtalo más tarde.",
             ),
             RateLimitRule(
                 action="auth_resend_email",
                 bucket_key=f"email:{email}",
-                limit=3,
+                limit=10,
                 window_seconds=3600,
                 detail="Ya has solicitado varios reenvíos para este email. Espera un poco antes de volver a intentarlo.",
             ),
