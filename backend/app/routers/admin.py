@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func
 from sqlalchemy.orm import aliased
 
@@ -20,7 +21,16 @@ USER_SORT_FIELDS = {
     "email": User.email,
     "email_verified": User.email_verified,
     "is_admin": User.is_admin,
+    "is_blocked": User.is_blocked,
 }
+
+
+class UpdateQuotaRequest(BaseModel):
+    daily_ai_quota: int = Field(..., ge=1, le=200)
+
+
+class UpdateBlockRequest(BaseModel):
+    is_blocked: bool
 
 
 def _today_range():
@@ -93,6 +103,7 @@ def get_admin_users(
             User.id,
             User.email,
             User.is_admin,
+            User.is_blocked,
             User.email_verified,
             User.created_at,
             User.daily_ai_quota,
@@ -123,6 +134,7 @@ def get_admin_users(
             "id": row.id,
             "email": row.email,
             "is_admin": bool(row.is_admin),
+            "is_blocked": bool(row.is_blocked),
             "email_verified": bool(row.email_verified),
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "quota_used_today": int(row.quota_used_today or 0),
@@ -137,6 +149,77 @@ def get_admin_users(
             "sort_by": sort_by if sort_by in {*USER_SORT_FIELDS.keys(), "quota_used_today"} else "created_at",
             "sort_dir": sort_dir,
         })
+    finally:
+        db.close()
+
+
+@router.patch("/api/admin/users/{user_id}/quota")
+def update_admin_user_quota(
+    user_id: int,
+    body: UpdateQuotaRequest,
+    admin_user: User = Depends(require_admin_user),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        user.daily_ai_quota = body.daily_ai_quota
+        db.commit()
+        return JSONResponse(content={
+            "detail": "Cuota diaria actualizada",
+            "user_id": user.id,
+            "daily_ai_quota": int(user.daily_ai_quota or 0),
+            "updated_by": admin_user.email,
+        })
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.patch("/api/admin/users/{user_id}/block")
+def update_admin_user_block(
+    user_id: int,
+    body: UpdateBlockRequest,
+    admin_user: User = Depends(require_admin_user),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        if user.id == admin_user.id and body.is_blocked:
+            raise HTTPException(status_code=400, detail="No puedes bloquear tu propia cuenta de administrador")
+
+        user.is_blocked = body.is_blocked
+        user.blocked_at = datetime.utcnow() if body.is_blocked else None
+        db.commit()
+
+        return JSONResponse(content={
+            "detail": "Estado de bloqueo actualizado",
+            "user_id": user.id,
+            "is_blocked": bool(user.is_blocked),
+            "blocked_at": user.blocked_at.isoformat() if user.blocked_at else None,
+            "updated_by": admin_user.email,
+        })
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

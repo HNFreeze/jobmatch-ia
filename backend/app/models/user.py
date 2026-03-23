@@ -25,5 +25,7 @@ class User(Base):
     email_verified = Column(Boolean, default=False, nullable=False, server_default="false")
     email_verified_at = Column(DateTime, nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False, server_default="false")
+    is_blocked = Column(Boolean, default=False, nullable=False, server_default="false")
+    blocked_at = Column(DateTime, nullable=True)
     daily_ai_quota = Column(Integer, default=8, nullable=False, server_default="8")
     created_at = Column(DateTime, default=datetime.utcnow)

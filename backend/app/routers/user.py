@@ -33,6 +33,8 @@ def get_current_user_record(authorization: str = Header(None)) -> User:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no disponible")
+        if user.is_blocked:
+            raise HTTPException(status_code=403, detail="Tu cuenta ha sido bloqueada. Contacta con administracion")
         if not user.email_verified:
             raise HTTPException(status_code=403, detail="Debes verificar tu email para usar la aplicación")
         db.expunge(user)
@@ -94,6 +96,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
                 "email": user.email,
                 "email_verified": bool(user.email_verified),
                 "is_admin": bool(user.is_admin),
+                "is_blocked": bool(user.is_blocked),
                 "alias": user.alias or user.email.split("@")[0],
                 "nombre": user.nombre or "",
                 "apellidos": user.apellidos or "",

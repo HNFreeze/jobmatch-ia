@@ -4,12 +4,14 @@ import {
   getAdminAiUsage,
   getAdminDashboard,
   getAdminUsers,
+  updateAdminUserBlock,
+  updateAdminUserQuota,
 } from "../services/api";
 import { typography } from "../constants/theme";
 
 const TEAL = "#007A8A";
 
-export default function Admin({ darkMode }) {
+export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const dm = darkMode;
   const [dashboard, setDashboard] = useState(null);
   const [usersData, setUsersData] = useState(null);
@@ -21,6 +23,11 @@ export default function Admin({ darkMode }) {
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
+  const [quotaDrafts, setQuotaDrafts] = useState({});
+  const [savingQuotaId, setSavingQuotaId] = useState(null);
+  const [togglingBlockId, setTogglingBlockId] = useState(null);
+  const [actionNotice, setActionNotice] = useState("");
+  const [actionError, setActionError] = useState("");
 
   async function loadAdminData(currentPage = page, currentSearch = search, currentSortBy = sortBy, currentSortDir = sortDir) {
     setLoading(true);
@@ -42,6 +49,15 @@ export default function Admin({ darkMode }) {
       setUsersData(usersResponse);
       setActivity(activityData);
       setAiUsage(aiUsageData);
+      setQuotaDrafts((prev) => {
+        const next = { ...prev };
+        (usersResponse.items || []).forEach((user) => {
+          if (next[user.id] === undefined) {
+            next[user.id] = String(user.daily_ai_quota ?? 0);
+          }
+        });
+        return next;
+      });
     } catch (err) {
       setError(err);
     } finally {
@@ -55,17 +71,16 @@ export default function Admin({ darkMode }) {
 
   function handleSearchSubmit(event) {
     event.preventDefault();
-    const nextPage = 1;
-    setPage(nextPage);
-    loadAdminData(nextPage, search, sortBy, sortDir);
+    setPage(1);
+    loadAdminData(1, search, sortBy, sortDir);
   }
 
   function handleSortChange(nextSortBy) {
     const nextDir = nextSortBy === sortBy && sortDir === "desc" ? "asc" : "desc";
     setSortBy(nextSortBy);
     setSortDir(nextDir);
-    loadAdminData(1, search, nextSortBy, nextDir);
     setPage(1);
+    loadAdminData(1, search, nextSortBy, nextDir);
   }
 
   function changePage(nextPage) {
@@ -73,9 +88,50 @@ export default function Admin({ darkMode }) {
     loadAdminData(nextPage, search, sortBy, sortDir);
   }
 
+  async function handleQuotaSave(user) {
+    const value = Number(quotaDrafts[user.id]);
+    if (!Number.isInteger(value) || value < 1 || value > 200) {
+      setActionError("La cuota debe ser un número entero entre 1 y 200.");
+      setActionNotice("");
+      return;
+    }
+
+    setSavingQuotaId(user.id);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await updateAdminUserQuota(user.id, value);
+      setActionNotice(`Cuota actualizada para ${user.email}.`);
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setActionError(err.message || "No se pudo actualizar la cuota.");
+    } finally {
+      setSavingQuotaId(null);
+    }
+  }
+
+  async function handleBlockToggle(user) {
+    setTogglingBlockId(user.id);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await updateAdminUserBlock(user.id, !user.is_blocked);
+      setActionNotice(
+        !user.is_blocked
+          ? `Cuenta bloqueada para ${user.email}.`
+          : `Cuenta desbloqueada para ${user.email}.`
+      );
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setActionError(err.message || "No se pudo actualizar el bloqueo.");
+    } finally {
+      setTogglingBlockId(null);
+    }
+  }
+
   if (loading && !dashboard) {
     return (
-      <div style={S.page}>
+      <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
         <div style={{ ...S.centerCard, ...(dm ? S.centerCardDm : {}) }}>
           <div style={S.spinner} />
           <p style={{ ...S.centerText, color: dm ? "#94a3b8" : "#64748b" }}>Cargando panel de administración...</p>
@@ -86,12 +142,11 @@ export default function Admin({ darkMode }) {
 
   if (error?.status === 403) {
     return (
-      <div style={S.page}>
+      <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
         <div style={{ ...S.centerCard, ...(dm ? S.centerCardDm : {}) }}>
           <h1 style={{ ...S.forbiddenTitle, color: dm ? "#f8fafc" : "#111827" }}>403</h1>
-          <p style={{ ...S.centerText, color: dm ? "#94a3b8" : "#64748b" }}>
-            Esta zona está reservada para administradores.
-          </p>
+          <p style={{ ...S.centerText, color: dm ? "#94a3b8" : "#64748b" }}>Esta zona está reservada para administradores.</p>
+          <button type="button" onClick={onLogout} style={S.primaryButton}>Cerrar sesión</button>
         </div>
       </div>
     );
@@ -99,11 +154,9 @@ export default function Admin({ darkMode }) {
 
   if (error) {
     return (
-      <div style={S.page}>
+      <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
         <div style={{ ...S.centerCard, ...(dm ? S.centerCardDm : {}) }}>
-          <p style={{ ...S.centerText, color: "#b91c1c" }}>
-            {error.message || "No se pudo cargar el panel admin."}
-          </p>
+          <p style={{ ...S.centerText, color: "#b91c1c" }}>{error.message || "No se pudo cargar el panel admin."}</p>
         </div>
       </div>
     );
@@ -113,30 +166,65 @@ export default function Admin({ darkMode }) {
 
   return (
     <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
+      <div style={S.bgGlowOne} />
+      <div style={S.bgGlowTwo} />
       <div style={S.container}>
-        <div style={S.hero}>
+        <header style={{ ...S.adminHeader, ...(dm ? S.panelDm : S.panel) }}>
           <div>
-            <p style={{ ...S.kicker, color: dm ? "#5eead4" : TEAL }}>Admin</p>
-            <h1 style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de administración</h1>
+            <p style={{ ...S.kicker, color: dm ? "#67e8f9" : TEAL }}>Administración</p>
+            <h1 style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de control</h1>
             <p style={{ ...S.subtitle, color: dm ? "#94a3b8" : "#64748b" }}>
-              Visión rápida de usuarios, uso de IA y actividad reciente.
+              Gestiona usuarios, cuotas, bloqueos y observa el uso real de la plataforma.
             </p>
           </div>
-        </div>
 
-        <section style={S.section}>
+          <div style={S.adminActions}>
+            <div style={S.sectionPills}>
+              <a href="#dashboard-admin" style={S.pill}>Dashboard</a>
+              <a href="#usuarios-admin" style={S.pill}>Usuarios</a>
+              <a href="#ia-admin" style={S.pill}>Uso IA</a>
+              <a href="#actividad-admin" style={S.pill}>Actividad</a>
+            </div>
+            <div style={S.headerButtons}>
+              <button type="button" onClick={toggleDarkMode} style={S.secondaryButton}>
+                {dm ? "Modo claro" : "Modo oscuro"}
+              </button>
+              <button type="button" onClick={onLogout} style={S.primaryButton}>
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {(actionNotice || actionError) && (
+          <div style={{
+            ...S.noticeCard,
+            ...(actionError ? S.errorCard : S.successCard),
+            ...(dm ? S.noticeCardDm : {}),
+          }}>
+            {actionError || actionNotice}
+          </div>
+        )}
+
+        <section id="dashboard-admin" style={S.section}>
           <h2 style={{ ...S.sectionTitle, color: dm ? "#f8fafc" : "#111827" }}>Dashboard</h2>
           <div style={S.metricsGrid}>
             <MetricCard label="Usuarios" value={dashboard?.total_users} extra={`${dashboard?.verified_users || 0} verificados`} darkMode={dm} />
-            <MetricCard label="Altas hoy" value={dashboard?.users_registered_today} extra="Registros en el día" darkMode={dm} />
+            <MetricCard label="Altas hoy" value={dashboard?.users_registered_today} extra="Registros del día" darkMode={dm} />
             <MetricCard label="Análisis IA" value={dashboard?.total_analyses} extra={`${dashboard?.analyses_today || 0} hoy`} darkMode={dm} />
             <MetricCard label="Cartas" value={dashboard?.total_cover_letters} extra={`${dashboard?.cover_letters_today || 0} hoy`} darkMode={dm} />
           </div>
         </section>
 
-        <section style={S.section}>
+        <section id="usuarios-admin" style={S.section}>
           <div style={S.sectionHeader}>
-            <h2 style={{ ...S.sectionTitle, color: dm ? "#f8fafc" : "#111827" }}>Usuarios</h2>
+            <div>
+              <h2 style={{ ...S.sectionTitle, color: dm ? "#f8fafc" : "#111827" }}>Usuarios</h2>
+              <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b" }}>
+                Ajusta la cuota diaria y bloquea o desbloquea cuentas desde un único panel.
+              </p>
+            </div>
+
             <form onSubmit={handleSearchSubmit} style={S.searchForm}>
               <input
                 value={search}
@@ -151,21 +239,55 @@ export default function Admin({ darkMode }) {
           <div style={{ ...S.tableWrap, ...(dm ? S.panelDm : S.panel) }}>
             <div style={S.tableHead}>
               <HeaderButton label="Email" onClick={() => handleSortChange("email")} />
+              <HeaderButton label="Estado" onClick={() => handleSortChange("is_blocked")} />
               <HeaderButton label="Verificado" onClick={() => handleSortChange("email_verified")} />
-              <HeaderButton label="Admin" onClick={() => handleSortChange("is_admin")} />
               <HeaderButton label="Alta" onClick={() => handleSortChange("created_at")} />
-              <HeaderButton label="Cuota usada" onClick={() => handleSortChange("quota_used_today")} />
+              <HeaderButton label="Cuota hoy" onClick={() => handleSortChange("quota_used_today")} />
+              <div style={S.headLabel}>Gestión</div>
             </div>
 
             {(usersData?.items || []).map((user) => (
               <div key={user.id} style={{ ...S.tableRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
                 <div style={S.emailCell}>
-                  <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>{user.email}</span>
+                  <div style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>{user.email}</div>
+                  <div style={{ ...S.rowMeta, color: dm ? "#94a3b8" : "#64748b" }}>
+                    {user.is_admin ? "Administrador" : "Usuario"} · {user.is_blocked ? "Bloqueado" : "Activo"}
+                  </div>
+                </div>
+                <div>
+                  <StatusBadge label={user.is_blocked ? "Bloqueado" : "Activo"} tone={user.is_blocked ? "danger" : "success"} />
                 </div>
                 <div>{user.email_verified ? "Sí" : "No"}</div>
-                <div>{user.is_admin ? "Sí" : "No"}</div>
                 <div>{formatDate(user.created_at)}</div>
                 <div>{user.quota_used_today}/{user.daily_ai_quota}</div>
+                <div style={S.manageCell}>
+                  <div style={S.quotaEditor}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={quotaDrafts[user.id] ?? user.daily_ai_quota}
+                      onChange={(event) => setQuotaDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))}
+                      style={{ ...S.quotaInput, ...(dm ? S.inputDm : {}) }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleQuotaSave(user)}
+                      disabled={savingQuotaId === user.id}
+                      style={{ ...S.secondaryButton, opacity: savingQuotaId === user.id ? 0.6 : 1 }}
+                    >
+                      {savingQuotaId === user.id ? "Guardando..." : "Guardar cuota"}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBlockToggle(user)}
+                    disabled={togglingBlockId === user.id}
+                    style={user.is_blocked ? S.unblockButton : S.blockButton}
+                  >
+                    {togglingBlockId === user.id ? "Actualizando..." : user.is_blocked ? "Desbloquear" : "Bloquear"}
+                  </button>
+                </div>
               </div>
             ))}
 
@@ -198,7 +320,7 @@ export default function Admin({ darkMode }) {
         </section>
 
         <section style={S.twoCol}>
-          <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+          <div id="ia-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
             <h2 style={{ ...S.sectionTitle, marginBottom: 16, color: dm ? "#f8fafc" : "#111827" }}>Uso IA</h2>
             <div style={S.usageSummary}>
               <SummaryLine label="Uso total" value={`${aiUsage?.total_usage?.units || 0} unidades`} darkMode={dm} />
@@ -232,7 +354,7 @@ export default function Admin({ darkMode }) {
             </div>
           </div>
 
-          <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+          <div id="actividad-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
             <h2 style={{ ...S.sectionTitle, marginBottom: 16, color: dm ? "#f8fafc" : "#111827" }}>Actividad reciente</h2>
             {(activity?.items || []).length ? (
               activity.items.map((item, index) => (
@@ -281,6 +403,13 @@ function HeaderButton({ label, onClick }) {
   );
 }
 
+function StatusBadge({ label, tone }) {
+  const toneStyles = tone === "danger"
+    ? { backgroundColor: "rgba(239,68,68,0.12)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.18)" }
+    : { backgroundColor: "rgba(16,185,129,0.12)", color: "#059669", border: "1px solid rgba(16,185,129,0.18)" };
+  return <span style={{ ...S.statusBadge, ...toneStyles }}>{label}</span>;
+}
+
 function formatDate(value, short = false) {
   if (!value) return "-";
   try {
@@ -299,23 +428,102 @@ const S = {
     backgroundColor: "#f8fafc",
     padding: "28px 20px 40px",
     fontFamily: typography.family,
+    position: "relative",
+    overflow: "hidden",
   },
   pageDm: {
     backgroundColor: "#0f172a",
   },
+  bgGlowOne: {
+    position: "absolute",
+    top: -140,
+    right: -120,
+    width: 360,
+    height: 360,
+    borderRadius: "50%",
+    background: "rgba(34,211,238,0.10)",
+    filter: "blur(40px)",
+    pointerEvents: "none",
+  },
+  bgGlowTwo: {
+    position: "absolute",
+    bottom: -140,
+    left: -120,
+    width: 360,
+    height: 360,
+    borderRadius: "50%",
+    background: "rgba(15,23,42,0.08)",
+    filter: "blur(48px)",
+    pointerEvents: "none",
+  },
   container: {
-    maxWidth: 1240,
+    maxWidth: 1260,
     margin: "0 auto",
     display: "flex",
     flexDirection: "column",
     gap: 24,
+    position: "relative",
+    zIndex: 1,
   },
-  hero: {
+  adminHeader: {
+    borderRadius: 24,
+    padding: "22px 22px 20px",
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-end",
-    gap: 16,
+    gap: 20,
+    alignItems: "flex-start",
     flexWrap: "wrap",
+  },
+  adminActions: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    alignItems: "flex-end",
+    flex: "1 1 320px",
+  },
+  sectionPills: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  pill: {
+    textDecoration: "none",
+    border: "1px solid rgba(0,122,138,0.18)",
+    backgroundColor: "rgba(0,122,138,0.08)",
+    color: TEAL,
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  headerButtons: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  noticeCard: {
+    borderRadius: 16,
+    padding: "14px 16px",
+    fontSize: 14,
+    fontWeight: 700,
+    lineHeight: 1.6,
+  },
+  noticeCardDm: {
+    boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+  },
+  successCard: {
+    backgroundColor: "rgba(16,185,129,0.10)",
+    color: "#047857",
+    border: "1px solid rgba(16,185,129,0.18)",
+  },
+  errorCard: {
+    backgroundColor: "rgba(239,68,68,0.10)",
+    color: "#b91c1c",
+    border: "1px solid rgba(239,68,68,0.18)",
   },
   kicker: {
     margin: "0 0 8px",
@@ -334,7 +542,7 @@ const S = {
     margin: 0,
     fontSize: 14,
     lineHeight: 1.65,
-    maxWidth: 640,
+    maxWidth: 680,
   },
   section: {
     display: "flex",
@@ -344,9 +552,14 @@ const S = {
   sectionHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-end",
     gap: 16,
     flexWrap: "wrap",
+  },
+  sectionLead: {
+    margin: "6px 0 0",
+    fontSize: 13,
+    lineHeight: 1.65,
   },
   sectionTitle: {
     margin: 0,
@@ -397,10 +610,18 @@ const S = {
   },
   tableHead: {
     display: "grid",
-    gridTemplateColumns: "2.2fr 1fr 1fr 1fr 1fr",
+    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.2fr",
     gap: 12,
     padding: "14px 16px",
     backgroundColor: "rgba(0,122,138,0.08)",
+    alignItems: "center",
+  },
+  headLabel: {
+    fontSize: 12,
+    fontWeight: 900,
+    color: TEAL,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
   },
   headerButton: {
     background: "none",
@@ -417,7 +638,7 @@ const S = {
   },
   tableRow: {
     display: "grid",
-    gridTemplateColumns: "2.2fr 1fr 1fr 1fr 1fr",
+    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.2fr",
     gap: 12,
     padding: "14px 16px",
     alignItems: "center",
@@ -427,7 +648,42 @@ const S = {
   emailCell: {
     overflow: "hidden",
     textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+  },
+  rowMeta: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  manageCell: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  quotaEditor: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  quotaInput: {
+    width: 88,
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#fff",
+    padding: "10px 12px",
+    fontSize: 14,
+    outline: "none",
+    fontFamily: typography.family,
+  },
+  statusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
   },
   pagination: {
     display: "flex",
@@ -475,6 +731,28 @@ const S = {
     padding: "10px 14px",
     fontSize: 13,
     fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: typography.family,
+  },
+  blockButton: {
+    border: "1px solid rgba(239,68,68,0.22)",
+    backgroundColor: "rgba(239,68,68,0.10)",
+    color: "#b91c1c",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+    fontFamily: typography.family,
+  },
+  unblockButton: {
+    border: "1px solid rgba(16,185,129,0.22)",
+    backgroundColor: "rgba(16,185,129,0.10)",
+    color: "#047857",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
   },
@@ -565,7 +843,7 @@ const S = {
     animation: "spin 1s linear infinite",
   },
   centerText: {
-    margin: 0,
+    margin: "0 0 18px",
     fontSize: 14,
     lineHeight: 1.7,
   },
@@ -583,6 +861,13 @@ if (typeof document !== "undefined" && !document.getElementById("admin-spin-styl
   style.textContent = `
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 980px) {
+      .admin-table-head,
+      .admin-table-row {
+        grid-template-columns: 1fr;
+      }
     }
   `;
   document.head.appendChild(style);
