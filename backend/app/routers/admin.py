@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import get_session_local
 from app.models.ai_daily_usage import AIDailyUsage
+from app.models.ai_api_cost_event import AIAPICostEvent
 from app.models.application import Application
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
@@ -20,6 +21,8 @@ from app.routers.user import require_admin_user
 
 router = APIRouter()
 ADMIN_DELETE_CONFIRMATION_CODE = os.getenv("ADMIN_DELETE_CONFIRMATION_CODE", "715345")
+AI_COST_BASELINE_SPENT_USD = float(os.getenv("AI_COST_BASELINE_SPENT_USD", "0"))
+AI_COST_BASELINE_REMAINING_USD = float(os.getenv("AI_COST_BASELINE_REMAINING_USD", "0"))
 
 USER_SORT_FIELDS = {
     "created_at": User.created_at,
@@ -50,6 +53,10 @@ def _today_range():
     start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     return start, end
+
+
+def _round_money(value: float | int | None) -> float:
+    return round(float(value or 0), 4)
 
 
 @router.get("/api/admin/dashboard")
@@ -434,21 +441,38 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("today_cover_letters"),
         ).filter(AIDailyUsage.usage_date == today).one()
 
-        total_units_expr = func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("total_units")
-        match_count_expr = func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("match_count")
-        cover_letter_expr = func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letter_count")
+        usage_per_user = db.query(
+            AIDailyUsage.user_id.label("user_id"),
+            func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("total_units"),
+            func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("match_count"),
+            func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letter_count"),
+        ).group_by(
+            AIDailyUsage.user_id
+        ).subquery()
+
+        cost_per_user = db.query(
+            AIAPICostEvent.user_id.label("user_id"),
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+        ).group_by(
+            AIAPICostEvent.user_id
+        ).subquery()
 
         top_users = db.query(
             User.email,
-            total_units_expr,
-            match_count_expr,
-            cover_letter_expr,
-        ).join(
-            AIDailyUsage, AIDailyUsage.user_id == User.id
-        ).group_by(
-            User.id, User.email
+            func.coalesce(usage_per_user.c.total_units, 0).label("total_units"),
+            func.coalesce(usage_per_user.c.match_count, 0).label("match_count"),
+            func.coalesce(usage_per_user.c.cover_letter_count, 0).label("cover_letter_count"),
+            func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).label("estimated_cost_usd"),
+        ).outerjoin(
+            usage_per_user, usage_per_user.c.user_id == User.id
+        ).outerjoin(
+            cost_per_user, cost_per_user.c.user_id == User.id
+        ).filter(
+            (usage_per_user.c.user_id.isnot(None)) | (cost_per_user.c.user_id.isnot(None))
         ).order_by(
-            total_units_expr.desc(), User.email.asc()
+            func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).desc(),
+            func.coalesce(usage_per_user.c.total_units, 0).desc(),
+            User.email.asc()
         ).limit(10).all()
 
         usage_today = aliased(AIDailyUsage)
@@ -466,6 +490,35 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             used_today_expr.desc(), User.email.asc()
         ).all()
 
+        total_estimated_cost = db.query(
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
+        ).scalar() or 0.0
+        today_estimated_cost = db.query(
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
+        ).filter(
+            AIAPICostEvent.created_at >= datetime.combine(today, datetime.min.time()),
+            AIAPICostEvent.created_at < datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        ).scalar() or 0.0
+
+        by_feature = db.query(
+            AIAPICostEvent.feature,
+            func.count(AIAPICostEvent.id).label("requests"),
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+        ).group_by(
+            AIAPICostEvent.feature
+        ).order_by(
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
+            AIAPICostEvent.feature.asc(),
+        ).all()
+
+        combined_spent = AI_COST_BASELINE_SPENT_USD + float(total_estimated_cost or 0.0)
+        total_budget_reference = AI_COST_BASELINE_SPENT_USD + AI_COST_BASELINE_REMAINING_USD
+        estimated_remaining = (
+            max(total_budget_reference - combined_spent, 0.0)
+            if total_budget_reference > 0
+            else None
+        )
+
         return JSONResponse(content={
             "total_usage": {
                 "units": int(totals.total_units or 0),
@@ -482,12 +535,26 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
                 "units": int(row.total_units or 0),
                 "analyses": int(row.match_count or 0),
                 "cover_letters": int(row.cover_letter_count or 0),
+                "estimated_cost_usd": _round_money(row.estimated_cost_usd),
             } for row in top_users],
             "limit_hits": [{
                 "email": row.email,
                 "daily_ai_quota": int(row.daily_ai_quota or 0),
                 "used_today": int(row.used_today or 0),
             } for row in limit_hits],
+            "cost_estimate": {
+                "baseline_spent_usd": _round_money(AI_COST_BASELINE_SPENT_USD),
+                "baseline_remaining_usd": _round_money(AI_COST_BASELINE_REMAINING_USD),
+                "estimated_spent_since_tracking_usd": _round_money(total_estimated_cost),
+                "estimated_spent_today_usd": _round_money(today_estimated_cost),
+                "combined_spent_usd": _round_money(combined_spent),
+                "estimated_remaining_usd": _round_money(estimated_remaining) if estimated_remaining is not None else None,
+                "feature_breakdown": [{
+                    "feature": row.feature,
+                    "requests": int(row.requests or 0),
+                    "estimated_cost_usd": _round_money(row.estimated_cost_usd),
+                } for row in by_feature],
+            },
         })
     finally:
         db.close()

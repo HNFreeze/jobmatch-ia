@@ -1,6 +1,7 @@
 from app.models.cache import SearchCache
 from app.models.user import User
 from app.models.ai_daily_usage import AIDailyUsage
+from app.models.ai_api_cost_event import AIAPICostEvent
 from app.models.job_offer import JobOffer
 from app.models.application import Application
 from app.models.company_logo import CompanyLogo
@@ -13,6 +14,7 @@ __all__ = [
     "SearchCache",
     "User",
     "AIDailyUsage",
+    "AIAPICostEvent",
     "JobOffer",
     "Application",
     "CompanyLogo",

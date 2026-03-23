@@ -18,6 +18,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # Importar Base y modelos para que alembic los detecte
 from app.database import Base
 from app.models.ai_daily_usage import AIDailyUsage  # noqa: F401
+from app.models.ai_api_cost_event import AIAPICostEvent  # noqa: F401
 from app.models.cache import SearchCache  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.application import Application  # noqa: F401
