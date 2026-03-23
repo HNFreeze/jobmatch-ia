@@ -499,6 +499,87 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Nadie ha alcanzado el límite hoy.</p>
               )}
             </div>
+            <div style={S.subblock}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Evolucion de 7 dias</p>
+              {(aiUsage?.cost_estimate?.daily_breakdown || []).length ? (
+                <div style={S.timelineWrap}>
+                  {aiUsage.cost_estimate.daily_breakdown.map((item) => (
+                    <div key={item.date} style={S.timelineRow}>
+                      <div style={S.timelineDay}>
+                        <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>
+                          {formatShortDay(item.date)}
+                        </span>
+                        <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                          {item.units} u.
+                        </span>
+                      </div>
+                      <div style={{ ...S.timelineBarTrack, ...(dm ? S.timelineBarTrackDm : {}) }}>
+                        <div
+                          style={{
+                            ...S.timelineBarFill,
+                            width: `${Math.max(8, getCostBarWidth(aiUsage.cost_estimate.daily_breakdown, item.estimated_cost_usd))}%`,
+                          }}
+                        />
+                      </div>
+                      <div style={S.timelineValueWrap}>
+                        <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{formatUsd(item.estimated_cost_usd)}</span>
+                        <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                          {item.analyses} an. · {item.cover_letters} cartas
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay suficiente historico diario.</p>
+              )}
+            </div>
+
+            <div style={S.subblock}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Modelos y tokens</p>
+              {(aiUsage?.cost_estimate?.model_breakdown || []).length ? (
+                aiUsage.cost_estimate.model_breakdown.map((item) => (
+                  <div key={item.model} style={S.listRow}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ color: dm ? "#f8fafc" : "#111827" }}>{formatModelName(item.model)}</span>
+                      <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                        {item.requests} llamadas · in {formatCompactNumber(item.input_tokens)} · out {formatCompactNumber(item.output_tokens)}
+                      </span>
+                    </div>
+                    <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{formatUsd(item.estimated_cost_usd)}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay modelos registrados.</p>
+              )}
+            </div>
+
+            <div style={S.subblock}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Ultimas llamadas IA</p>
+              {(aiUsage?.cost_estimate?.recent_events || []).length ? (
+                aiUsage.cost_estimate.recent_events.map((item, index) => (
+                  <div
+                    key={`${item.created_at}-${item.feature}-${index}`}
+                    style={{ ...S.activityRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb", padding: "10px 0" }}
+                  >
+                    <div>
+                      <p style={{ ...S.activityTitle, color: dm ? "#f8fafc" : "#111827" }}>
+                        {formatFeatureLabel(item.feature)} · {formatModelName(item.model)}
+                      </p>
+                      <p style={{ ...S.activityMeta, color: dm ? "#94a3b8" : "#64748b" }}>
+                        {item.email || "Sistema"} · in {formatCompactNumber(item.input_tokens)} · out {formatCompactNumber(item.output_tokens)}
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                      <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{formatUsd(item.estimated_cost_usd)}</span>
+                      <span style={{ ...S.activityDate, color: dm ? "#64748b" : "#94a3af" }}>{formatDate(item.created_at, true)}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay llamadas recientes registradas.</p>
+              )}
+            </div>
           </div>
 
           <div id="actividad-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
@@ -591,6 +672,36 @@ function formatFeatureLabel(value) {
     cover_letter: "Carta de presentacion",
   };
   return labels[value] || value;
+}
+
+function formatModelName(value) {
+  const labels = {
+    "claude-sonnet-4-6": "Claude Sonnet 4.6",
+    "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+  };
+  return labels[value] || value;
+}
+
+function formatCompactNumber(value) {
+  const numeric = Number(value || 0);
+  if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1)}M`;
+  if (numeric >= 1000) return `${(numeric / 1000).toFixed(1)}k`;
+  return `${numeric}`;
+}
+
+function formatShortDay(value) {
+  try {
+    return new Date(value).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
+  } catch {
+    return value;
+  }
+}
+
+function getCostBarWidth(items, currentValue) {
+  const values = (items || []).map((item) => Number(item.estimated_cost_usd || 0));
+  const max = Math.max(...values, 0);
+  if (max <= 0) return 8;
+  return Math.min(100, (Number(currentValue || 0) / max) * 100);
 }
 
 const S = {
@@ -1033,6 +1144,42 @@ const S = {
     fontSize: 12,
     lineHeight: 1.5,
     fontWeight: 700,
+  },
+  timelineWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  timelineRow: {
+    display: "grid",
+    gridTemplateColumns: "74px minmax(120px, 1fr) 120px",
+    alignItems: "center",
+    gap: 10,
+  },
+  timelineDay: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+  },
+  timelineBarTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(148,163,184,0.16)",
+    overflow: "hidden",
+  },
+  timelineBarTrackDm: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  timelineBarFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #14b8a6 0%, #06b6d4 100%)",
+  },
+  timelineValueWrap: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: 2,
   },
   subblock: {
     display: "flex",
