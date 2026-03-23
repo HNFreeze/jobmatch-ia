@@ -1,13 +1,31 @@
 import { useCallback, useMemo, useState } from "react";
 import { login, register, resendVerificationEmail } from "../services/api";
-import {
-  gradients,
-  typography,
-  transition,
-} from "../constants/theme";
+import { typography, transition } from "../constants/theme";
 import TurnstileWidget from "../components/TurnstileWidget";
 
 const TURNSTILE_SITE_KEY = process.env.REACT_APP_TURNSTILE_SITE_KEY || "";
+const TEAL = "#007A8A";
+
+function RocketMark() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M14.5 3.5c-3.7 1-6.3 3.6-7.3 7.3l4 4c3.7-1 6.3-3.6 7.3-7.3l-4-4Z"
+        fill={TEAL}
+      />
+      <path
+        d="M9 16 6 19l-1-4 4 1Zm6-6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"
+        fill={TEAL}
+      />
+      <path
+        d="M13 11 5 19"
+        stroke="#0F172A"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export default function Auth({ onAuthSuccess }) {
   const [mode, setMode] = useState("login");
@@ -31,7 +49,9 @@ export default function Auth({ onAuthSuccess }) {
 
   const handleTurnstileToken = useCallback((token) => {
     setTurnstileToken(token || "");
-    if (token) setTurnstileError("");
+    if (token) {
+      setTurnstileError("");
+    }
   }, []);
 
   const handleTurnstileError = useCallback((message) => {
@@ -40,7 +60,9 @@ export default function Auth({ onAuthSuccess }) {
   }, []);
 
   async function handleResend(targetEmail = pendingVerificationEmail || email) {
-    if (!targetEmail) return;
+    if (!targetEmail) {
+      return;
+    }
     setResendLoading(true);
     setError(null);
     try {
@@ -54,30 +76,30 @@ export default function Auth({ onAuthSuccess }) {
     }
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
     setError(null);
     setNotice(null);
 
     if (mode === "register") {
       if (password !== confirmPassword) {
-        setError("Las contraseñas no coinciden");
+        setError("Las contrasenas no coinciden.");
         return;
       }
       if (!alias.trim()) {
-        setError("El alias es obligatorio");
+        setError("El alias es obligatorio.");
         return;
       }
       if (password.length < 8) {
-        setError("La contraseña debe tener al menos 8 caracteres");
+        setError("La contrasena debe tener al menos 8 caracteres.");
         return;
       }
       if (!canSubmitRegister) {
-        setError(turnstileError || "Completa la verificación anti-bot antes de crear la cuenta");
+        setError(turnstileError || "Completa la proteccion anti-bot antes de crear la cuenta.");
         return;
       }
     } else if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres");
+      setError("La contrasena debe tener al menos 8 caracteres.");
       return;
     }
 
@@ -104,8 +126,8 @@ export default function Auth({ onAuthSuccess }) {
       setPendingVerificationEmail(data.email || email.trim().toLowerCase());
       setNotice(
         data.email_sent
-          ? "Cuenta creada. Revisa tu correo para verificar tu cuenta antes de iniciar sesión."
-          : "Cuenta creada, pero no se pudo enviar el correo automáticamente. Usa el botón de reenvío."
+          ? "Cuenta creada. Revisa tu correo y verifica tu cuenta antes de iniciar sesion."
+          : "Cuenta creada, pero no se pudo enviar el correo automaticamente. Usa el reenvio manual."
       );
       setMode("login");
       setPassword("");
@@ -124,8 +146,8 @@ export default function Auth({ onAuthSuccess }) {
     }
   }
 
-  function switchMode(newMode) {
-    setMode(newMode);
+  function switchMode(nextMode) {
+    setMode(nextMode);
     setError(null);
     setNotice(null);
     setPassword("");
@@ -137,155 +159,229 @@ export default function Auth({ onAuthSuccess }) {
     setTurnstileError("");
   }
 
+  const title = mode === "login" ? "Bienvenido de nuevo." : "Crea tu acceso profesional.";
+  const intro = mode === "login"
+    ? "Accede a tu panel de precision y sigue afinando tu siguiente movimiento profesional."
+    : "Activa tu cuenta, protege el acceso con verificacion real y deja listo tu perfil para el matching.";
+  const submitLabel = loading
+    ? "Cargando..."
+    : mode === "login"
+      ? "Entrar"
+      : "Crear cuenta";
+
   return (
     <div style={S.page}>
-      <div style={S.header}>
-        <h1 style={S.mainTitle}>JobMatch IA</h1>
-        <p style={S.subtitle}>Análisis inteligente de ofertas de trabajo</p>
+      <div style={S.backgroundLayer}>
+        <div style={S.topBlob} />
+        <div style={S.bottomBlob} />
       </div>
 
-      <div style={S.card}>
-        <div style={S.tabs}>
-          <button type="button" onClick={() => switchMode("login")}
-            style={{ ...S.tab, ...(mode === "login" ? S.tabActive : S.tabInactive) }}>
-            Iniciar sesión
-          </button>
-          <button type="button" onClick={() => switchMode("register")}
-            style={{ ...S.tab, ...(mode === "register" ? S.tabActive : S.tabInactive) }}>
-            Registrarse
-          </button>
+      <header style={S.header}>
+        <div style={S.brand}>
+          <span style={S.brandIconWrap}>
+            <RocketMark />
+          </span>
+          <span>JobMatch IA</span>
         </div>
+        <div style={S.headerMeta}>Precision Match Technology</div>
+      </header>
 
-        {notice && <div style={S.notice}>{notice}</div>}
-        {error && <div style={S.error}>{error}</div>}
+      <main style={S.main}>
+        <section style={S.hero}>
+          <p style={S.kicker}>Acceso profesional</p>
+          <h1 style={S.heroTitle}>{title}</h1>
+          <p style={S.heroText}>{intro}</p>
+        </section>
 
-        {pendingVerificationEmail && (
-          <div style={S.pendingBox}>
-            <p style={S.pendingTitle}>Verificación pendiente</p>
-            <p style={S.pendingText}>
-              La cuenta asociada a <strong>{pendingVerificationEmail}</strong> necesita verificar el correo antes de acceder.
-            </p>
+        <section style={S.card}>
+          <div style={S.modeSwitch}>
             <button
               type="button"
-              onClick={() => handleResend(pendingVerificationEmail)}
-              disabled={resendLoading}
-              style={{ ...S.secondaryButton, opacity: resendLoading ? 0.7 : 1 }}
+              onClick={() => switchMode("login")}
+              style={{
+                ...S.modeButton,
+                ...(mode === "login" ? S.modeButtonActive : S.modeButtonIdle),
+              }}
             >
-              {resendLoading ? "Reenviando..." : "Reenviar email de verificación"}
+              Iniciar sesion
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("register")}
+              style={{
+                ...S.modeButton,
+                ...(mode === "register" ? S.modeButtonActive : S.modeButtonIdle),
+              }}
+            >
+              Registrarse
             </button>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} style={S.form}>
-          <div style={S.field}>
-            <label style={S.label}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              placeholder="tu@email.com"
-              style={S.input}
-            />
-          </div>
+          {notice && <div style={S.noticeBox}>{notice}</div>}
+          {error && <div style={S.errorBox}>{error}</div>}
 
-          {mode === "register" && (
-            <>
-              <div style={S.field}>
-                <label style={S.label}>
-                  ¿Cómo quieres que te llamemos? <span style={S.required}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={alias}
-                  onChange={e => setAlias(e.target.value)}
-                  required
-                  placeholder="Tu alias o apodo"
-                  style={S.input}
-                  maxLength={50}
-                />
-              </div>
-              <div style={S.fieldRow}>
-                <div style={{ ...S.field, flex: 1 }}>
-                  <label style={S.label}>Nombre <span style={S.optional}>(opcional)</span></label>
-                  <input
-                    type="text"
-                    value={nombre}
-                    onChange={e => setNombre(e.target.value)}
-                    placeholder="Tu nombre"
-                    style={S.input}
-                    maxLength={100}
-                  />
-                </div>
-                <div style={{ ...S.field, flex: 1 }}>
-                  <label style={S.label}>Apellidos <span style={S.optional}>(opcional)</span></label>
-                  <input
-                    type="text"
-                    value={apellidos}
-                    onChange={e => setApellidos(e.target.value)}
-                    placeholder="Tus apellidos"
-                    style={S.input}
-                    maxLength={200}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div style={S.field}>
-            <label style={S.label}>Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              placeholder={mode === "register" ? "Mínimo 8 caracteres" : "Tu contraseña"}
-              style={S.input}
-            />
-          </div>
-
-          {mode === "register" && (
-            <>
-              <div style={S.field}>
-                <label style={S.label}>Confirmar contraseña</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  required
-                  placeholder="Repite la contraseña"
-                  style={S.input}
-                />
-              </div>
-
-              <div style={S.turnstileSection}>
-                <label style={S.label}>Protección anti-bot</label>
-                <TurnstileWidget
-                  siteKey={TURNSTILE_SITE_KEY}
-                  onTokenChange={handleTurnstileToken}
-                  onError={handleTurnstileError}
-                />
-                <p style={S.turnstileHelp}>
-                  Usamos Cloudflare Turnstile para reducir registros automáticos y proteger el servicio.
+          {pendingVerificationEmail && (
+            <div style={S.pendingBox}>
+              <div>
+                <p style={S.pendingEyebrow}>Verificacion pendiente</p>
+                <p style={S.pendingText}>
+                  La cuenta asociada a <strong>{pendingVerificationEmail}</strong> necesita verificar el correo antes de acceder.
                 </p>
-                {turnstileError && <p style={S.turnstileError}>{turnstileError}</p>}
               </div>
-            </>
+              <button
+                type="button"
+                onClick={() => handleResend(pendingVerificationEmail)}
+                disabled={resendLoading}
+                style={{
+                  ...S.secondaryButton,
+                  opacity: resendLoading ? 0.7 : 1,
+                  cursor: resendLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                {resendLoading ? "Reenviando..." : "Reenviar email de verificacion"}
+              </button>
+            </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading || (mode === "register" && !canSubmitRegister)}
-            style={{
-              ...S.submitButton,
-              opacity: loading || (mode === "register" && !canSubmitRegister) ? 0.7 : 1,
-              cursor: loading || (mode === "register" && !canSubmitRegister) ? "not-allowed" : "pointer",
-            }}
-          >
-            {loading ? "Cargando..." : mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
-          </button>
-        </form>
-      </div>
+          <form onSubmit={handleSubmit} style={S.form}>
+            {mode === "register" && (
+              <>
+                <div style={S.row}>
+                  <div style={S.fieldGrow}>
+                    <label style={S.label}>Alias</label>
+                    <input
+                      type="text"
+                      value={alias}
+                      onChange={(event) => setAlias(event.target.value)}
+                      required
+                      placeholder="Como quieres aparecer"
+                      style={S.input}
+                      maxLength={50}
+                    />
+                  </div>
+                </div>
+
+                <div style={S.row}>
+                  <div style={S.fieldGrow}>
+                    <label style={S.label}>Nombre</label>
+                    <input
+                      type="text"
+                      value={nombre}
+                      onChange={(event) => setNombre(event.target.value)}
+                      placeholder="Opcional"
+                      style={S.input}
+                      maxLength={100}
+                    />
+                  </div>
+                  <div style={S.fieldGrow}>
+                    <label style={S.label}>Apellidos</label>
+                    <input
+                      type="text"
+                      value={apellidos}
+                      onChange={(event) => setApellidos(event.target.value)}
+                      placeholder="Opcional"
+                      style={S.input}
+                      maxLength={200}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div style={S.field}>
+              <label style={S.label}>Correo electronico</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                placeholder="nombre@ejemplo.com"
+                style={S.input}
+              />
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>Contrasena</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                placeholder={mode === "register" ? "Minimo 8 caracteres" : "Tu contrasena"}
+                style={S.input}
+              />
+            </div>
+
+            {mode === "register" && (
+              <>
+                <div style={S.field}>
+                  <label style={S.label}>Confirmar contrasena</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    required
+                    placeholder="Repite la contrasena"
+                    style={S.input}
+                  />
+                </div>
+
+                <div style={S.securityPanel}>
+                  <div style={S.securityHeader}>
+                    <span style={S.securityBadge}>Seguridad</span>
+                    <span style={S.securityMeta}>Turnstile + verificacion por email</span>
+                  </div>
+                  <TurnstileWidget
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onTokenChange={handleTurnstileToken}
+                    onError={handleTurnstileError}
+                  />
+                  <p style={S.securityHelp}>
+                    Usamos Cloudflare Turnstile para reducir registros automaticos y proteger el servicio.
+                  </p>
+                  {turnstileError && <p style={S.turnstileError}>{turnstileError}</p>}
+                </div>
+              </>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || (mode === "register" && !canSubmitRegister)}
+              style={{
+                ...S.submitButton,
+                opacity: loading || (mode === "register" && !canSubmitRegister) ? 0.72 : 1,
+                cursor: loading || (mode === "register" && !canSubmitRegister) ? "not-allowed" : "pointer",
+              }}
+            >
+              {submitLabel}
+            </button>
+          </form>
+
+          <div style={S.cardFooter}>
+            <span style={S.cardFooterText}>
+              {mode === "login" ? "No tienes cuenta?" : "Ya tienes acceso?"}
+            </span>
+            <button
+              type="button"
+              onClick={() => switchMode(mode === "login" ? "register" : "login")}
+              style={S.linkButton}
+            >
+              {mode === "login" ? "Registrate gratis" : "Inicia sesion"}
+            </button>
+          </div>
+        </section>
+
+        <div style={S.poweredRow}>
+          <div style={S.poweredLine} />
+          <span style={S.poweredText}>Protected access for JobMatch IA</span>
+          <div style={S.poweredLine} />
+        </div>
+      </main>
+
+      <footer style={S.footer}>
+        <span>Cuenta protegida con verificacion por email y anti-bot.</span>
+        <span>JobMatch IA · 2026</span>
+      </footer>
     </div>
   );
 }
@@ -293,104 +389,190 @@ export default function Auth({ onAuthSuccess }) {
 const S = {
   page: {
     minHeight: "100vh",
-    background: "#f8f9fc",
-    paddingTop: 64,
-    paddingBottom: 64,
+    backgroundColor: "#F8FAFC",
+    position: "relative",
+    overflow: "hidden",
     fontFamily: typography.family,
+    color: "#0f172a",
+    padding: "0 20px 32px",
+  },
+  backgroundLayer: {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    zIndex: 0,
+  },
+  topBlob: {
+    position: "absolute",
+    top: -120,
+    right: -120,
+    width: 420,
+    height: 420,
+    borderRadius: "50%",
+    backgroundColor: "rgba(207,250,254,0.7)",
+    filter: "blur(70px)",
+  },
+  bottomBlob: {
+    position: "absolute",
+    bottom: -160,
+    left: -140,
+    width: 420,
+    height: 420,
+    borderRadius: "50%",
+    backgroundColor: "rgba(226,232,240,0.8)",
+    filter: "blur(70px)",
   },
   header: {
-    maxWidth: 500,
+    position: "relative",
+    zIndex: 1,
+    maxWidth: 1080,
     margin: "0 auto",
-    paddingBottom: 32,
-    textAlign: "center",
+    padding: "24px 0 10px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    flexWrap: "wrap",
   },
-  mainTitle: {
+  brand: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    fontSize: 22,
+    fontWeight: 900,
+    letterSpacing: "-0.03em",
+  },
+  brandIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ECFEFF",
+    border: "1px solid #BAE6FD",
+  },
+  headerMeta: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#94a3b8",
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+  },
+  main: {
+    position: "relative",
+    zIndex: 1,
+    maxWidth: 480,
+    margin: "0 auto",
+    paddingTop: 44,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  hero: {
+    width: "100%",
+    marginBottom: 26,
+  },
+  kicker: {
     margin: "0 0 12px",
-    fontSize: 48,
-    fontWeight: 800,
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-    letterSpacing: "-1px",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    color: "#94a3b8",
   },
-  subtitle: {
+  heroTitle: {
+    margin: "0 0 14px",
+    fontSize: 46,
+    lineHeight: 1.02,
+    letterSpacing: "-0.05em",
+    fontWeight: 900,
+    color: "#0f172a",
+  },
+  heroText: {
     margin: 0,
     fontSize: 15,
-    color: "#6b7280",
-    lineHeight: 1.6,
+    lineHeight: 1.7,
+    color: "#64748b",
   },
   card: {
-    maxWidth: 520,
-    margin: "0 auto",
-    padding: 32,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    border: "1px solid #e8ecf1",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    boxShadow: "0 12px 34px rgba(15,23,42,0.06)",
+    border: "1px solid #e2e8f0",
+    borderLeft: `6px solid ${TEAL}`,
+    padding: "26px 24px 22px",
   },
-  tabs: {
+  modeSwitch: {
     display: "flex",
-    marginBottom: 24,
-    borderBottom: "2px solid #e8ecf1",
+    gap: 10,
+    marginBottom: 20,
   },
-  tab: {
+  modeButton: {
     flex: 1,
-    padding: "10px 0",
+    borderRadius: 999,
+    padding: "12px 16px",
     fontSize: 14,
-    fontWeight: 600,
-    border: "none",
-    backgroundColor: "transparent",
-    cursor: "pointer",
-    fontFamily: typography.family,
+    fontWeight: 800,
+    border: "1px solid transparent",
     transition: `all ${transition.fast}`,
+    fontFamily: typography.family,
   },
-  tabActive: {
-    color: "#2563eb",
-    borderBottom: "2px solid #2563eb",
-    marginBottom: -2,
+  modeButtonActive: {
+    backgroundColor: TEAL,
+    color: "#ffffff",
+    borderColor: "#005B66",
+    boxShadow: "0 6px 18px rgba(0,122,138,0.18)",
   },
-  tabInactive: {
-    color: "#9ca3af",
+  modeButtonIdle: {
+    backgroundColor: "#f8fafc",
+    color: "#64748b",
+    borderColor: "#e2e8f0",
+    cursor: "pointer",
   },
-  notice: {
-    padding: "10px 14px",
+  noticeBox: {
+    padding: "12px 14px",
     backgroundColor: "#ecfdf5",
     color: "#166534",
-    borderRadius: 10,
+    borderRadius: 14,
     fontSize: 13,
-    marginBottom: 16,
+    lineHeight: 1.55,
+    marginBottom: 14,
     border: "1px solid #bbf7d0",
   },
-  error: {
-    padding: "10px 14px",
-    backgroundColor: "#fee2e2",
-    color: "#991b1b",
-    borderRadius: 10,
+  errorBox: {
+    padding: "12px 14px",
+    backgroundColor: "#fef2f2",
+    color: "#b91c1c",
+    borderRadius: 14,
     fontSize: 13,
-    marginBottom: 16,
+    lineHeight: 1.55,
+    marginBottom: 14,
     border: "1px solid #fecaca",
   },
   pendingBox: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
+    gap: 12,
     padding: 16,
     marginBottom: 18,
-    borderRadius: 12,
+    borderRadius: 18,
     backgroundColor: "#f8fafc",
     border: "1px solid #e2e8f0",
   },
-  pendingTitle: {
-    margin: 0,
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#111827",
+  pendingEyebrow: {
+    margin: "0 0 6px",
+    fontSize: 11,
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+    fontWeight: 900,
   },
   pendingText: {
     margin: 0,
     fontSize: 13,
-    color: "#4b5563",
+    color: "#475569",
     lineHeight: 1.6,
   },
   form: {
@@ -398,54 +580,79 @@ const S = {
     flexDirection: "column",
     gap: 16,
   },
-  fieldRow: {
+  row: {
     display: "flex",
-    gap: 10,
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  fieldGrow: {
+    flex: "1 1 180px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
   },
   field: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 8,
   },
   label: {
     fontSize: 14,
-    fontWeight: 600,
-    color: "#374151",
-  },
-  required: {
-    color: "#ef4444",
-    fontSize: 13,
-  },
-  optional: {
-    color: "#9ca3af",
-    fontSize: 11,
-    fontWeight: 400,
+    fontWeight: 800,
+    color: "#334155",
   },
   input: {
-    padding: "10px 14px",
+    width: "100%",
+    boxSizing: "border-box",
+    backgroundColor: "rgba(248,250,252,0.85)",
+    border: "1px solid #cbd5e1",
+    color: "#0f172a",
+    borderRadius: 14,
+    padding: "14px 16px",
     fontSize: 14,
-    borderRadius: 10,
-    border: "1.5px solid #d1d5db",
-    backgroundColor: "#fff",
-    fontFamily: "inherit",
-    color: "#111827",
     outline: "none",
-    transition: `border-color ${transition.fast}`,
+    transition: `all ${transition.fast}`,
+    fontFamily: typography.family,
   },
-  turnstileSection: {
+  securityPanel: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
     backgroundColor: "#f8fafc",
     border: "1px solid #e2e8f0",
   },
-  turnstileHelp: {
+  securityHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  securityBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    color: TEAL,
+    backgroundColor: "#ecfeff",
+    border: "1px solid #bae6fd",
+  },
+  securityMeta: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: 600,
+  },
+  securityHelp: {
     margin: 0,
     fontSize: 12,
     color: "#64748b",
-    lineHeight: 1.5,
+    lineHeight: 1.6,
   },
   turnstileError: {
     margin: 0,
@@ -454,29 +661,86 @@ const S = {
     lineHeight: 1.5,
   },
   submitButton: {
-    marginTop: 8,
-    padding: "12px 20px",
+    width: "100%",
+    borderRadius: 999,
+    padding: "15px 18px",
+    border: "1px solid #005B66",
+    backgroundColor: TEAL,
+    color: "#ffffff",
     fontSize: 15,
-    fontWeight: 600,
-    color: "#fff",
-    background: gradients.primary,
-    border: "none",
-    borderRadius: 50,
+    fontWeight: 900,
     transition: `all ${transition.fast}`,
     fontFamily: typography.family,
-    width: "100%",
-    boxShadow: "0 4px 14px rgba(37,99,235,0.3)",
+    boxShadow: "0 10px 24px rgba(0,122,138,0.18)",
+    marginTop: 4,
   },
   secondaryButton: {
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#1d4ed8",
-    backgroundColor: "#eff6ff",
-    border: "1px solid #bfdbfe",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontFamily: typography.family,
     alignSelf: "flex-start",
+    borderRadius: 999,
+    padding: "11px 16px",
+    border: "1px solid #bfdbfe",
+    backgroundColor: "#eff6ff",
+    color: "#0369a1",
+    fontSize: 13,
+    fontWeight: 800,
+    fontFamily: typography.family,
+  },
+  cardFooter: {
+    marginTop: 18,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  cardFooterText: {
+    fontSize: 13,
+    color: "#64748b",
+    fontWeight: 500,
+  },
+  linkButton: {
+    border: "none",
+    backgroundColor: "transparent",
+    color: TEAL,
+    fontSize: 13,
+    fontWeight: 900,
+    cursor: "pointer",
+    padding: 0,
+    fontFamily: typography.family,
+  },
+  poweredRow: {
+    width: "100%",
+    marginTop: 28,
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    opacity: 0.72,
+  },
+  poweredLine: {
+    height: 1,
+    flex: 1,
+    backgroundColor: "#cbd5e1",
+  },
+  poweredText: {
+    fontSize: 10,
+    fontWeight: 900,
+    letterSpacing: "0.15em",
+    textTransform: "uppercase",
+    color: "#64748b",
+    textAlign: "center",
+  },
+  footer: {
+    position: "relative",
+    zIndex: 1,
+    maxWidth: 1080,
+    margin: "32px auto 0",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: 700,
   },
 };
