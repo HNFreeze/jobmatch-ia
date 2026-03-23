@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import {
+  gradients,
   typography,
   transition,
 } from "../constants/theme";
