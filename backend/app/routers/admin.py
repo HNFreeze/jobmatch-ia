@@ -59,6 +59,12 @@ def _round_money(value: float | int | None) -> float:
     return round(float(value or 0), 4)
 
 
+def _day_bounds(day):
+    start = datetime.combine(day, datetime.min.time())
+    end = start + timedelta(days=1)
+    return start, end
+
+
 @router.get("/api/admin/dashboard")
 def get_admin_dashboard(_: User = Depends(require_admin_user)):
     SessionLocal = get_session_local()
@@ -519,6 +525,58 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             else None
         )
 
+        daily_rows = []
+        for offset in range(6, -1, -1):
+            day = today - timedelta(days=offset)
+            day_start, day_end = _day_bounds(day)
+            usage_row = db.query(
+                func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("units"),
+                func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("analyses"),
+                func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letters"),
+            ).filter(
+                AIDailyUsage.usage_date == day
+            ).one()
+            cost_value = db.query(
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
+            ).filter(
+                AIAPICostEvent.created_at >= day_start,
+                AIAPICostEvent.created_at < day_end,
+            ).scalar() or 0.0
+            daily_rows.append({
+                "date": day.isoformat(),
+                "units": int(usage_row.units or 0),
+                "analyses": int(usage_row.analyses or 0),
+                "cover_letters": int(usage_row.cover_letters or 0),
+                "estimated_cost_usd": _round_money(cost_value),
+            })
+
+        model_breakdown = db.query(
+            AIAPICostEvent.model,
+            func.count(AIAPICostEvent.id).label("requests"),
+            func.coalesce(func.sum(AIAPICostEvent.input_tokens), 0).label("input_tokens"),
+            func.coalesce(func.sum(AIAPICostEvent.output_tokens), 0).label("output_tokens"),
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+        ).group_by(
+            AIAPICostEvent.model
+        ).order_by(
+            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
+            AIAPICostEvent.model.asc(),
+        ).all()
+
+        recent_events = db.query(
+            AIAPICostEvent.created_at,
+            AIAPICostEvent.feature,
+            AIAPICostEvent.model,
+            AIAPICostEvent.input_tokens,
+            AIAPICostEvent.output_tokens,
+            AIAPICostEvent.estimated_cost_usd,
+            User.email.label("email"),
+        ).outerjoin(
+            User, User.id == AIAPICostEvent.user_id
+        ).order_by(
+            AIAPICostEvent.created_at.desc()
+        ).limit(12).all()
+
         return JSONResponse(content={
             "total_usage": {
                 "units": int(totals.total_units or 0),
@@ -554,6 +612,23 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
                     "requests": int(row.requests or 0),
                     "estimated_cost_usd": _round_money(row.estimated_cost_usd),
                 } for row in by_feature],
+                "daily_breakdown": daily_rows,
+                "model_breakdown": [{
+                    "model": row.model,
+                    "requests": int(row.requests or 0),
+                    "input_tokens": int(row.input_tokens or 0),
+                    "output_tokens": int(row.output_tokens or 0),
+                    "estimated_cost_usd": _round_money(row.estimated_cost_usd),
+                } for row in model_breakdown],
+                "recent_events": [{
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "feature": row.feature,
+                    "model": row.model,
+                    "email": row.email,
+                    "input_tokens": int(row.input_tokens or 0),
+                    "output_tokens": int(row.output_tokens or 0),
+                    "estimated_cost_usd": _round_money(row.estimated_cost_usd),
+                } for row in recent_events],
             },
         })
     finally:
