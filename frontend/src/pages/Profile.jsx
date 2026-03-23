@@ -915,6 +915,30 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           <p style={{ margin: "5px 0 0", fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 500, fontFamily: typography.family, display: "flex", alignItems: "center", gap: 6 }}>
                             <span style={{ fontSize: 13 }}>🏢</span> {offer.empresa}
                           </p>
+                          {offer.company_rating_status === "found" && offer.company_rating_value != null && (
+                            <div style={{
+                              marginTop: 7,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              padding: "4px 10px",
+                              borderRadius: 999,
+                              backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fff7ed",
+                              border: `1px solid ${dm ? "rgba(245,158,11,0.22)" : "#fed7aa"}`,
+                              color: dm ? "#fbbf24" : "#b45309",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              fontFamily: typography.family,
+                            }}>
+                              <span style={{ fontSize: 12 }}>★</span>
+                              {offer.company_rating_value.toFixed(1)}
+                              {offer.company_rating_count ? (
+                                <span style={{ color: dm ? "#94a3b8" : "#9ca3af", fontWeight: 600 }}>
+                                  ({offer.company_rating_count})
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
                           <span style={{

@@ -29,6 +29,7 @@ def normalize_company_name(name: str | None) -> str:
 
 def build_logo_candidates(domain: str) -> list[tuple[str, str]]:
     return [
+        (f"https://www.google.com/s2/favicons?sz=128&domain_url={domain}", "google_s2"),
         (f"https://{domain}/favicon.ico", "site_favicon"),
         (f"https://{domain}/apple-touch-icon.png", "apple_touch_icon"),
         (f"https://logo.clearbit.com/{domain}", "clearbit"),
@@ -82,6 +83,7 @@ def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client
     for url in urls:
         domain = _extract_company_domain(url)
         if domain: break
+    extracted_domain = domain
 
     guessed_domains = [domain] if domain else _guess_domains(name)
     best_candidate_url = None
@@ -109,6 +111,13 @@ def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client
         record.status = "found"
         record.logo_url = best_candidate_url
         record.source = best_source
+    elif extracted_domain:
+        # Pragmatic fallback: Google S2 favicon usually returns a usable brand icon
+        # for a known company domain without requiring us to scrape the site.
+        record.status = "found"
+        record.logo_url = f"https://www.google.com/s2/favicons?sz=128&domain_url={extracted_domain}"
+        record.source = "google_s2"
+        record.resolved_domain = extracted_domain
     else:
         record.source = "site_favicon"
         record.status = "failed" if last_error else "not_found"
@@ -131,6 +140,7 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
     if not norm_name: return None
     
     row = db.query(CompanyData).filter(CompanyData.company_name_normalized == norm_name).first()
+    resolved = None
     if not row or (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending":
         urls = [offer_url] if offer_url else []
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
@@ -157,7 +167,14 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
             db.refresh(row)
         except Exception:
             db.rollback()
-            return None
+            fallback = resolved or row
+            return {
+                "name": fallback.company_name_original,
+                "logo_url": fallback.logo_url if fallback.status == "found" else None,
+                "rating_value": fallback.rating_value if fallback.rating_status == "found" else None,
+                "rating_count": fallback.rating_count if fallback.rating_status == "found" else None,
+                "rating_status": fallback.rating_status,
+            }
             
     return {
         "name": row.company_name_original,
@@ -212,15 +229,19 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
         if (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending"
     ]
 
+    transient_rows: dict[str, CompanyData] = {}
     if missing_names or retry_names:
         new_rows: list[CompanyData] = []
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
             for normalized_name in missing_names:
                 payload = grouped[normalized_name]
-                new_rows.append(_resolve_company_record(payload["name"], payload["urls"], client))
+                resolved = _resolve_company_record(payload["name"], payload["urls"], client)
+                transient_rows[normalized_name] = resolved
+                new_rows.append(resolved)
             for normalized_name in retry_names:
                 payload = grouped[normalized_name]
                 resolved = _resolve_company_record(payload["name"], payload["urls"], client)
+                transient_rows[normalized_name] = resolved
                 row = rows_by_name[normalized_name]
                 row.company_name_original = resolved.company_name_original
                 row.resolved_domain = resolved.resolved_domain
@@ -240,11 +261,18 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
                 db.commit()
             except Exception:
                 db.rollback()
+                for normalized_name, resolved in transient_rows.items():
+                    rows_by_name[normalized_name] = resolved
 
             refreshed_rows = db.query(CompanyData).filter(
                 CompanyData.company_name_normalized.in_(normalized_names)
             ).all()
             rows_by_name = {row.company_name_normalized: row for row in refreshed_rows}
+            rows_by_name.update({
+                normalized_name: row
+                for normalized_name, row in transient_rows.items()
+                if normalized_name not in rows_by_name
+            })
 
     for normalized_name, payload in grouped.items():
         row = rows_by_name.get(normalized_name)
