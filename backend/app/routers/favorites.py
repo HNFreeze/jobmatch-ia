@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.database import get_session_local
 from app.models.favorite import Favorite
 from app.routers.user import get_current_user_id
-from app.services.company_logo_service import enrich_items_with_company_logos
+from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
 
 router = APIRouter()
 

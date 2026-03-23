@@ -1229,7 +1229,20 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             </span>
                           </div>
                         </div>
-                        <CompanyLogo name={selectedOffer.empresa} logoUrl={selectedOffer.company_logo_url} size={56} darkMode={dm} />
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                          <CompanyLogo name={selectedOffer.empresa} logoUrl={selectedOffer.company_logo_url} size={56} darkMode={dm} />
+                          {selectedOffer.company_rating_status === "found" && selectedOffer.company_rating_value != null ? (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#f1f5f9" : "#374151", display: "flex", alignItems: "center", gap: 4, fontFamily: typography.family }}>
+                              <span style={{ color: "#f59e0b", fontSize: 14 }}>★</span>
+                              {selectedOffer.company_rating_value.toFixed(1)}
+                              <span style={{ color: dm ? "#64748b" : "#9ca3af", fontWeight: 500, fontSize: 11, marginLeft: 2 }}>({selectedOffer.company_rating_count})</span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af", fontFamily: typography.family, textAlign: "center", maxWidth: 100, lineHeight: 1.2 }}>
+                              No hay valoraciones disponibles
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Tag pills */}

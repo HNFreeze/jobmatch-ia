@@ -213,8 +213,16 @@ export async function generateCoverLetter(oferta, perfil) {
   const response = await fetch(`${API_URL}/api/cover-letter`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ oferta, perfil }),
   });
   if (!response.ok) throw await buildApiError(response, "Error al generar la carta");
+  return response.json();
+}
+
+// Company
+export async function getCompanyInfo(name) {
+  const response = await fetch(`${API_URL}/api/company/${encodeURIComponent(name)}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar info de empresa");
   return response.json();
 }
