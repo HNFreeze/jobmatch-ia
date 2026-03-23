@@ -45,6 +45,12 @@ def get_current_user_id(user: User = Depends(get_current_user_record)) -> int:
     return user.id
 
 
+def require_admin_user(user: User = Depends(get_current_user_record)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Acceso restringido a administradores")
+    return user
+
+
 class Language(BaseModel):
     idioma: str
     nivel: str
@@ -87,6 +93,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
             content={
                 "email": user.email,
                 "email_verified": bool(user.email_verified),
+                "is_admin": bool(user.is_admin),
                 "alias": user.alias or user.email.split("@")[0],
                 "nombre": user.nombre or "",
                 "apellidos": user.apellidos or "",

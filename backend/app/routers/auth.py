@@ -252,7 +252,12 @@ def login(body: LoginRequest, request: Request):
 
         token = create_access_token(user.id, user.email)
         return JSONResponse(
-            content={"token": token, "email": user.email, "alias": user.alias or user.email.split("@")[0]},
+            content={
+                "token": token,
+                "email": user.email,
+                "alias": user.alias or user.email.split("@")[0],
+                "is_admin": bool(user.is_admin),
+            },
             media_type="application/json; charset=utf-8",
         )
     except HTTPException as e:

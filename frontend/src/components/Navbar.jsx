@@ -5,7 +5,7 @@ import {
   transition,
 } from "../constants/theme";
 
-const NAV_LINKS = [
+const BASE_NAV_LINKS = [
   { key: "buscar",       label: "Buscar ofertas" },
   { key: "mapa",         label: "Mapa" },
   { key: "favoritos",    label: "Favoritos" },
@@ -18,9 +18,13 @@ export default function Navbar({
   darkMode, toggleDarkMode,
   progressDone, profileComplete, hasSearched,
   profileCompletion = 0,
+  isAdmin = false,
 }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const navLinks = isAdmin
+    ? [...BASE_NAV_LINKS, { key: "admin", label: "Admin" }]
+    : BASE_NAV_LINKS;
 
   useEffect(() => {
     function handleScroll() { setScrolled(window.scrollY > 10); }
@@ -79,7 +83,7 @@ export default function Navbar({
 
           {/* Desktop links */}
           <div className="nav-links" style={S.links}>
-            {NAV_LINKS.map(item => (
+            {navLinks.map(item => (
               <button
                 key={item.key}
                 onClick={() => navigate(item.key)}
@@ -155,7 +159,7 @@ export default function Navbar({
           background: dm ? "#1e293b" : "#fff",
           borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e8ecf1"}`,
         }}>
-          {NAV_LINKS.map(item => (
+          {navLinks.map(item => (
             <button
               key={item.key}
               onClick={() => navigate(item.key)}

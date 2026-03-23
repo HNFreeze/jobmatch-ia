@@ -10,9 +10,10 @@ import MapaOfertas from "./pages/MapaOfertas";
 import Favoritos from "./pages/Favoritos";
 import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
+import Admin from "./pages/Admin";
 import { getUserProfile, updateUserProfile, getHistory } from "./services/api";
 
-const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas"];
+const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
 
 function computeCompletion(profile) {
@@ -37,6 +38,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     localStorage.setItem("darkMode", darkMode);
@@ -62,10 +64,12 @@ function App() {
         getUserProfile(),
         getHistory().catch(() => []),
       ]);
+      setCurrentUser(profile);
       setProfileCompletion(computeCompletion(profile));
       setHasSearched(Array.isArray(history) && history.length > 0);
     } catch {
       // token invalid or server down
+      setCurrentUser(null);
     }
   }, []);
 
@@ -94,6 +98,7 @@ function App() {
     setShowOnboarding(false);
     setProfileCompletion(0);
     setHasSearched(false);
+    setCurrentUser(null);
     navigateTo("home");
   };
 
@@ -138,6 +143,7 @@ function App() {
           profileComplete={profileComplete}
           hasSearched={hasSearched}
           profileCompletion={profileCompletion}
+          isAdmin={Boolean(currentUser?.is_admin)}
         />
       )}
 
@@ -155,6 +161,7 @@ function App() {
               if (!profile.onboarding_completed) {
                 setShowOnboarding(true);
               }
+              setCurrentUser(profile);
               setProfileCompletion(computeCompletion(profile));
             } catch {
               // ignore
@@ -197,6 +204,7 @@ function App() {
           darkMode={darkMode}
         />
       )}
+      {page === "admin" && <Admin darkMode={darkMode} />}
 
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>
