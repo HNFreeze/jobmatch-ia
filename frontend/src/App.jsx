@@ -21,7 +21,7 @@ const PAGE_TITLES = {
   auth: "Acceso | JobMatch IA",
   "verify-email": "Verificar correo | JobMatch IA",
   buscar: "Ofertas analizadas | JobMatch IA",
-  mapa: "Mapa de ofertas | JobMatch IA",
+  mapa: "Ubicaciones | JobMatch IA",
   favoritos: "Favoritos | JobMatch IA",
   candidaturas: "Candidaturas | JobMatch IA",
   "user-profile": "Mi perfil | JobMatch IA",
@@ -105,7 +105,7 @@ function App() {
     setPage(newPage);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("email");
     localStorage.removeItem("alias");
@@ -116,7 +116,24 @@ function App() {
     setHasSearched(false);
     setCurrentUser(null);
     navigateTo("home");
-  };
+  }, []);
+
+  useEffect(() => {
+    function handleForcedLogout() {
+      handleLogout();
+    }
+
+    window.addEventListener("jobmatch:force-logout", handleForcedLogout);
+    return () => window.removeEventListener("jobmatch:force-logout", handleForcedLogout);
+  }, [handleLogout]);
+
+  useEffect(() => {
+    if (!localStorage.getItem("token")) return undefined;
+    const intervalId = window.setInterval(() => {
+      refreshProfileState();
+    }, 45000);
+    return () => window.clearInterval(intervalId);
+  }, [refreshProfileState, currentUser?.id]);
 
   useEffect(() => {
     const resolve = () => {

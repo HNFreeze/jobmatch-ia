@@ -1,106 +1,142 @@
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { colors, gradients, typography, spacing, shadow, transition } from "../constants/theme";
+import { typography, transition } from "../constants/theme";
 
-// Spanish city coordinates
-const CITY_COORDS = {
-  madrid: [40.4168, -3.7038],
-  barcelona: [41.3851, 2.1734],
-  valencia: [39.4699, -0.3763],
-  sevilla: [37.3891, -5.9845],
-  bilbao: [43.2630, -2.9350],
-  málaga: [36.7213, -4.4214],
-  zaragoza: [41.6488, -0.8891],
-  murcia: [37.9922, -1.1307],
-  alicante: [38.3452, -0.4810],
-  valladolid: [41.6523, -4.7245],
-  granada: [37.1773, -3.5986],
-  "a coruña": [43.3623, -8.4115],
+const TEAL = "#007A8A";
+
+const RESULT_META = {
+  APLICA: { color: "#10b981", bg: "rgba(16,185,129,0.12)", label: "Aplica" },
+  "QUIZÁ": { color: "#f59e0b", bg: "rgba(245,158,11,0.12)", label: "Quizá" },
+  NO_ENCAJA: { color: "#f43f5e", bg: "rgba(244,63,94,0.12)", label: "No encaja" },
 };
 
-// Default center (Spain center)
-const SPAIN_CENTER = [40.0, -3.5];
+function normalizeLocationLabel(rawLocation) {
+  if (!rawLocation) return "Sin ubicacion clara";
 
-// Icon colors mapping
-const ICON_COLORS = {
-  APLICA: "#10b981",    // Green
-  QUIZÁ: "#f59e0b",     // Amber
-  NO_ENCAJA: "#f43f5e", // Rose
-};
+  const raw = String(rawLocation).trim();
+  const lower = raw.toLowerCase();
 
-function createCustomIcon(color, count = null) {
-  const badge = count && count > 3 ? `<div style="position: absolute; top: -8px; right: -8px; background: #e63946; color: white; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white;">${count}</div>` : '';
-  return L.divIcon({
-    html: `
-      <div style="
-        position: relative;
-        width: 32px;
-        height: 32px;
-        background: ${color};
-        border: 3px solid white;
-        border-radius: 50%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-      ">
-        <span style="font-size: 16px;">📌</span>
-        ${badge}
-      </div>
-    `,
-    iconSize: [32, 32],
-    className: "custom-marker",
-  });
+  if (
+    lower.includes("remote") ||
+    lower.includes("remoto") ||
+    lower.includes("teletrabajo")
+  ) {
+    return "Remoto";
+  }
+
+  const firstChunk = raw.split(",")[0]?.trim() || raw;
+  return firstChunk || "Sin ubicacion clara";
 }
 
-function getCityCoordinates(location) {
-  if (!location) return SPAIN_CENTER;
-  const normalized = location.toLowerCase().trim();
-  for (const [city, coords] of Object.entries(CITY_COORDS)) {
-    if (normalized.includes(city)) {
-      return coords;
+function inferWorkMode(offer) {
+  const explicit = offer?.signals_summary?.work_mode;
+  if (explicit === "remote") return "Remoto";
+  if (explicit === "hybrid") return "Hibrido";
+  if (explicit === "onsite") return "Presencial";
+
+  const text = `${offer?.ubicacion || ""} ${offer?.descripcion || ""}`.toLowerCase();
+  if (text.includes("remote") || text.includes("remoto") || text.includes("teletrabajo")) return "Remoto";
+  if (text.includes("hybrid") || text.includes("hibrid") || text.includes("hibrido")) return "Hibrido";
+  if (text.includes("presencial") || text.includes("onsite")) return "Presencial";
+  return "No indicado";
+}
+
+function buildLocationGroups(offers) {
+  const groups = new Map();
+
+  offers.forEach((offer) => {
+    const locationKey = normalizeLocationLabel(offer.ubicacion);
+    if (!groups.has(locationKey)) {
+      groups.set(locationKey, {
+        location: locationKey,
+        offers: [],
+        counts: { APLICA: 0, "QUIZÁ": 0, NO_ENCAJA: 0 },
+        bestScore: 0,
+        avgScore: 0,
+      });
     }
+
+    const group = groups.get(locationKey);
+    group.offers.push(offer);
+    group.counts[offer.resultado] = (group.counts[offer.resultado] || 0) + 1;
+    group.bestScore = Math.max(group.bestScore, Number(offer.match_score ?? offer.puntuacion ?? 0));
+  });
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const totalScore = group.offers.reduce(
+        (sum, offer) => sum + Number(offer.match_score ?? offer.puntuacion ?? 0),
+        0
+      );
+      return {
+        ...group,
+        avgScore: group.offers.length ? Math.round(totalScore / group.offers.length) : 0,
+        topOffers: group.offers
+          .slice()
+          .sort((a, b) => Number(b.match_score ?? b.puntuacion ?? 0) - Number(a.match_score ?? a.puntuacion ?? 0))
+          .slice(0, 3),
+      };
+    })
+    .sort((a, b) => {
+      if (b.counts.APLICA !== a.counts.APLICA) return b.counts.APLICA - a.counts.APLICA;
+      if (b.avgScore !== a.avgScore) return b.avgScore - a.avgScore;
+      return b.offers.length - a.offers.length;
+    });
+}
+
+function formatWorkModeSummary(offers) {
+  const summary = { Remoto: 0, Hibrido: 0, Presencial: 0, "No indicado": 0 };
+  offers.forEach((offer) => {
+    const mode = inferWorkMode(offer);
+    summary[mode] = (summary[mode] || 0) + 1;
+  });
+  return summary;
+}
+
+function formatOfferAge(dateString) {
+  if (!dateString) return "Fecha no disponible";
+  try {
+    const published = new Date(dateString);
+    const now = new Date();
+    const diff = Math.max(0, now - published);
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    if (days === 0) return "Publicada hoy";
+    if (days === 1) return "Publicada hace 1 dia";
+    return `Publicada hace ${days} dias`;
+  } catch {
+    return "Fecha no disponible";
   }
-  return SPAIN_CENTER;
+}
+
+function MetricCard({ label, value, hint, darkMode }) {
+  return (
+    <div style={{ ...S.metricCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+      <div style={{ ...S.metricLabel, color: darkMode ? "#94a3b8" : "#64748b" }}>{label}</div>
+      <div style={{ ...S.metricValue, color: darkMode ? "#f8fafc" : "#0f172a" }}>{value}</div>
+      <div style={{ ...S.metricHint, color: darkMode ? "#5eead4" : TEAL }}>{hint}</div>
+    </div>
+  );
 }
 
 export default function MapaOfertas({ analysisResults, darkMode }) {
-  const [selectedMarker, setSelectedMarker] = useState(null);
   const offers = Array.isArray(analysisResults) ? analysisResults : (analysisResults?.offers || []);
+  const locationGroups = buildLocationGroups(offers);
+  const workModeSummary = formatWorkModeSummary(offers);
+  const totalAplica = offers.filter((offer) => offer.resultado === "APLICA").length;
+  const topLocations = locationGroups.slice(0, 6);
+  const topOffers = offers
+    .slice()
+    .sort((a, b) => Number(b.match_score ?? b.puntuacion ?? 0) - Number(a.match_score ?? a.puntuacion ?? 0))
+    .slice(0, 6);
 
-  // Group offers by city and apply offset
-  const groupedOffers = offers.map((offer, idx) => {
-    const baseCoords = getCityCoordinates(offer.ubicacion);
-    const city = offer.ubicacion || "unknown";
-    const offersInCity = offers.filter(o => (o.ubicacion || "unknown") === city);
-    const indexInCity = offersInCity.indexOf(offer);
-
-    // Apply small random offset (±0.01 degrees ≈ 1km)
-    const offsetLat = (Math.random() - 0.5) * 0.02;
-    const offsetLng = (Math.random() - 0.5) * 0.02;
-
-    return {
-      ...offer,
-      coords: [baseCoords[0] + offsetLat, baseCoords[1] + offsetLng],
-      cityCount: offersInCity.length,
-    };
-  });
-
-  const dmPage = darkMode ? { background: "#0f172a" } : {};
-  const dmCard = darkMode ? { backgroundColor: "#1e293b" } : {};
-  const dmText = darkMode ? { color: "#f1f5f9" } : {};
-
-  if (offers.length === 0) {
+  if (!offers.length) {
     return (
-      <div style={{ ...styles.emptyContainer, ...dmPage }}>
-        <div style={{ ...styles.emptyCard, ...dmCard }}>
-          <div style={styles.emptyIcon}>🗺️</div>
-          <h2 style={{ ...styles.emptyTitle, ...dmText }}>Aún no hay ofertas en el mapa</h2>
-          <p style={{ ...styles.emptySubtitle, ...(darkMode ? { color: "#94a3b8" } : {}) }}>
-            Realiza un análisis de ofertas para verlas en el mapa interactivo
+      <div style={{ ...S.page, ...(darkMode ? S.pageDark : {}) }}>
+        <div style={{ ...S.emptyCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+          <div style={S.emptyIcon}>Ubicaciones</div>
+          <h2 style={{ ...S.emptyTitle, color: darkMode ? "#f8fafc" : "#0f172a" }}>
+            Aun no hay distribucion geografica
+          </h2>
+          <p style={{ ...S.emptyText, color: darkMode ? "#94a3b8" : "#64748b" }}>
+            Primero analiza ofertas y despues veras en que ciudades o zonas se concentra mejor tu busqueda.
           </p>
         </div>
       </div>
@@ -108,296 +144,543 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
   }
 
   return (
-    <div style={{ ...styles.pageWrapper, ...dmPage }}>
-      {/* Header */}
-      <div style={styles.header}>
-        <h1 style={{ ...styles.title, ...dmText }}>Mapa de Ofertas de Trabajo</h1>
-        <p style={{ ...styles.subtitle, ...(darkMode ? { color: "#94a3b8" } : {}) }}>
-          {offers.length} oferta{offers.length !== 1 ? "s" : ""} del último análisis
-        </p>
-      </div>
-
-      {/* Legend */}
-      <div style={styles.legend}>
-        <div style={styles.legendItem}>
-          <div style={{ ...styles.legendDot, backgroundColor: "#10b981" }} />
-          <span>APLICA</span>
-        </div>
-        <div style={styles.legendItem}>
-          <div style={{ ...styles.legendDot, backgroundColor: "#f59e0b" }} />
-          <span>QUIZÁ</span>
-        </div>
-        <div style={styles.legendItem}>
-          <div style={{ ...styles.legendDot, backgroundColor: "#f43f5e" }} />
-          <span>NO ENCAJA</span>
-        </div>
-      </div>
-
-      {/* Map + Side panel */}
-      <div style={styles.mapWrapper}>
-        <div style={styles.mapContainer}>
-          <MapContainer
-            center={SPAIN_CENTER}
-            zoom={6}
-            style={styles.map}
-            scrollWheelZoom={true}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-            {groupedOffers.map((offer, idx) => {
-              const iconColor = ICON_COLORS[offer.resultado] || "#8b5cf6";
-
-              return (
-                <Marker
-                  key={idx}
-                  position={offer.coords}
-                  icon={createCustomIcon(iconColor, offer.cityCount > 3 ? offer.cityCount : null)}
-                  eventHandlers={{
-                    click: () => setSelectedMarker(idx),
-                  }}
-                >
-                  <Popup>
-                    <div style={styles.popupContent}>
-                      <h3 style={styles.popupTitle}>{offer.titulo}</h3>
-                      <p style={styles.popupCompany}>{offer.empresa}</p>
-                      {offer.salario && (
-                        <p style={styles.popupSalary}>💷 {offer.salario}</p>
-                      )}
-                      {offer.ubicacion && (
-                        <p style={styles.popupLocation}>📍 {offer.ubicacion}</p>
-                      )}
-                      <div style={styles.popupResult}>
-                        <span style={{
-                          ...styles.resultBadge,
-                          backgroundColor: ICON_COLORS[offer.resultado] || "#8b5cf6",
-                        }}>
-                          {offer.resultado}
-                        </span>
-                      </div>
-                      <a
-                        href={offer.redirect_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={styles.detailButton}
-                      >
-                        Ver detalle
-                      </a>
-                    </div>
-                  </Popup>
-                </Marker>
-              );
-            })}
-          </MapContainer>
-        </div>
-
-        {/* Side panel */}
-        <div style={{ ...styles.sidePanel, ...dmCard }}>
-          <h3 style={{ ...styles.sidePanelTitle, ...dmText }}>Resumen</h3>
-          <div style={styles.sidePanelTotal}>
-            <span style={{ fontSize: 36, fontWeight: 800, color: darkMode ? "#f1f5f9" : "#1e293b" }}>{offers.length}</span>
-            <span style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#6b7280", marginTop: 2 }}>ofertas totales</span>
+    <div style={{ ...S.page, ...(darkMode ? S.pageDark : {}) }}>
+      <div style={S.container}>
+        <header style={{ ...S.heroCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+          <div>
+            <p style={{ ...S.kicker, color: darkMode ? "#5eead4" : TEAL }}>Ubicaciones</p>
+            <h1 style={{ ...S.heroTitle, color: darkMode ? "#f8fafc" : "#0f172a" }}>
+              Donde se concentran las mejores oportunidades
+            </h1>
+            <p style={{ ...S.heroText, color: darkMode ? "#94a3b8" : "#64748b" }}>
+              Hemos sustituido el mapa exacto por una vista mas util y honesta: agrupamos las ofertas por ciudad o zona publicada, sin fingir coordenadas reales de empresa.
+            </p>
           </div>
-          <div style={styles.sidePanelDivider} />
-          {[
-            { key: "APLICA",    color: "#10b981", label: "APLICA" },
-            { key: "QUIZÁ",     color: "#f59e0b", label: "QUIZÁ" },
-            { key: "NO_ENCAJA", color: "#f43f5e", label: "NO ENCAJA" },
-          ].map(({ key, color, label }) => {
-            const count = offers.filter(o => o.resultado === key).length;
-            const pct = offers.length ? Math.round((count / offers.length) * 100) : 0;
-            return (
-              <div key={key} style={styles.sidePanelRow}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: darkMode ? "#94a3b8" : "#374151", letterSpacing: "0.04em" }}>{label}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 18, fontWeight: 800, color }}>{count}</span>
-                </div>
-                <div style={{ height: 5, backgroundColor: darkMode ? "#334155" : "#e5e7eb", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${pct}%`, backgroundColor: color, borderRadius: 3, transition: "width 0.6s ease" }} />
-                </div>
-                <div style={{ fontSize: 10, color: darkMode ? "#64748b" : "#9ca3af", marginTop: 2, textAlign: "right" }}>{pct}%</div>
+
+          <div style={S.heroBadge}>
+            <span style={{ ...S.heroBadgeCount, color: darkMode ? "#f8fafc" : "#0f172a" }}>{locationGroups.length}</span>
+            <span style={{ ...S.heroBadgeLabel, color: darkMode ? "#94a3b8" : "#64748b" }}>zonas detectadas</span>
+          </div>
+        </header>
+
+        <section style={S.metricsGrid}>
+          <MetricCard
+            label="Ofertas analizadas"
+            value={offers.length}
+            hint={`${totalAplica} con APLICA`}
+            darkMode={darkMode}
+          />
+          <MetricCard
+            label="Remoto"
+            value={workModeSummary.Remoto || 0}
+            hint="modalidad detectada"
+            darkMode={darkMode}
+          />
+          <MetricCard
+            label="Hibrido"
+            value={workModeSummary.Hibrido || 0}
+            hint="requiere presencia parcial"
+            darkMode={darkMode}
+          />
+          <MetricCard
+            label="Presencial"
+            value={workModeSummary.Presencial || 0}
+            hint="depende mas de ubicacion"
+            darkMode={darkMode}
+          />
+        </section>
+
+        <section className="locations-section-grid" style={S.sectionGrid}>
+          <div style={{ ...S.sectionCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+            <div style={S.sectionHeader}>
+              <div>
+                <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Mejores ubicaciones para ti</h2>
+                <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                  Priorizadas por volumen de APLICA, afinidad media y numero total de ofertas.
+                </p>
               </div>
-            );
-          })}
-        </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {topLocations.map((group) => {
+                const total = group.offers.length;
+                const appliesPct = total ? Math.round((group.counts.APLICA / total) * 100) : 0;
+                const maybePct = total ? Math.round((group.counts["QUIZÁ"] / total) * 100) : 0;
+                const noPct = Math.max(0, 100 - appliesPct - maybePct);
+
+                return (
+                  <div key={group.location} style={{ ...S.locationCard, ...(darkMode ? S.locationCardDark : {}) }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ ...S.locationName, color: darkMode ? "#f8fafc" : "#111827" }}>{group.location}</div>
+                        <div style={{ ...S.locationMeta, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                          {total} oferta{total !== 1 ? "s" : ""} · afinidad media {group.avgScore}%
+                        </div>
+                      </div>
+                      <div style={{ ...S.bestScoreBadge, color: darkMode ? "#5eead4" : TEAL }}>
+                        top {group.bestScore}%
+                      </div>
+                    </div>
+
+                    <div style={S.distributionBar}>
+                      <div style={{ width: `${appliesPct}%`, backgroundColor: RESULT_META.APLICA.color, height: "100%" }} />
+                      <div style={{ width: `${maybePct}%`, backgroundColor: RESULT_META["QUIZÁ"].color, height: "100%" }} />
+                      <div style={{ width: `${noPct}%`, backgroundColor: RESULT_META.NO_ENCAJA.color, height: "100%" }} />
+                    </div>
+
+                    <div style={S.locationStats}>
+                      {[
+                        { key: "APLICA", value: group.counts.APLICA },
+                        { key: "QUIZÁ", value: group.counts["QUIZÁ"] },
+                        { key: "NO_ENCAJA", value: group.counts.NO_ENCAJA },
+                      ].map((item) => (
+                        <span
+                          key={`${group.location}-${item.key}`}
+                          style={{
+                            ...S.resultPill,
+                            backgroundColor: darkMode ? `${RESULT_META[item.key].color}22` : RESULT_META[item.key].bg,
+                            color: RESULT_META[item.key].color,
+                            border: `1px solid ${darkMode ? `${RESULT_META[item.key].color}44` : `${RESULT_META[item.key].color}22`}`,
+                          }}
+                        >
+                          {item.key} · {item.value}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ ...S.sectionCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+            <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Mejores ofertas del analisis</h2>
+            <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
+              Una vista rapida de las oportunidades con mejor afinidad actual, manteniendo visible donde estan publicadas.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+              {topOffers.map((offer) => {
+                const meta = RESULT_META[offer.resultado] || RESULT_META.NO_ENCAJA;
+                return (
+                  <div key={offer.id || offer.adzuna_id} style={{ ...S.offerRow, ...(darkMode ? S.offerRowDark : {}) }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ ...S.offerTitle, color: darkMode ? "#f8fafc" : "#111827" }}>{offer.titulo}</div>
+                      <div style={{ ...S.offerMeta, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                        {offer.empresa} · {normalizeLocationLabel(offer.ubicacion)} · {inferWorkMode(offer)}
+                      </div>
+                    </div>
+                    <div style={S.offerRowRight}>
+                      <span style={{ ...S.resultPill, backgroundColor: darkMode ? `${meta.color}22` : meta.bg, color: meta.color, border: `1px solid ${darkMode ? `${meta.color}44` : `${meta.color}22`}` }}>
+                        {offer.resultado}
+                      </span>
+                      <span style={{ ...S.scorePill, color: darkMode ? "#f8fafc" : "#111827" }}>
+                        {offer.match_score ?? offer.puntuacion ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ ...S.sectionCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+          <div style={S.sectionHeader}>
+            <div>
+              <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Ofertas agrupadas por ubicacion</h2>
+              <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                Esta vista sustituye al pin exacto por contexto real: ciudad o zona publicada, modalidad y mejores oportunidades de cada grupo.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+            {locationGroups.map((group) => (
+              <div key={group.location} style={{ ...S.groupColumn, ...(darkMode ? S.groupColumnDark : {}) }}>
+                <div style={S.groupHeader}>
+                  <div>
+                    <div style={{ ...S.groupTitle, color: darkMode ? "#f8fafc" : "#111827" }}>{group.location}</div>
+                    <div style={{ ...S.groupMeta, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                      {group.offers.length} oferta{group.offers.length !== 1 ? "s" : ""} · media {group.avgScore}%
+                    </div>
+                  </div>
+                  <span style={{ ...S.groupBadge, color: darkMode ? "#5eead4" : TEAL }}>
+                    {group.counts.APLICA} aplica
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                  {group.topOffers.map((offer) => {
+                    const meta = RESULT_META[offer.resultado] || RESULT_META.NO_ENCAJA;
+                    return (
+                      <a
+                        key={`${group.location}-${offer.id || offer.adzuna_id}`}
+                        href={offer.redirect_url || "#"}
+                        target={offer.redirect_url ? "_blank" : undefined}
+                        rel={offer.redirect_url ? "noreferrer" : undefined}
+                        style={{
+                          ...S.groupOffer,
+                          ...(darkMode ? S.groupOfferDark : {}),
+                          textDecoration: "none",
+                          cursor: offer.redirect_url ? "pointer" : "default",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ ...S.groupOfferTitle, color: darkMode ? "#f8fafc" : "#111827" }}>{offer.titulo}</div>
+                            <div style={{ ...S.groupOfferMeta, color: darkMode ? "#94a3b8" : "#64748b" }}>
+                              {offer.empresa} · {inferWorkMode(offer)}
+                            </div>
+                          </div>
+                          <span style={{ ...S.scorePill, alignSelf: "flex-start", color: darkMode ? "#f8fafc" : "#111827" }}>
+                            {offer.match_score ?? offer.puntuacion ?? 0}%
+                          </span>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginTop: 10 }}>
+                          <span style={{ ...S.resultPill, backgroundColor: darkMode ? `${meta.color}22` : meta.bg, color: meta.color, border: `1px solid ${darkMode ? `${meta.color}44` : `${meta.color}22`}` }}>
+                            {offer.resultado}
+                          </span>
+                          <span style={{ ...S.groupOfferMeta, color: darkMode ? "#64748b" : "#94a3af" }}>
+                            {formatOfferAge(offer.fecha_publicacion)}
+                          </span>
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
 }
 
-const styles = {
-  pageWrapper: {
+const S = {
+  page: {
     minHeight: "100vh",
-    background: gradients.page,
-    padding: spacing.xl,
+    backgroundColor: "#f8fafc",
+    padding: "28px 20px 40px",
+    fontFamily: typography.family,
   },
-  header: {
-    maxWidth: 1200,
-    margin: "0 auto 32px",
-    textAlign: "center",
+  pageDark: {
+    backgroundColor: "#0f172a",
   },
-  title: {
-    ...typography.h1,
-    color: colors.text.primary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-  },
-  legend: {
-    maxWidth: 1200,
-    margin: "0 auto 24px",
+  container: {
+    maxWidth: 1240,
+    margin: "0 auto",
     display: "flex",
-    gap: 32,
-    justifyContent: "center",
+    flexDirection: "column",
+    gap: 18,
+  },
+  heroCard: {
+    borderRadius: 24,
+    padding: "24px 24px 22px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 24,
+    alignItems: "flex-start",
     flexWrap: "wrap",
   },
-  legendItem: {
+  cardLight: {
+    backgroundColor: "#ffffff",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+  },
+  cardDark: {
+    backgroundColor: "#1e293b",
+    border: "1px solid rgba(255,255,255,0.06)",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+  },
+  kicker: {
+    margin: "0 0 8px",
+    fontSize: 12,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+  },
+  heroTitle: {
+    margin: "0 0 10px",
+    fontSize: 34,
+    fontWeight: 900,
+    letterSpacing: "-0.04em",
+    lineHeight: 1.08,
+  },
+  heroText: {
+    margin: 0,
+    fontSize: 14,
+    lineHeight: 1.7,
+    maxWidth: 760,
+  },
+  heroBadge: {
+    minWidth: 140,
+    borderRadius: 20,
+    padding: "16px 18px",
+    backgroundColor: "rgba(0,122,138,0.08)",
+    border: "1px solid rgba(0,122,138,0.12)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroBadgeCount: {
+    fontSize: 34,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  heroBadgeLabel: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  metricsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 14,
+  },
+  metricCard: {
+    borderRadius: 18,
+    padding: "18px 18px 16px",
+  },
+  metricLabel: {
+    marginBottom: 10,
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  metricValue: {
+    fontSize: 34,
+    fontWeight: 900,
+    lineHeight: 1,
+    marginBottom: 10,
+  },
+  metricHint: {
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  sectionGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
+    gap: 16,
+  },
+  sectionCard: {
+    borderRadius: 20,
+    padding: "20px 20px 18px",
+  },
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  sectionTitle: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+  },
+  sectionText: {
+    margin: "8px 0 0",
+    fontSize: 13,
+    lineHeight: 1.65,
+  },
+  locationCard: {
+    padding: "16px 16px 14px",
+    borderRadius: 16,
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  locationCardDark: {
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  locationName: {
+    fontSize: 16,
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+  },
+  locationMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 1.5,
+  },
+  bestScoreBadge: {
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "8px 10px",
+    borderRadius: 999,
+    backgroundColor: "rgba(0,122,138,0.08)",
+    border: "1px solid rgba(0,122,138,0.12)",
+    whiteSpace: "nowrap",
+  },
+  distributionBar: {
+    marginTop: 12,
+    height: 10,
+    borderRadius: 999,
+    overflow: "hidden",
+    display: "flex",
+    backgroundColor: "#e5e7eb",
+  },
+  locationStats: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 12,
+  },
+  resultPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: "0.04em",
+  },
+  offerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px 14px",
+    borderRadius: 14,
+    border: "1px solid #e5e7eb",
+    backgroundColor: "#f8fafc",
+  },
+  offerRowDark: {
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  offerTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+  offerMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+  offerRowRight: {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    fontSize: 14,
-    color: colors.text.primary,
-    fontWeight: 500,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
   },
-  legendDot: {
-    width: 16,
-    height: 16,
-    borderRadius: "50%",
-    border: "2px solid white",
-    boxShadow: shadow.card,
-  },
-  mapWrapper: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    display: "flex",
-    gap: 16,
-    alignItems: "flex-start",
-  },
-  mapContainer: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: "hidden",
-    boxShadow: shadow.elevated,
-  },
-  map: {
-    width: "100%",
-    height: "75vh",
-    zIndex: 10,
-  },
-  sidePanel: {
-    width: 200,
-    flexShrink: 0,
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    boxShadow: shadow.card,
-    display: "flex",
-    flexDirection: "column",
-    gap: 0,
-  },
-  sidePanelTitle: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#374151",
-    margin: "0 0 12px",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-  sidePanelTotal: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sidePanelDivider: {
-    height: 1,
-    backgroundColor: "#e5e7eb",
-    margin: "0 0 16px",
-  },
-  sidePanelRow: {
-    marginBottom: 16,
-  },
-  emptyContainer: {
-    minHeight: "100vh",
-    background: gradients.page,
-    display: "flex",
+  scorePill: {
+    display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    minWidth: 62,
+    padding: "7px 10px",
+    borderRadius: 999,
+    backgroundColor: "rgba(15,23,42,0.06)",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  groupColumn: {
+    borderRadius: 18,
+    border: "1px solid #e5e7eb",
+    backgroundColor: "#f8fafc",
+    padding: "18px",
+    display: "flex",
+    flexDirection: "column",
+  },
+  groupColumnDark: {
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  groupHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  groupTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+  },
+  groupMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+  groupBadge: {
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "8px 10px",
+    borderRadius: 999,
+    backgroundColor: "rgba(0,122,138,0.08)",
+    border: "1px solid rgba(0,122,138,0.12)",
+    whiteSpace: "nowrap",
+  },
+  groupOffer: {
+    padding: "12px 14px",
+    borderRadius: 14,
+    border: "1px solid #e5e7eb",
+    backgroundColor: "#ffffff",
+    transition: `transform ${transition.fast}, box-shadow ${transition.fast}`,
+  },
+  groupOfferDark: {
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "#1f2937",
+  },
+  groupOfferTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+  groupOfferMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 1.5,
   },
   emptyCard: {
+    maxWidth: 520,
+    margin: "80px auto 0",
+    padding: "32px 28px",
+    borderRadius: 22,
     textAlign: "center",
-    backgroundColor: "white",
-    padding: spacing.xl,
-    borderRadius: 16,
-    boxShadow: shadow.card,
-    maxWidth: 400,
   },
   emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
+    fontSize: 14,
+    fontWeight: 900,
+    color: TEAL,
+    textTransform: "uppercase",
+    letterSpacing: "0.18em",
+    marginBottom: 14,
   },
   emptyTitle: {
-    ...typography.h2,
-    color: colors.text.primary,
-    marginBottom: 8,
+    margin: "0 0 10px",
+    fontSize: 28,
+    fontWeight: 900,
+    letterSpacing: "-0.04em",
   },
-  emptySubtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-  },
-  popupContent: {
-    padding: 8,
-    minWidth: 250,
-  },
-  popupTitle: {
-    fontSize: 15,
-    fontWeight: 700,
-    margin: "0 0 6px",
-    color: colors.text.primary,
-  },
-  popupCompany: {
-    fontSize: 13,
-    color: colors.text.secondary,
-    margin: "0 0 8px",
-    fontWeight: 500,
-  },
-  popupSalary: {
-    fontSize: 12,
-    color: "#059669",
-    margin: "0 0 4px",
-    fontWeight: 600,
-  },
-  popupLocation: {
-    fontSize: 12,
-    color: "#666",
-    margin: "0 0 8px",
-  },
-  popupResult: {
-    margin: "8px 0",
-  },
-  resultBadge: {
-    display: "inline-block",
-    color: "white",
-    padding: "4px 12px",
-    borderRadius: 12,
-    fontSize: 11,
-    fontWeight: 700,
-  },
-  detailButton: {
-    display: "inline-block",
-    marginTop: 8,
-    padding: "6px 12px",
-    backgroundColor: colors.primary,
-    color: "white",
-    textDecoration: "none",
-    borderRadius: 6,
-    fontSize: 12,
-    fontWeight: 600,
-    transition: transition.smooth,
+  emptyText: {
+    margin: 0,
+    fontSize: 14,
+    lineHeight: 1.7,
   },
 };
+
+if (typeof document !== "undefined" && !document.getElementById("locations-view-styles")) {
+  const style = document.createElement("style");
+  style.id = "locations-view-styles";
+  style.textContent = `
+    @media (max-width: 980px) {
+      .locations-section-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}

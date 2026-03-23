@@ -8,7 +8,7 @@ import BrandLogo from "./BrandLogo";
 
 const BASE_NAV_LINKS = [
   { key: "buscar",       label: "Buscar ofertas" },
-  { key: "mapa",         label: "Mapa" },
+  { key: "mapa",         label: "Ubicaciones" },
   { key: "favoritos",    label: "Favoritos" },
   { key: "candidaturas", label: "Candidaturas" },
   { key: "user-profile", label: "Mi perfil" },
