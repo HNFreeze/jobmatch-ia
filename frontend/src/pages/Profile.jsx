@@ -1307,7 +1307,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       </div>
 
                       {/* Tag pills */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                         <span style={{
                           padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
                           textTransform: "uppercase", letterSpacing: "0.04em",
@@ -1337,6 +1337,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           display: "flex",
                           flexDirection: "column",
                           gap: 12,
+                          marginTop: 10,
                           padding: "16px 18px",
                           borderRadius: 14,
                           backgroundColor: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
