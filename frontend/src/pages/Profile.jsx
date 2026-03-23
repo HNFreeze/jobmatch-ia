@@ -1234,6 +1234,11 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           <div style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af", fontFamily: typography.family, textAlign: "center", maxWidth: 120, lineHeight: 1.2 }}>
                             Logo reutilizado cuando ya existe un dominio fiable en cache
                           </div>
+                          {selectedOffer.company_logo_domain && (
+                            <div style={{ fontSize: 10, color: dm ? "#94a3b8" : "#64748b", fontFamily: typography.family, textAlign: "center", maxWidth: 140, lineHeight: 1.35 }}>
+                              Dominio detectado: {selectedOffer.company_logo_domain}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1262,6 +1267,53 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           </span>
                         )}
                       </div>
+
+                      {selectedOffer.company_review_sources?.length > 0 && (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                          padding: "16px 18px",
+                          borderRadius: 14,
+                          backgroundColor: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
+                          border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e2e8f0"}`,
+                        }}>
+                          <div>
+                            <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 800, color: dm ? "#e2e8f0" : "#111827", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              Opiniones externas
+                            </p>
+                            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
+                              Abrimos fuentes externas donde puede haber valoraciones y reseñas sobre la empresa. No mostramos opiniones embebidas todavia.
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                            {selectedOffer.company_review_sources.map((source) => (
+                              <a
+                                key={source.key}
+                                href={source.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  padding: "10px 14px",
+                                  borderRadius: 999,
+                                  textDecoration: "none",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: dm ? "#f8fafc" : "#0f172a",
+                                  backgroundColor: dm ? "rgba(0,122,138,0.16)" : "#ecfeff",
+                                  border: `1px solid ${dm ? "rgba(0,122,138,0.32)" : "#a5f3fc"}`,
+                                  fontFamily: typography.family,
+                                }}
+                              >
+                                {source.label}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Description */}

@@ -33,6 +33,13 @@ class CompanyLogo(Base):
     rating_source = Column(String(100), nullable=True)
     rating_status = Column(String(20), nullable=False, server_default="pending")
 
+    # External review source links
+    glassdoor_url = Column(String(2000), nullable=True)
+    kununu_url = Column(String(2000), nullable=True)
+    trustpilot_url = Column(String(2000), nullable=True)
+    review_status = Column(String(20), nullable=False, server_default="unavailable")
+    review_checked_at = Column(DateTime, nullable=True)
+
     # ── Timestamps ───────────────────────────────────────────────────────
     last_attempt_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

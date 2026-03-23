@@ -3,7 +3,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta
 from typing import Iterable
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -36,6 +36,7 @@ GENERIC_TOKENS = {
 COMMON_TLDS = ("com", "es", "io", "ai", "tech", "dev", "co", "net", "org")
 REFRESH_FOUND_AFTER = timedelta(days=30)
 REFRESH_MISS_AFTER = timedelta(days=7)
+REVIEW_REFRESH_AFTER = timedelta(days=30)
 
 
 def normalize_company_name(name: str | None) -> str:
@@ -152,6 +153,65 @@ def _logo_response_is_valid(response: httpx.Response) -> bool:
     return True
 
 
+def _build_google_site_search(site: str, query: str) -> str:
+    return f"https://www.google.com/search?q={quote_plus(f'site:{site} {query}')}"
+
+
+def _build_review_links(name: str, resolved_domain: str | None) -> dict[str, str | None]:
+    query = name.strip()
+    trustpilot_url = None
+    if resolved_domain:
+        trustpilot_url = f"https://www.trustpilot.com/review/{resolved_domain}"
+    else:
+        trustpilot_url = _build_google_site_search("www.trustpilot.com/review", query)
+
+    return {
+        "glassdoor_url": _build_google_site_search("www.glassdoor.com", f'"{query}" reviews'),
+        "kununu_url": _build_google_site_search("www.kununu.com", f'"{query}"'),
+        "trustpilot_url": trustpilot_url,
+        "review_status": "linked",
+    }
+
+
+def _review_links_changed(row: CompanyData | None, review_links: dict[str, str | None]) -> bool:
+    if row is None:
+        return True
+    return any([
+        row.glassdoor_url != review_links["glassdoor_url"],
+        row.kununu_url != review_links["kununu_url"],
+        row.trustpilot_url != review_links["trustpilot_url"],
+        row.review_status != review_links["review_status"],
+    ])
+
+
+def _should_refresh_reviews(row: CompanyData | None) -> bool:
+    if row is None:
+        return True
+    if not row.review_checked_at:
+        return True
+    return (datetime.utcnow() - row.review_checked_at) >= REVIEW_REFRESH_AFTER
+
+
+def _serialize_review_sources(record: CompanyData | None) -> list[dict]:
+    if not record:
+        return []
+
+    sources = []
+    mapping = [
+        ("glassdoor", "Glassdoor", record.glassdoor_url),
+        ("kununu", "Kununu", record.kununu_url),
+        ("trustpilot", "Trustpilot", record.trustpilot_url),
+    ]
+    for key, label, url in mapping:
+        if url:
+            sources.append({
+                "key": key,
+                "label": label,
+                "url": url,
+            })
+    return sources
+
+
 def _should_refresh(row: CompanyData | None) -> bool:
     if row is None:
         return True
@@ -179,6 +239,16 @@ def _merge_company_resolution(row: CompanyData, resolved: CompanyData) -> None:
         row.source = resolved.source
 
     row.last_attempt_at = datetime.utcnow()
+    row.updated_at = datetime.utcnow()
+
+
+def _apply_review_links(row: CompanyData, company_name: str) -> None:
+    review_links = _build_review_links(company_name, row.resolved_domain)
+    row.glassdoor_url = review_links["glassdoor_url"]
+    row.kununu_url = review_links["kununu_url"]
+    row.trustpilot_url = review_links["trustpilot_url"]
+    row.review_status = review_links["review_status"] or "unavailable"
+    row.review_checked_at = datetime.utcnow()
     row.updated_at = datetime.utcnow()
 
 
@@ -242,7 +312,28 @@ def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client
         record.source = "site_favicon"
         record.status = "failed" if last_error else "not_found"
 
+    review_links = _build_review_links(name, record.resolved_domain)
+    record.glassdoor_url = review_links["glassdoor_url"]
+    record.kununu_url = review_links["kununu_url"]
+    record.trustpilot_url = review_links["trustpilot_url"]
+    record.review_status = review_links["review_status"] or "unavailable"
+    record.review_checked_at = datetime.utcnow()
+
     return record
+
+
+def _serialize_company_data(record: CompanyData | None) -> dict | None:
+    if not record:
+        return None
+
+    return {
+        "name": record.company_name_original,
+        "logo_url": record.logo_url if record.status == "found" else None,
+        "logo_status": record.status,
+        "logo_domain": record.resolved_domain,
+        "review_status": record.review_status or "unavailable",
+        "review_sources": _serialize_review_sources(record),
+    }
 
 
 def get_or_create_company_data(db: Session, company_name: str, offer_url: str = None) -> dict | None:
@@ -262,6 +353,7 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
 
         if row:
             _merge_company_resolution(row, resolved)
+            _apply_review_links(row, company_name)
         else:
             db.add(resolved)
             row = resolved
@@ -271,29 +363,24 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
             db.refresh(row)
         except Exception:
             db.rollback()
-            fallback = resolved or row
-            return {
-                "name": fallback.company_name_original,
-                "logo_url": fallback.logo_url if fallback.status == "found" else None,
-                "logo_status": fallback.status,
-                "logo_domain": fallback.resolved_domain,
-                "review_status": "unavailable",
-            }
+            return _serialize_company_data(resolved or row)
+    elif _should_refresh_reviews(row):
+        _apply_review_links(row, company_name)
+        try:
+            db.commit()
+            db.refresh(row)
+        except Exception:
+            db.rollback()
 
-    return {
-        "name": row.company_name_original,
-        "logo_url": row.logo_url if row.status == "found" else None,
-        "logo_status": row.status,
-        "logo_domain": row.resolved_domain,
-        "review_status": "unavailable",
-    }
+    return _serialize_company_data(row)
 
 
 def _apply_company_data(record: CompanyData | None, item: dict) -> dict:
     item["company_logo_url"] = record.logo_url if record and record.status == "found" else None
     item["company_logo_status"] = record.status if record else "not_found"
     item["company_logo_domain"] = record.resolved_domain if record else None
-    item["company_review_status"] = "unavailable"
+    item["company_review_status"] = record.review_status if record else "unavailable"
+    item["company_review_sources"] = _serialize_review_sources(record)
     return item
 
 
@@ -332,6 +419,10 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
         name for name in normalized_names
         if _should_refresh(rows_by_name.get(name))
     ]
+    review_refresh_names = [
+        name for name in normalized_names
+        if name not in refresh_names and _should_refresh_reviews(rows_by_name.get(name))
+    ]
 
     transient_rows: dict[str, CompanyData] = {}
     new_rows: list[CompanyData] = []
@@ -344,10 +435,16 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
             if normalized_name in rows_by_name:
                 row = rows_by_name[normalized_name]
                 _merge_company_resolution(row, resolved)
+                _apply_review_links(row, payload["name"])
             else:
                 new_rows.append(resolved)
 
-    if new_rows or refresh_names:
+    for normalized_name in review_refresh_names:
+        row = rows_by_name.get(normalized_name)
+        if row:
+            _apply_review_links(row, grouped[normalized_name]["name"])
+
+    if new_rows or refresh_names or review_refresh_names:
         try:
             if new_rows:
                 db.add_all(new_rows)
