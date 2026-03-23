@@ -1,525 +1,555 @@
-import {
-  gradients,
-  typography,
-  transition,
-} from "../constants/theme";
+import { typography } from "../constants/theme";
 
-// Inject Landing-specific animations
-if (typeof document !== "undefined" && !document.getElementById("landing-styles")) {
+const TEAL = "#007A8A";
+const TEAL_DARK = "#006673";
+const NAVY = "#0F172A";
+const GRAY_500 = "#64748b";
+const GRAY_400 = "#94a3b8";
+const GRAY_200 = "#e2e8f0";
+const GRAY_100 = "#f1f5f9";
+const BG = "#F8FAFC";
+
+// ── Inject styles ─────────────────────────────────────────────────────────────
+if (typeof document !== "undefined" && !document.getElementById("landing-v2-styles")) {
   const s = document.createElement("style");
-  s.id = "landing-styles";
+  s.id = "landing-v2-styles";
   s.innerHTML = `
-    @keyframes floatA {
-      0%, 100% { transform: translateY(0px) scale(1); }
-      50%       { transform: translateY(-30px) scale(1.05); }
-    }
-    @keyframes floatB {
-      0%, 100% { transform: translateY(0px) scale(1) rotate(0deg); }
-      50%       { transform: translateY(20px) scale(0.95) rotate(5deg); }
-    }
-    @keyframes floatC {
-      0%, 100% { transform: translateY(-10px) scale(1); }
-      50%       { transform: translateY(15px) scale(1.08); }
-    }
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(32px); }
+      from { opacity: 0; transform: translateY(24px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .landing-hero-title  { animation: fadeUp 0.8s ease-out 0.1s both; }
-    .landing-hero-sub    { animation: fadeUp 0.8s ease-out 0.3s both; }
-    .landing-hero-cta    { animation: fadeUp 0.8s ease-out 0.5s both; }
-    .landing-step:hover  {
+    @keyframes matchBounce {
+      0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+      50%       { transform: translate(-50%, -50%) translateY(-10px); }
+    }
+    .lv2-fadein-1 { animation: fadeUp 0.7s ease-out 0.1s both; }
+    .lv2-fadein-2 { animation: fadeUp 0.7s ease-out 0.25s both; }
+    .lv2-fadein-3 { animation: fadeUp 0.7s ease-out 0.4s both; }
+    .lv2-feature-card:hover {
       transform: translateY(-4px);
       box-shadow: 0 12px 32px rgba(0,0,0,0.08) !important;
     }
-    .landing-cta-btn {
-      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
-      position: relative;
-      overflow: hidden;
-    }
-    .landing-cta-btn:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 12px 32px rgba(37,99,235,0.35) !important;
-    }
-    .landing-navbar-btn {
-      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
-    }
-    .landing-navbar-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(37,99,235,0.3) !important;
+    .lv2-nav-link { transition: color 0.2s; }
+    .lv2-nav-link:hover { color: #111827 !important; }
+    .lv2-cta-primary:hover { background-color: ${TEAL_DARK} !important; }
+    .lv2-cta-outline:hover { background-color: #f0fdfa !important; }
+    .lv2-match-badge { animation: matchBounce 2.5s ease-in-out infinite; }
+    .lv2-match-badge:hover { animation-play-state: paused; transform: translate(-50%, -50%) scale(1.04); }
+    @media (max-width: 900px) {
+      .lv2-hero-grid   { grid-template-columns: 1fr !important; }
+      .lv2-pricing-grid { grid-template-columns: 1fr !important; }
+      .lv2-features-grid { grid-template-columns: 1fr !important; }
+      .lv2-nav-links   { display: none !important; }
+      .lv2-nav-auth    { display: none !important; }
+      .lv2-nav-mobile  { display: flex !important; }
+      .lv2-hero-title  { font-size: 42px !important; }
+      .lv2-mockup-wrap { display: none !important; }
     }
   `;
   document.head.appendChild(s);
 }
 
-// SVG Icons
-const PersonIcon = () => (
-  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
-    <circle cx="16" cy="10" r="4" />
-    <path d="M8 24 Q8 18 16 18 Q24 18 24 24" />
+// ── Inline SVG Icons ──────────────────────────────────────────────────────────
+const RocketIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={TEAL} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
+    <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
+    <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
+    <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
   </svg>
 );
-const SearchIcon = () => (
-  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
-    <circle cx="14" cy="14" r="8" />
-    <path d="M20 20 L26 26" />
+const BrainIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#007A8A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
+    <path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>
+    <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
+    <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
+    <path d="M19.938 10.5a4 4 0 0 1 .585.396"/>
+    <path d="M6 18a4 4 0 0 1-1.967-.516"/>
+    <path d="M19.967 17.484A4 4 0 0 1 18 18"/>
+  </svg>
+);
+const ZapIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+  </svg>
+);
+const BellIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+    <path d="M4 2C2.8 3.7 2 5.7 2 8"/>
+    <path d="M22 8c0-2.3-.8-4.3-2-6"/>
   </svg>
 );
 const CheckIcon = () => (
-  <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
-    <path d="M6 16 L12 22 L26 8" />
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={TEAL} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6 9 17l-5-5"/>
+  </svg>
+);
+const CheckCircleIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#064E3B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="m9 12 2 2 4-4"/>
+  </svg>
+);
+const MenuIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round">
+    <line x1="3" y1="6" x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+);
+const GrayCheckIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6 9 17l-5-5"/>
   </svg>
 );
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function Landing({ onStartClick }) {
   return (
-    <div style={S.page}>
-      {/* Navbar */}
-      <nav style={S.navbar}>
-        <div style={S.navbarContent}>
-          <h1 style={S.navbarLogo}>
-            <span style={S.logoGradient}>JobMatch</span>
-            <span style={{ opacity: 0.7 }}> IA</span>
-          </h1>
-          <button
-            className="landing-navbar-btn"
-            style={S.navbarButton}
-            onClick={onStartClick}
-          >
-            Empezar
+    <div style={{ minHeight: "100vh", backgroundColor: BG, fontFamily: typography.family }}>
+
+      {/* ── Navbar ──────────────────────────────────────────────────────────── */}
+      <nav style={{
+        position: "sticky", top: 0, zIndex: 100,
+        backgroundColor: "rgba(255,255,255,0.97)",
+        backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+        borderBottom: `1px solid ${GRAY_200}`,
+        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+      }}>
+        <div style={{
+          maxWidth: 1200, margin: "0 auto", padding: "0 24px",
+          height: 64, display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RocketIcon />
+            <span style={{ fontWeight: 800, fontSize: 20, color: NAVY, letterSpacing: "-0.03em" }}>
+              JobMatch <span style={{ color: TEAL }}>IA</span>
+            </span>
+          </div>
+
+          {/* Desktop nav links */}
+          <div className="lv2-nav-links" style={{ display: "flex", gap: 32, alignItems: "center" }}>
+            {[
+              { label: "Cómo funciona", href: "#como-funciona" },
+              { label: "Características", href: "#features" },
+              { label: "Precios", href: "#pricing" },
+            ].map(l => (
+              <a key={l.label} href={l.href} className="lv2-nav-link" style={{
+                fontSize: 14, fontWeight: 600, color: GRAY_500,
+                textDecoration: "none", fontFamily: typography.family,
+              }}>{l.label}</a>
+            ))}
+          </div>
+
+          {/* Desktop auth buttons */}
+          <div className="lv2-nav-auth" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={onStartClick} className="lv2-cta-outline" style={{
+              padding: "7px 20px", borderRadius: 50, fontSize: 13, fontWeight: 600,
+              color: TEAL, backgroundColor: "transparent",
+              border: `1.5px solid ${TEAL}`, cursor: "pointer",
+              fontFamily: typography.family, transition: "background-color 0.2s",
+            }}>
+              Login
+            </button>
+            <button onClick={onStartClick} className="lv2-cta-primary" style={{
+              padding: "7px 20px", borderRadius: 50, fontSize: 13, fontWeight: 600,
+              color: "#fff", backgroundColor: TEAL,
+              border: `1.5px solid ${TEAL}`, cursor: "pointer",
+              fontFamily: typography.family, transition: "background-color 0.2s",
+            }}>
+              Registro
+            </button>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button className="lv2-nav-mobile" onClick={onStartClick} style={{
+            display: "none", background: "none", border: "none", cursor: "pointer", padding: 4,
+          }}>
+            <MenuIcon />
           </button>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section style={S.hero}>
-        <div style={{ ...S.circle, ...S.circleA }} />
-        <div style={{ ...S.circle, ...S.circleB }} />
-        <div style={{ ...S.circle, ...S.circleC }} />
+      {/* ── Hero ────────────────────────────────────────────────────────────── */}
+      <section id="como-funciona" style={{ padding: "80px 24px 96px", maxWidth: 1200, margin: "0 auto" }}>
+        <div className="lv2-hero-grid" style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr",
+          gap: 64, alignItems: "center",
+        }}>
 
-        <div style={S.heroContent}>
-          <div className="landing-hero-title">
-            <span style={S.heroBadge}>Análisis con IA · 2026</span>
-            <h1 style={S.heroTitle}>
-              Encuentra tu próximo trabajo como developer
-            </h1>
-          </div>
-          <p className="landing-hero-sub" style={S.heroSubtitle}>
-            Deja que la IA analice las ofertas y te diga cuáles encajan realmente con tu perfil y experiencia
-          </p>
-          <div className="landing-hero-cta">
-            <button
-              className="landing-cta-btn"
-              style={S.heroCTAButton}
-              onClick={onStartClick}
-            >
-              Analizar mi perfil
-            </button>
-          </div>
-        </div>
-      </section>
+          {/* Left */}
+          <div>
+            <div className="lv2-fadein-1">
+              <span style={{
+                display: "inline-block",
+                backgroundColor: "#E0F2FE", color: "#0284C7",
+                fontSize: 11, fontWeight: 700, padding: "6px 16px",
+                borderRadius: 50, letterSpacing: "0.12em", textTransform: "uppercase",
+                marginBottom: 28,
+              }}>
+                Inteligencia Artificial Aplicada
+              </span>
 
-      {/* 3 Steps Section */}
-      <section style={S.stepsSection}>
-        <p style={S.stepsEyebrow}>Cómo funciona</p>
-        <h2 style={S.stepsTitle}>Tres pasos para tu próximo trabajo</h2>
-        <div style={S.stepsContainer}>
-          {[
-            {
-              title: "Crea tu perfil",
-              description: "Cuéntanos tu experiencia, stack y nivel de inglés",
-              Icon: PersonIcon,
-              gradient: "linear-gradient(135deg, #2563eb, #7c3aed)",
-            },
-            {
-              title: "La IA analiza",
-              description: "Analizamos 15+ ofertas reales del mercado español",
-              Icon: SearchIcon,
-              gradient: "linear-gradient(135deg, #7c3aed, #ec4899)",
-            },
-            {
-              title: "Aplica donde encajas",
-              description: "Descubre solo las ofertas que son realistas para ti",
-              Icon: CheckIcon,
-              gradient: "linear-gradient(135deg, #10b981, #2563eb)",
-            },
-          ].map((step, i) => (
-            <div key={i} className="landing-step" style={{ ...S.step, transition: `all ${transition.smooth}` }}>
-              <div style={{ ...S.stepIcon, background: step.gradient }}>
-                <step.Icon />
-              </div>
-              <h3 style={S.stepTitle}>{step.title}</h3>
-              <p style={S.stepDescription}>{step.description}</p>
+              <h1 className="lv2-hero-title" style={{
+                margin: "0 0 20px", fontSize: 62, fontWeight: 800,
+                color: NAVY, letterSpacing: "-0.03em", lineHeight: 1.05,
+              }}>
+                El match perfecto<br />
+                para tu carrera,<br />
+                impulsado por IA.
+              </h1>
             </div>
-          ))}
+
+            <p className="lv2-fadein-2" style={{
+              margin: "0 0 36px", fontSize: 18, color: GRAY_500,
+              lineHeight: 1.75, maxWidth: 480,
+            }}>
+              Analizamos ofertas en tiempo real para decirte dónde encajas mejor. Sin pérdida de tiempo, solo oportunidades reales.
+            </p>
+
+            <div className="lv2-fadein-3" style={{ display: "inline-block" }}>
+              <div style={{
+                border: `1.5px dashed ${TEAL}`, borderRadius: 50, padding: 4, display: "inline-block",
+              }}>
+                <button onClick={onStartClick} className="lv2-cta-primary" style={{
+                  padding: "14px 36px", borderRadius: 50, fontSize: 17, fontWeight: 700,
+                  color: "#fff", backgroundColor: TEAL, border: "none", cursor: "pointer",
+                  fontFamily: typography.family, transition: "background-color 0.2s",
+                  boxShadow: "0 4px 16px rgba(0,122,138,0.3)",
+                }}>
+                  Empieza gratis
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right — Mockup card */}
+          <div className="lv2-mockup-wrap" style={{ position: "relative", maxWidth: 480, margin: "0 auto", width: "100%" }}>
+            {/* Background tilt */}
+            <div style={{
+              position: "absolute", inset: 0,
+              backgroundColor: "#fff",
+              borderRadius: 24, border: `1px solid ${GRAY_200}`,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.1)",
+              transform: "rotate(3deg) scale(1.04)",
+            }} />
+
+            {/* Main card */}
+            <div style={{
+              position: "relative", zIndex: 1,
+              backgroundColor: "#FAFAFA", borderRadius: 20,
+              border: `1px solid ${GRAY_200}`,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+              padding: "28px 32px",
+              transform: "rotate(-1deg)",
+              aspectRatio: "4/3",
+              display: "flex", flexDirection: "column", justifyContent: "space-between",
+              overflow: "hidden",
+            }}>
+              {/* Mock header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ height: 10, width: 130, backgroundColor: "#d1d5db", borderRadius: 8 }} />
+                  <div style={{ height: 8, width: 80, backgroundColor: "#e5e7eb", borderRadius: 8 }} />
+                </div>
+                <div style={{ display: "flex", gap: 5 }}>
+                  {[1,2,3].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#d1d5db" }} />)}
+                </div>
+              </div>
+
+              {/* Mock list */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, opacity: 0.55 }}>
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", backgroundColor: "#e5e7eb" }} />
+                      <div style={{ height: 10, width: i % 2 === 0 ? 140 : 110, backgroundColor: "#e5e7eb", borderRadius: 8 }} />
+                    </div>
+                    <div style={{ height: 10, width: 48, backgroundColor: "#e5e7eb", borderRadius: 8 }} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Bottom mock button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+                <div style={{ height: 32, width: 96, border: `1px solid ${GRAY_200}`, borderRadius: 10 }} />
+              </div>
+
+              {/* Floating badge */}
+              <div className="lv2-match-badge" style={{
+                position: "absolute", top: "48%", left: "50%",
+                transform: "translate(-50%, -50%)",
+                backgroundColor: "#75F0B0",
+                boxShadow: "0 8px 32px rgba(16,185,129,0.35)",
+                borderRadius: 14, padding: "12px 20px",
+                display: "flex", alignItems: "center", gap: 10,
+                whiteSpace: "nowrap", zIndex: 10, cursor: "default",
+              }}>
+                <CheckCircleIcon />
+                <span style={{ fontWeight: 800, color: "#064E3B", fontSize: 17, letterSpacing: "-0.02em" }}>
+                  98% Match Preciso
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Problem Section */}
-      <section style={S.problemSection}>
-        <div style={S.problemContent}>
-          <p style={S.problemEyebrow}>El problema</p>
-          <h2 style={S.problemTitle}>
-            ¿Pierdes tiempo analizando ofertas que no encajan?
-          </h2>
-          <p style={S.problemImpact}>
-            La mayoría de ofertas tienen requisitos desalineados con tu perfil
-          </p>
-          <p style={S.problemSubtext}>
-            Encontramos las ofertas que realmente encajan con lo que sabes.
-          </p>
+      {/* ── Trust bar ───────────────────────────────────────────────────────── */}
+      <section style={{ textAlign: "center", paddingBottom: 64, paddingTop: 0 }}>
+        <p style={{
+          fontSize: 11, fontWeight: 700, color: GRAY_400,
+          letterSpacing: "0.18em", textTransform: "uppercase", margin: 0,
+        }}>
+          Líderes tecnológicos confían en JobMatch IA
+        </p>
+      </section>
+
+      {/* ── Features ────────────────────────────────────────────────────────── */}
+      <section id="features" style={{
+        padding: "80px 24px", backgroundColor: "#fff",
+        borderTop: `1px solid ${GRAY_200}`,
+      }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 56 }}>
+            <h2 style={{
+              margin: "0 0 14px", fontSize: 38, fontWeight: 800,
+              color: NAVY, letterSpacing: "-0.025em",
+            }}>
+              Potencia tu búsqueda con IA
+            </h2>
+            <p style={{ margin: 0, fontSize: 17, color: GRAY_500, maxWidth: 560, marginInline: "auto", lineHeight: 1.7 }}>
+              Nuestra tecnología analiza miles de datos para ofrecerte la ventaja que necesitas en el mercado laboral.
+            </p>
+          </div>
+
+          <div className="lv2-features-grid" style={{
+            display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28,
+          }}>
+            {[
+              {
+                icon: <BrainIcon />,
+                iconBg: "#E0F2F1",
+                title: "Análisis Profundo de Perfil",
+                desc: "Nuestra IA lee entre líneas tu experiencia y habilidades para encontrar sinergias ocultas con las ofertas de trabajo.",
+              },
+              {
+                icon: <ZapIcon />,
+                iconBg: "#E0F0FF",
+                title: "Match en Tiempo Real",
+                desc: "No esperes días. Te conectamos instantáneamente con las empresas en el momento en que publican una vacante ideal para ti.",
+              },
+              {
+                icon: <BellIcon />,
+                iconBg: "#F3E8FF",
+                title: "Plan de Mejora Personalizado",
+                desc: "Detectamos qué skills te faltan para acceder a más ofertas y te damos un plan concreto para cerrar esas brechas.",
+              },
+            ].map((f, i) => (
+              <div key={i} className="lv2-feature-card" style={{
+                padding: "32px 28px", borderRadius: 24,
+                backgroundColor: BG, border: `1px solid ${GRAY_200}`,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                cursor: "default",
+              }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: 14,
+                  backgroundColor: f.iconBg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: 20,
+                }}>
+                  {f.icon}
+                </div>
+                <h3 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700, color: NAVY, letterSpacing: "-0.01em" }}>
+                  {f.title}
+                </h3>
+                <p style={{ margin: 0, fontSize: 14, color: GRAY_500, lineHeight: 1.7 }}>
+                  {f.desc}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Bottom CTA */}
-      <section style={S.bottomCtaSection}>
-        <div style={{ ...S.circle, ...S.ctaCircleA }} />
-        <div style={{ ...S.circle, ...S.ctaCircleB }} />
+      {/* ── Pricing ─────────────────────────────────────────────────────────── */}
+      <section id="pricing" style={{
+        padding: "80px 24px", backgroundColor: "#fff",
+        borderTop: `1px solid ${GRAY_200}`,
+      }}>
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 56 }}>
+            <h2 style={{ margin: "0 0 14px", fontSize: 38, fontWeight: 800, color: NAVY, letterSpacing: "-0.025em" }}>
+              Empieza sin coste. Mejora cuando quieras.
+            </h2>
+            <p style={{ margin: 0, fontSize: 17, color: GRAY_500, maxWidth: 560, marginInline: "auto", lineHeight: 1.7 }}>
+              Nuestro plan principal es gratuito para siempre. Estamos preparando herramientas avanzadas para quienes quieran acelerar aún más su búsqueda.
+            </p>
+          </div>
 
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <h2 style={S.bottomCtaTitle}>¿Listo para encontrar tu oferta?</h2>
-          <p style={S.bottomCtaSubtitle}>Empieza gratis · Sin tarjeta de crédito</p>
-          <button
-            className="landing-cta-btn"
-            style={S.bottomCTAButton}
-            onClick={onStartClick}
+          <div className="lv2-pricing-grid" style={{
+            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start",
+          }}>
+
+            {/* Free plan */}
+            <div style={{
+              backgroundColor: BG, borderRadius: 24, padding: "36px 32px",
+              border: `2px solid ${TEAL}`,
+              boxShadow: "0 2px 12px rgba(0,122,138,0.08)",
+              position: "relative",
+            }}>
+              {/* Badge */}
+              <div style={{
+                position: "absolute", top: 0, right: 28,
+                transform: "translateY(-50%)",
+                backgroundColor: TEAL, color: "#fff",
+                fontSize: 11, fontWeight: 700,
+                padding: "4px 12px", borderRadius: 50,
+                letterSpacing: "0.06em", textTransform: "uppercase",
+              }}>
+                Actual
+              </div>
+
+              <h3 style={{ margin: "0 0 6px", fontSize: 22, fontWeight: 700, color: NAVY }}>Básico</h3>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 20 }}>
+                <span style={{ fontSize: 52, fontWeight: 800, color: NAVY, lineHeight: 1 }}>€0</span>
+                <span style={{ fontSize: 15, color: GRAY_500, fontWeight: 500 }}>/para siempre</span>
+              </div>
+              <p style={{ margin: "0 0 28px", fontSize: 14, color: GRAY_500, lineHeight: 1.6, minHeight: 44 }}>
+                Todas las herramientas esenciales para encontrar tu próximo empleo con IA.
+              </p>
+
+              <ul style={{ listStyle: "none", margin: "0 0 28px", padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+                {[
+                  "Análisis de perfil con IA",
+                  "Matching en tiempo real con ofertas",
+                  "Plan de mejora de skills",
+                  "Carta de presentación IA",
+                  "Historial de búsquedas",
+                ].map(item => (
+                  <li key={item} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500, color: "#374151" }}>
+                    <CheckIcon /> {item}
+                  </li>
+                ))}
+              </ul>
+
+              <button onClick={onStartClick} style={{
+                width: "100%", padding: "14px 0", borderRadius: 12, fontSize: 14, fontWeight: 700,
+                border: `2px dashed ${TEAL}`, color: TEAL, backgroundColor: "transparent",
+                cursor: "pointer", fontFamily: typography.family,
+                transition: "background-color 0.2s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f0fdfa"}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+              >
+                Empieza gratis →
+              </button>
+            </div>
+
+            {/* Pro plan (coming soon) */}
+            <div style={{
+              backgroundColor: "#fff", borderRadius: 24, padding: "36px 32px",
+              border: `1px solid ${GRAY_200}`,
+              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              position: "relative", overflow: "hidden",
+            }}>
+              {/* Badge */}
+              <div style={{
+                position: "absolute", top: 0, right: 28,
+                transform: "translateY(-50%)",
+                backgroundColor: GRAY_200, color: GRAY_500,
+                fontSize: 11, fontWeight: 700,
+                padding: "4px 12px", borderRadius: 50,
+                letterSpacing: "0.06em", textTransform: "uppercase",
+              }}>
+                Próximamente
+              </div>
+
+              <h3 style={{ margin: "0 0 6px", fontSize: 22, fontWeight: 700, color: "#9ca3af" }}>Pro</h3>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 20, opacity: 0.45 }}>
+                <span style={{ fontSize: 52, fontWeight: 800, color: "#9ca3af", lineHeight: 1 }}>€--</span>
+                <span style={{ fontSize: 15, color: "#9ca3af", fontWeight: 500 }}>/mes</span>
+              </div>
+              <p style={{ margin: "0 0 28px", fontSize: 14, color: "#9ca3af", lineHeight: 1.6, minHeight: 44 }}>
+                Funciones avanzadas para destacar y prepararte mejor.
+              </p>
+
+              <ul style={{ listStyle: "none", margin: "0 0 28px", padding: 0, display: "flex", flexDirection: "column", gap: 14, opacity: 0.5 }}>
+                {[
+                  "Simulador de entrevistas con IA",
+                  "Subida de CV para autocompletar perfil",
+                  "Alertas automáticas por email",
+                  "Exportar candidaturas a PDF",
+                  "Posicionamiento prioritario",
+                ].map(item => (
+                  <li key={item} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500, color: "#9ca3af" }}>
+                    <GrayCheckIcon /> {item}
+                  </li>
+                ))}
+              </ul>
+
+              <button disabled style={{
+                width: "100%", padding: "14px 0", borderRadius: 12, fontSize: 14, fontWeight: 700,
+                backgroundColor: GRAY_100, color: "#9ca3af",
+                border: "none", cursor: "not-allowed", fontFamily: typography.family,
+              }}>
+                Apuntarse a la lista de espera
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Bottom CTA ──────────────────────────────────────────────────────── */}
+      <section style={{
+        background: "linear-gradient(135deg, #0F172A 0%, #1e3a5f 50%, #007A8A 100%)",
+        padding: "80px 24px",
+        textAlign: "center",
+      }}>
+        <h2 style={{
+          margin: "0 0 12px", fontSize: 44, fontWeight: 800,
+          color: "#fff", letterSpacing: "-0.025em",
+        }}>
+          ¿Listo para encontrar tu oferta?
+        </h2>
+        <p style={{
+          margin: "0 0 32px", fontSize: 13, fontWeight: 600,
+          color: "rgba(255,255,255,0.6)", letterSpacing: "0.08em", textTransform: "uppercase",
+        }}>
+          Empieza gratis · Sin tarjeta de crédito
+        </p>
+        <div style={{ display: "inline-block", border: "1.5px dashed rgba(255,255,255,0.5)", borderRadius: 50, padding: 4 }}>
+          <button onClick={onStartClick} className="lv2-cta-primary" style={{
+            padding: "14px 40px", borderRadius: 50, fontSize: 16, fontWeight: 700,
+            color: NAVY, backgroundColor: "#fff", border: "none", cursor: "pointer",
+            fontFamily: typography.family, transition: "opacity 0.2s",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = "0.92"}
+          onMouseLeave={e => e.currentTarget.style.opacity = "1"}
           >
             Comenzar análisis
           </button>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer style={S.footer}>
-        <p style={S.footerText}>
-          JobMatch IA · Análisis inteligente de ofertas de trabajo
+      {/* ── Footer ──────────────────────────────────────────────────────────── */}
+      <footer style={{
+        backgroundColor: "#fff", borderTop: `1px solid ${GRAY_200}`,
+        padding: "24px", textAlign: "center",
+      }}>
+        <p style={{ margin: 0, fontSize: 13, color: GRAY_400, fontFamily: typography.family }}>
+          JobMatch IA · Análisis inteligente de ofertas de trabajo · {new Date().getFullYear()}
         </p>
       </footer>
+
     </div>
   );
 }
-
-const S = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f8f9fc",
-    fontFamily: typography.family,
-  },
-
-  // Navbar
-  navbar: {
-    backgroundColor: "rgba(255,255,255,0.97)",
-    backdropFilter: "blur(12px)",
-    WebkitBackdropFilter: "blur(12px)",
-    borderBottom: "1px solid #e8ecf1",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-    position: "sticky",
-    top: 0,
-    zIndex: 100,
-  },
-  navbarContent: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    padding: "14px 24px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  navbarLogo: {
-    margin: 0,
-    fontSize: 24,
-    fontWeight: 800,
-    letterSpacing: "-0.03em",
-    display: "flex",
-    alignItems: "center",
-  },
-  logoGradient: {
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-  },
-  navbarButton: {
-    padding: "8px 20px",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#fff",
-    background: gradients.primary,
-    border: "none",
-    borderRadius: 50,
-    cursor: "pointer",
-    fontFamily: typography.family,
-  },
-
-  // Hero
-  hero: {
-    background: gradients.hero,
-    paddingTop: 120,
-    paddingBottom: 120,
-    paddingLeft: 24,
-    paddingRight: 24,
-    position: "relative",
-    overflow: "hidden",
-  },
-  circle: {
-    position: "absolute",
-    borderRadius: "50%",
-    filter: "blur(80px)",
-    opacity: 0.25,
-    pointerEvents: "none",
-  },
-  circleA: {
-    width: 500,
-    height: 500,
-    background: "radial-gradient(circle, #7c3aed, transparent 70%)",
-    top: -150,
-    right: -100,
-    animation: "floatA 8s ease-in-out infinite",
-  },
-  circleB: {
-    width: 400,
-    height: 400,
-    background: "radial-gradient(circle, #2563eb, transparent 70%)",
-    bottom: -100,
-    left: -80,
-    animation: "floatB 10s ease-in-out infinite",
-  },
-  circleC: {
-    width: 300,
-    height: 300,
-    background: "radial-gradient(circle, #ec4899, transparent 70%)",
-    top: "40%",
-    left: "50%",
-    animation: "floatC 12s ease-in-out infinite",
-  },
-  heroContent: {
-    maxWidth: 720,
-    margin: "0 auto",
-    textAlign: "center",
-    position: "relative",
-    zIndex: 1,
-  },
-  heroBadge: {
-    display: "inline-block",
-    padding: "6px 16px",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    backdropFilter: "blur(8px)",
-    color: "rgba(255,255,255,0.9)",
-    borderRadius: 50,
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    marginBottom: 20,
-    border: "1px solid rgba(255,255,255,0.2)",
-  },
-  heroTitle: {
-    margin: "0 0 20px",
-    fontSize: 62,
-    fontWeight: 800,
-    color: "#fff",
-    letterSpacing: "-0.03em",
-    lineHeight: 1.15,
-  },
-  heroSubtitle: {
-    margin: "0 0 28px",
-    fontSize: 18,
-    color: "rgba(255,255,255,0.85)",
-    lineHeight: 1.75,
-    fontWeight: 400,
-    maxWidth: 560,
-    marginLeft: "auto",
-    marginRight: "auto",
-  },
-  heroCTAButton: {
-    padding: "16px 48px",
-    fontSize: 15,
-    fontWeight: 700,
-    color: "#2563eb",
-    backgroundColor: "#fff",
-    border: "none",
-    borderRadius: 50,
-    cursor: "pointer",
-    fontFamily: typography.family,
-    display: "inline-block",
-    minWidth: 220,
-    letterSpacing: "-0.01em",
-  },
-
-  // Steps
-  stepsSection: {
-    padding: "96px 24px",
-    backgroundColor: "#fff",
-  },
-  stepsEyebrow: {
-    textAlign: "center",
-    margin: "0 0 10px",
-    fontSize: 13,
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.1em",
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-  },
-  stepsTitle: {
-    textAlign: "center",
-    margin: "0 0 64px",
-    fontSize: 42,
-    fontWeight: 800,
-    color: "#111827",
-    letterSpacing: "-0.02em",
-  },
-  stepsContainer: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: 24,
-    maxWidth: 1100,
-    margin: "0 auto",
-  },
-  step: {
-    padding: 32,
-    textAlign: "center",
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    border: "1px solid #e8ecf1",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-    cursor: "pointer",
-  },
-  stepIcon: {
-    display: "inline-flex",
-    justifyContent: "center",
-    alignItems: "center",
-    width: 80,
-    height: 80,
-    borderRadius: "50%",
-    marginBottom: 20,
-    flexShrink: 0,
-    boxShadow: "0 6px 20px rgba(37,99,235,0.2)",
-  },
-  stepTitle: {
-    margin: "0 0 8px",
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#111827",
-    letterSpacing: "-0.01em",
-  },
-  stepDescription: {
-    margin: 0,
-    fontSize: 13,
-    color: "#6b7280",
-    lineHeight: 1.65,
-  },
-
-  // Problem section
-  problemSection: {
-    backgroundColor: "#f8f9fc",
-    padding: "96px 24px",
-  },
-  problemContent: {
-    maxWidth: 700,
-    margin: "0 auto",
-    textAlign: "center",
-  },
-  problemEyebrow: {
-    margin: "0 0 10px",
-    fontSize: 13,
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.1em",
-    background: "linear-gradient(135deg, #7c3aed, #f43f5e)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-  },
-  problemTitle: {
-    margin: "0 0 20px",
-    fontSize: 42,
-    fontWeight: 800,
-    color: "#111827",
-    letterSpacing: "-0.02em",
-  },
-  problemImpact: {
-    margin: "0 0 14px",
-    fontSize: 20,
-    fontWeight: 600,
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-    lineHeight: 1.6,
-  },
-  problemSubtext: {
-    margin: 0,
-    fontSize: 15,
-    color: "#6b7280",
-    fontWeight: 400,
-  },
-
-  // Bottom CTA
-  bottomCtaSection: {
-    background: gradients.hero,
-    padding: "96px 24px",
-    textAlign: "center",
-    position: "relative",
-    overflow: "hidden",
-  },
-  ctaCircleA: {
-    width: 400,
-    height: 400,
-    background: "radial-gradient(circle, #7c3aed, transparent)",
-    top: -100,
-    left: -80,
-    animation: "floatB 10s ease-in-out infinite",
-  },
-  ctaCircleB: {
-    width: 350,
-    height: 350,
-    background: "radial-gradient(circle, #2563eb, transparent)",
-    bottom: -80,
-    right: -60,
-    animation: "floatA 8s ease-in-out infinite",
-  },
-  bottomCtaTitle: {
-    margin: "0 0 10px",
-    fontSize: 44,
-    fontWeight: 800,
-    color: "#fff",
-    letterSpacing: "-0.02em",
-  },
-  bottomCtaSubtitle: {
-    margin: "0 0 28px",
-    fontSize: 13,
-    color: "rgba(255,255,255,0.7)",
-    letterSpacing: "0.05em",
-    textTransform: "uppercase",
-  },
-  bottomCTAButton: {
-    padding: "16px 48px",
-    fontSize: 15,
-    fontWeight: 700,
-    color: "#2563eb",
-    backgroundColor: "#fff",
-    border: "none",
-    borderRadius: 50,
-    cursor: "pointer",
-    fontFamily: typography.family,
-    display: "inline-block",
-    minWidth: 220,
-    letterSpacing: "-0.01em",
-  },
-
-  // Footer
-  footer: {
-    backgroundColor: "#fff",
-    borderTop: "1px solid #e8ecf1",
-    padding: 24,
-    textAlign: "center",
-  },
-  footerText: {
-    margin: 0,
-    fontSize: 13,
-    color: "#9ca3af",
-  },
-};
