@@ -15,6 +15,18 @@ import { getUserProfile, updateUserProfile, getHistory } from "./services/api";
 
 const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
+const PAGE_TITLES = {
+  home: "JobMatch IA | Matching inteligente de ofertas",
+  landing: "JobMatch IA | Matching inteligente de ofertas",
+  auth: "Acceso | JobMatch IA",
+  "verify-email": "Verificar correo | JobMatch IA",
+  buscar: "Ofertas analizadas | JobMatch IA",
+  mapa: "Mapa de ofertas | JobMatch IA",
+  favoritos: "Favoritos | JobMatch IA",
+  candidaturas: "Candidaturas | JobMatch IA",
+  "user-profile": "Mi perfil | JobMatch IA",
+  admin: "Admin | JobMatch IA",
+};
 
 function computeCompletion(profile) {
   if (!profile) return 0;
@@ -45,6 +57,10 @@ function App() {
     document.body.style.background = darkMode ? "#0f172a" : "";
     document.body.style.color = darkMode ? "#f1f5f9" : "";
   }, [darkMode]);
+
+  useEffect(() => {
+    document.title = PAGE_TITLES[page] || PAGE_TITLES.home;
+  }, [page]);
 
   function toggleDarkMode() { setDarkMode(d => !d); }
 

@@ -2,30 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { login, register, resendVerificationEmail } from "../services/api";
 import { typography, transition } from "../constants/theme";
 import TurnstileWidget from "../components/TurnstileWidget";
+import BrandLogo from "../components/BrandLogo";
 
 const TURNSTILE_SITE_KEY = process.env.REACT_APP_TURNSTILE_SITE_KEY || "";
 const TEAL = "#007A8A";
-
-function RocketMark() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M14.5 3.5c-3.7 1-6.3 3.6-7.3 7.3l4 4c3.7-1 6.3-3.6 7.3-7.3l-4-4Z"
-        fill={TEAL}
-      />
-      <path
-        d="M9 16 6 19l-1-4 4 1Zm6-6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"
-        fill={TEAL}
-      />
-      <path
-        d="M13 11 5 19"
-        stroke="#0F172A"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 
 export default function Auth({ onAuthSuccess }) {
   const [mode, setMode] = useState("login");
@@ -178,10 +158,7 @@ export default function Auth({ onAuthSuccess }) {
 
       <header style={S.header}>
         <div style={S.brand}>
-          <span style={S.brandIconWrap}>
-            <RocketMark />
-          </span>
-          <span>JobMatch IA</span>
+          <BrandLogo size={36} showWordmark={true} gap={12} wordmarkSize={24} />
         </div>
         <div style={S.headerMeta}>Precision Match Technology</div>
       </header>
@@ -437,20 +414,6 @@ const S = {
   brand: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 10,
-    fontSize: 22,
-    fontWeight: 900,
-    letterSpacing: "-0.03em",
-  },
-  brandIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ECFEFF",
-    border: "1px solid #BAE6FD",
   },
   headerMeta: {
     fontSize: 12,

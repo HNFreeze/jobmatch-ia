@@ -9,6 +9,7 @@ import {
   updateAdminUserQuota,
 } from "../services/api";
 import { typography } from "../constants/theme";
+import BrandLogo from "../components/BrandLogo";
 
 const TEAL = "#007A8A";
 
@@ -199,6 +200,15 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       <div style={S.container}>
         <header style={{ ...S.adminHeader, ...(dm ? S.panelDm : S.panel) }}>
           <div>
+            <div style={S.brandWrap}>
+              <BrandLogo
+                size={34}
+                showWordmark={true}
+                gap={10}
+                wordmarkSize={22}
+                tone={dm ? "light" : "gradient"}
+              />
+            </div>
             <p style={{ ...S.kicker, color: dm ? "#67e8f9" : TEAL }}>Administración</p>
             <h1 style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de control</h1>
             <p style={{ ...S.subtitle, color: dm ? "#94a3b8" : "#64748b" }}>
@@ -590,6 +600,9 @@ const S = {
     fontSize: 14,
     lineHeight: 1.65,
     maxWidth: 680,
+  },
+  brandWrap: {
+    marginBottom: 14,
   },
   section: {
     display: "flex",
