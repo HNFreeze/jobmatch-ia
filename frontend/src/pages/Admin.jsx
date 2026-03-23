@@ -475,7 +475,7 @@ const S = {
     padding: "28px 20px 40px",
     fontFamily: typography.family,
     position: "relative",
-    overflow: "hidden",
+    overflowX: "hidden",
   },
   pageDm: {
     backgroundColor: "#0f172a",
@@ -595,6 +595,7 @@ const S = {
     display: "flex",
     flexDirection: "column",
     gap: 14,
+    scrollMarginTop: 24,
   },
   sectionHeader: {
     display: "flex",
