@@ -1145,77 +1145,207 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         })()}
 
         {/* ── Offer Detail Modal ───────────────────────────────────── */}
-        {selectedOffer && (
-          <div style={S.modalOverlay} onClick={() => setSelectedOffer(null)}>
-            <div style={{ ...S.modalContent, ...(dm ? { backgroundColor: "#1e293b" } : {}) }} onClick={e => e.stopPropagation()}>
-              <div style={{ ...S.modalHeader, borderBottomColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-                    backgroundColor: RESULT_STYLES[selectedOffer.resultado]?.bg || "#ffe4e6",
-                    color: RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e",
-                    border: `1px solid ${(RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e")}30`,
-                  }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: RESULT_STYLES[selectedOffer.resultado]?.border, display: "inline-block" }} />
-                    {RESULT_STYLES[selectedOffer.resultado]?.label || "SIN EVALUAR"}
-                    {selectedOffer.puntuacion != null ? ` - ${selectedOffer.puntuacion}%` : ""}
-                  </span>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {selectedOffer && (() => {
+          const rs = RESULT_STYLES[selectedOffer.resultado] || RESULT_STYLES.NO_ENCAJA;
+          const isFavModal = selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id);
+          const aidModal = selectedOffer.adzuna_id || selectedOffer.id;
+          const isTrackedModal = tracked.has(aidModal);
+          const contractType = detectContract(selectedOffer);
+          return (
+            <div style={S.modalOverlay} onClick={() => setSelectedOffer(null)}>
+              <div style={{
+                backgroundColor: dm ? "#1e293b" : "#fff",
+                borderRadius: 20,
+                maxWidth: 1100, width: "100%",
+                maxHeight: "92vh",
+                display: "flex", flexDirection: "column",
+                overflow: "hidden",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
+                fontFamily: typography.family,
+              }} onClick={e => e.stopPropagation()}>
+
+                {/* ── Top bar ─────────────────────────────────────── */}
+                <div style={{
+                  padding: "13px 24px", flexShrink: 0,
+                  borderBottom: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                  backgroundColor: dm ? "#1e293b" : "#fff",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                      backgroundColor: dm ? `${rs.border}18` : rs.bg,
+                      color: rs.border,
+                      border: `1px solid ${rs.border}30`,
+                    }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: rs.border, display: "inline-block" }} />
+                      {rs.label}{selectedOffer.puntuacion != null ? ` · ${selectedOffer.puntuacion}%` : ""}
+                    </span>
+                    <span style={{ fontSize: 12, color: dm ? "#475569" : "#9ca3af" }}>
+                      {calculateDaysAgo(selectedOffer.fecha_publicacion)}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
-                      style={{ ...S.starBtn, fontSize: 22, color: selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id) ? "#f59e0b" : "#9ca3af" }}
+                      style={{ ...S.starBtn, fontSize: 20, color: isFavModal ? "#f59e0b" : (dm ? "#475569" : "#d1d5db") }}
                       onClick={() => toggleFavorite(selectedOffer)}
+                      title={isFavModal ? "Quitar de favoritas" : "Guardar en favoritas"}
                     >
-                      {selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id) ? "★" : "☆"}
+                      {isFavModal ? "★" : "☆"}
                     </button>
                     <button style={S.modalCloseX} onClick={() => setSelectedOffer(null)}>✕</button>
                   </div>
                 </div>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>{selectedOffer.titulo}</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 500, fontFamily: typography.family }}>
-                  🏢 {selectedOffer.empresa} · {selectedOffer.ubicacion}
-                </p>
-              </div>
 
-              <div style={{ padding: "20px 24px" }}>
-                {selectedOffer.puntuacion != null && (
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: "14px 18px",
-                    backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8f9fc", borderRadius: 12,
-                  }}>
-                    <ScoreCircle score={selectedOffer.puntuacion} color={RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e"} size={80} />
-                    <div>
-                      <div style={{ fontSize: 11, color: dm ? "#64748b" : "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Compatibilidad</div>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: RESULT_STYLES[selectedOffer.resultado]?.border || "#f43f5e", lineHeight: 1.1 }}>
-                        {selectedOffer.puntuacion}%
+                {/* ── Body: two columns ────────────────────────────── */}
+                <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
+
+                  {/* LEFT: description */}
+                  <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px", minWidth: 0 }}>
+
+                    {/* Job header card */}
+                    <div style={{
+                      backgroundColor: dm ? "rgba(255,255,255,0.03)" : "#fff",
+                      border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+                      borderRadius: 16, padding: "24px 28px", marginBottom: 28,
+                      boxShadow: "0 1px 6px rgba(0,0,0,0.05)",
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                        <div style={{ flex: 1, minWidth: 0, marginRight: 16 }}>
+                          <h1 style={{
+                            margin: "0 0 12px", fontSize: 28, fontWeight: 800,
+                            color: dm ? "#f1f5f9" : "#111827",
+                            letterSpacing: "-0.025em", lineHeight: 1.15,
+                          }}>
+                            {selectedOffer.titulo}
+                          </h1>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 14, color: dm ? "#94a3b8" : "#64748b", fontWeight: 500 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontSize: 13 }}>🏢</span> {selectedOffer.empresa}
+                            </span>
+                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ fontSize: 13 }}>📍</span> {selectedOffer.ubicacion}
+                            </span>
+                          </div>
+                        </div>
+                        <CompanyLogo name={selectedOffer.empresa} logoUrl={selectedOffer.company_logo_url} size={56} darkMode={dm} />
                       </div>
-                      <div style={{ fontSize: 12, color: dm ? "#64748b" : "#6b7280", marginTop: 2 }}>
-                        {selectedOffer.puntuacion >= 80 ? "Excelente encaje" : selectedOffer.puntuacion >= 50 ? "Encaje parcial" : "Encaje bajo"}
+
+                      {/* Tag pills */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <span style={{
+                          padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                          textTransform: "uppercase", letterSpacing: "0.04em",
+                          backgroundColor: dm ? `${rs.border}15` : rs.bg, color: rs.border,
+                          border: `1px solid ${rs.border}25`,
+                        }}>{rs.label}</span>
+                        <span style={{
+                          padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                          backgroundColor: dm ? "rgba(99,102,241,0.12)" : "#eef2ff", color: dm ? "#a5b4fc" : "#4f46e5",
+                          border: `1px solid ${dm ? "rgba(99,102,241,0.25)" : "#c7d2fe"}`,
+                        }}>
+                          {contractType === "temporal" ? "Temporal / Prácticas" : contractType === "freelance" ? "Freelance" : "Jornada completa"}
+                        </span>
+                        {selectedOffer.salario && selectedOffer.salario !== "Salario no especificado" && (
+                          <span style={{
+                            padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                            backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#f0fdf4", color: dm ? "#34d399" : "#15803d",
+                            border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
+                          }}>
+                            💰 {selectedOffer.salario}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </div>
-                )}
-                {selectedOffer.salario && selectedOffer.salario !== "Salario no especificado" && (
-                  <p style={{ fontSize: 15, fontWeight: 700, color: "#059669", margin: "0 0 4px" }}>{selectedOffer.salario}</p>
-                )}
-                <p style={{ fontSize: 13, color: dm ? "#64748b" : "#9ca3af", margin: "0 0 16px" }}>{calculateDaysAgo(selectedOffer.fecha_publicacion)}</p>
 
-                {selectedOffer.motivo && (
+                    {/* Description */}
+                    <div>
+                      <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.01em" }}>
+                        Descripción del puesto
+                      </h2>
+                      <p style={{
+                        fontSize: 14, lineHeight: 1.85, margin: 0,
+                        color: dm ? "#94a3b8" : "#4b5563",
+                        whiteSpace: "pre-wrap", wordWrap: "break-word",
+                      }}>
+                        {selectedOffer.descripcion}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* RIGHT SIDEBAR: AI insights */}
                   <div style={{
-                    padding: "14px 18px", borderRadius: 12, marginBottom: 20,
-                    backgroundColor: dm ? "rgba(0,117,138,0.08)" : "rgba(0,117,138,0.04)",
-                    border: `1px solid ${dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.1)"}`,
+                    width: 300, flexShrink: 0,
+                    borderLeft: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                    overflowY: "auto", padding: "24px 18px",
+                    display: "flex", flexDirection: "column", gap: 14,
+                    backgroundColor: dm ? "rgba(0,0,0,0.12)" : "#f8fafc",
                   }}>
-                    <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
-                      <strong style={{ color: dm ? "#5eead4" : TEAL }}>Análisis IA: </strong>
-                      {selectedOffer.motivo}
-                    </p>
+
+                    {/* Match card */}
+                    {selectedOffer.puntuacion != null && (
+                      <div style={{
+                        backgroundColor: dm ? "#1e293b" : "#fff",
+                        borderRadius: 14, padding: "20px",
+                        border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                        borderLeft: `4px solid ${rs.border}`,
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: rs.border, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            Análisis IA
+                          </span>
+                          <span style={{ fontSize: 16 }}>✦</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 12 }}>
+                          <span style={{ fontSize: 52, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.03em", lineHeight: 1 }}>
+                            {selectedOffer.puntuacion}%
+                          </span>
+                          <span style={{ fontSize: 15, color: dm ? "#64748b" : "#6b7280", fontWeight: 500 }}>Match</span>
+                        </div>
+                        <div style={{
+                          height: 8, borderRadius: 999, overflow: "hidden",
+                          backgroundColor: dm ? "#334155" : "#f1f5f9", marginBottom: 14,
+                        }}>
+                          <div style={{
+                            height: "100%", borderRadius: 999,
+                            width: `${selectedOffer.puntuacion}%`,
+                            backgroundColor: rs.border,
+                            transition: "width 1s ease",
+                          }} />
+                        </div>
+                        {selectedOffer.motivo && (
+                          <p style={{ margin: 0, fontSize: 13, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.65 }}>
+                            {selectedOffer.motivo}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Skills gap card */}
                     {(selectedOffer.skills_match?.length > 0 || selectedOffer.skills_missing?.length > 0) && (
-                      <div style={{ marginTop: 12 }}>
+                      <div style={{
+                        backgroundColor: dm ? "#1e293b" : "#fff",
+                        borderRadius: 14, padding: "18px 20px",
+                        border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                            backgroundColor: dm ? "rgba(0,117,138,0.15)" : "#e0f2f1",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 15,
+                          }}>📊</div>
+                          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827" }}>Gap de habilidades</h3>
+                        </div>
                         {selectedOffer.skills_match?.length > 0 && (
-                          <div style={{ marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.04em" }}>Cumples</span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                          <div style={{ marginBottom: 12 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              Cumples
+                            </span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
                               {selectedOffer.skills_match.map(s => (
                                 <span key={s} style={{
                                   padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
@@ -1229,8 +1359,10 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         )}
                         {selectedOffer.skills_missing?.length > 0 && (
                           <div>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.04em" }}>Te falta</span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              Te falta
+                            </span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
                               {selectedOffer.skills_missing.map(s => (
                                 <span key={s} style={{
                                   padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
@@ -1244,67 +1376,134 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                <div style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, paddingTop: 16 }}>
-                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>Descripción de la oferta</h3>
-                  <p style={{ fontSize: 14, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.8, margin: 0, whiteSpace: "pre-wrap", wordWrap: "break-word", fontFamily: typography.family }}>
-                    {selectedOffer.descripcion}
-                  </p>
-                </div>
-              </div>
-
-              {showCoverLetter && (
-                <div style={{ padding: "16px 24px", borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, background: dm ? "rgba(255,255,255,0.02)" : "rgba(238,242,255,0.5)" }}>
-                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827" }}>Carta de presentación</h3>
-                  {coverLetterLoading ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0" }}>
-                      <div style={S.spinner} />
-                      <span style={{ fontSize: 14, color: dm ? "#94a3b8" : "#6b7280" }}>Generando carta personalizada...</span>
-                    </div>
-                  ) : coverLetterError ? (
-                    <div style={{ padding: "8px 12px", backgroundColor: "#fee2e2", color: "#991b1b", borderRadius: 8, fontSize: 13, border: "1px solid #fecaca" }}>{coverLetterError}</div>
-                  ) : coverLetter ? (
-                    <>
-                      <textarea
-                        style={{
-                          width: "100%", minHeight: 260, padding: 14, fontSize: 14, fontFamily: "Georgia, 'Times New Roman', serif",
-                          lineHeight: 1.7, color: dm ? "#f1f5f9" : "#111827", border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
-                          borderRadius: 8, resize: "vertical", boxSizing: "border-box", outline: "none",
-                          backgroundColor: dm ? "#0f172a" : "#fff",
-                        }}
-                        value={coverLetter}
-                        onChange={e => setCoverLetter(e.target.value)}
-                      />
-                      <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-                        <button style={S.btnOutline} onClick={() => { navigator.clipboard.writeText(coverLetter); addToast?.("Carta copiada", "success"); }}>
-                          Copiar
-                        </button>
-                        <button style={S.btnPrimary} onClick={handleGenerateCoverLetter}>Regenerar</button>
+                    {/* Cover letter card */}
+                    {showCoverLetter && (
+                      <div style={{
+                        backgroundColor: dm ? "#1e293b" : "#fff",
+                        borderRadius: 14, padding: "18px 20px",
+                        border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                            backgroundColor: dm ? "rgba(124,58,237,0.15)" : "#ede9fe",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 15,
+                          }}>✉️</div>
+                          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827" }}>Carta de presentación</h3>
+                        </div>
+                        {coverLetterLoading ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={S.spinner} />
+                            <span style={{ fontSize: 13, color: dm ? "#94a3b8" : "#6b7280" }}>Generando...</span>
+                          </div>
+                        ) : coverLetterError ? (
+                          <div style={{ padding: "8px 10px", backgroundColor: "#fee2e2", color: "#991b1b", borderRadius: 8, fontSize: 12, border: "1px solid #fecaca" }}>{coverLetterError}</div>
+                        ) : coverLetter ? (
+                          <>
+                            <textarea
+                              style={{
+                                width: "100%", minHeight: 200, padding: 12, fontSize: 13,
+                                fontFamily: "Georgia, 'Times New Roman', serif",
+                                lineHeight: 1.7, color: dm ? "#f1f5f9" : "#111827",
+                                border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                                borderRadius: 8, resize: "vertical", boxSizing: "border-box", outline: "none",
+                                backgroundColor: dm ? "#0f172a" : "#fff",
+                              }}
+                              value={coverLetter}
+                              onChange={e => setCoverLetter(e.target.value)}
+                            />
+                            <div style={{ display: "flex", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
+                              <button style={{ ...S.btnOutline, fontSize: 12, padding: "6px 12px" }} onClick={() => { navigator.clipboard.writeText(coverLetter); addToast?.("Carta copiada", "success"); }}>
+                                Copiar
+                              </button>
+                              <button style={{ ...S.btnPrimary, fontSize: 12, padding: "6px 12px" }} onClick={handleGenerateCoverLetter}>Regenerar</button>
+                            </div>
+                          </>
+                        ) : null}
                       </div>
-                    </>
-                  ) : null}
+                    )}
+                  </div>
                 </div>
-              )}
 
-              <div style={{ padding: "16px 24px", borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
-                <button style={{ ...S.btnOutline, marginRight: "auto", ...(dm ? { color: "#94a3b8", borderColor: "rgba(255,255,255,0.12)" } : {}) }} onClick={() => setSelectedOffer(null)}>Cerrar</button>
-                <button style={{ ...S.btnOutline, ...(dm ? { color: "#5eead4", borderColor: "rgba(94,234,212,0.3)" } : { color: TEAL, borderColor: `${TEAL}50` }) }} onClick={() => handleTrackOffer(selectedOffer)}>
-                  Seguir oferta
-                </button>
-                <button style={{ ...S.btnPrimary, background: "linear-gradient(135deg, #7c3aed, #2563eb)" }} onClick={handleGenerateCoverLetter}>
-                  Generar carta
-                </button>
-                {selectedOffer.redirect_url && (
-                  <a href={selectedOffer.redirect_url} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
-                    Ver en Adzuna →
-                  </a>
-                )}
+                {/* ── Bottom action bar ────────────────────────────── */}
+                <div style={{
+                  padding: "13px 24px", flexShrink: 0,
+                  borderTop: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+                  backgroundColor: dm ? "#1e293b" : "#fff",
+                  boxShadow: "0 -4px 20px rgba(0,0,0,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  flexWrap: "wrap", gap: 10,
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 320 }}>
+                      {selectedOffer.titulo}
+                    </div>
+                    <div style={{ fontSize: 12, color: dm ? "#475569" : "#9ca3af", marginTop: 1 }}>
+                      {selectedOffer.empresa} · {selectedOffer.ubicacion}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                        backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#f1f5f9",
+                        color: isFavModal ? "#f59e0b" : (dm ? "#94a3b8" : "#374151"),
+                        border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
+                        cursor: "pointer", fontFamily: typography.family,
+                      }}
+                      onClick={() => toggleFavorite(selectedOffer)}
+                    >
+                      {isFavModal ? "★ Guardado" : "☆ Guardar"}
+                    </button>
+                    <button
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                        backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#f1f5f9",
+                        color: isTrackedModal ? (dm ? "#34d399" : "#059669") : (dm ? "#94a3b8" : "#374151"),
+                        border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
+                        cursor: "pointer", fontFamily: typography.family,
+                      }}
+                      onClick={() => handleTrackOffer(selectedOffer)}
+                    >
+                      {isTrackedModal ? "✓ Siguiendo" : "Seguir oferta"}
+                    </button>
+                    <button
+                      style={{
+                        padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                        background: "linear-gradient(135deg, #7c3aed, #2563eb)",
+                        color: "#fff", border: "none", cursor: "pointer", fontFamily: typography.family,
+                        boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
+                      }}
+                      onClick={handleGenerateCoverLetter}
+                    >
+                      ✉ Generar carta
+                    </button>
+                    {selectedOffer.redirect_url && (
+                      <a
+                        href={selectedOffer.redirect_url}
+                        target="_blank" rel="noopener noreferrer"
+                        style={{
+                          padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                          backgroundColor: TEAL, color: "#fff",
+                          textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6,
+                          boxShadow: "0 2px 8px rgba(0,117,138,0.3)",
+                        }}
+                      >
+                        Ver en Adzuna →
+                      </a>
+                    )}
+                  </div>
+                </div>
+
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     );
   }
