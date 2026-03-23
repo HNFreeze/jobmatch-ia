@@ -136,14 +136,15 @@ export default function Landing({ onStartClick }) {
           {/* Desktop nav links */}
           <div className="lv2-nav-links" style={{ display: "flex", gap: 32, alignItems: "center" }}>
             {[
-              { label: "Cómo funciona", href: "#como-funciona" },
-              { label: "Características", href: "#features" },
-              { label: "Precios", href: "#pricing" },
+              { label: "Cómo funciona", id: "como-funciona" },
+              { label: "Características", id: "features" },
+              { label: "Precios", id: "pricing" },
             ].map(l => (
-              <a key={l.label} href={l.href} className="lv2-nav-link" style={{
+              <button key={l.label} className="lv2-nav-link" onClick={() => document.getElementById(l.id)?.scrollIntoView({ behavior: "smooth" })} style={{
                 fontSize: 14, fontWeight: 600, color: GRAY_500,
-                textDecoration: "none", fontFamily: typography.family,
-              }}>{l.label}</a>
+                background: "none", border: "none", cursor: "pointer",
+                fontFamily: typography.family, padding: 0,
+              }}>{l.label}</button>
             ))}
           </div>
 
