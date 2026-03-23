@@ -64,6 +64,12 @@ def fetch_company_rating_heuristic(name: str) -> Tuple[float | None, int | None,
         return None, None, "not_found"
     return round(val, 1), count, "heuristic"
 
+def _guess_domains(name: str) -> list[str]:
+    cleaned = re.sub(r"[^a-zA-Z0-9]", "", name).lower()
+    if not cleaned:
+        return []
+    return [f"{cleaned}.com", f"{cleaned}.es", f"{cleaned}.net", f"{cleaned}.org"]
+
 def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client) -> CompanyData:
     record = CompanyData(
         company_name_original=name[:300],
@@ -77,28 +83,35 @@ def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client
         domain = _extract_company_domain(url)
         if domain: break
 
-    record.resolved_domain = domain
-
-    # Logo Logic
-    if domain:
-        last_error = None
-        for candidate_url, source in build_logo_candidates(domain):
+    guessed_domains = [domain] if domain else _guess_domains(name)
+    best_candidate_url = None
+    best_source = None
+    last_error = None
+    
+    for d in guessed_domains:
+        if best_candidate_url: break
+        for candidate_url, source in build_logo_candidates(d):
             try:
                 response = client.get(candidate_url)
                 content_type = (response.headers.get("content-type") or "").lower()
-                if response.status_code == 200 and content_type.startswith("image/"):
-                    record.status = "found"
-                    record.logo_url = candidate_url
-                    record.source = source
+                if response.status_code == 200 and content_type.startswith("image/") and "xml" not in content_type:
+                    best_candidate_url = candidate_url
+                    best_source = source
+                    domain = d # Encontramos el dominio bueno
                     break
             except Exception as exc:
                 last_error = exc
-        if not getattr(record, "status", None) or record.status != "found":
-            record.source = "site_favicon"
-            record.status = "failed" if last_error else "not_found"
+
+    record.resolved_domain = domain
+
+    # Logo Logic
+    if best_candidate_url:
+        record.status = "found"
+        record.logo_url = best_candidate_url
+        record.source = best_source
     else:
-        record.status = "not_found"
-        record.source = "offer_url_unavailable"
+        record.source = "site_favicon"
+        record.status = "failed" if last_error else "not_found"
 
     # Rating Logic
     r_val, r_count, r_source = fetch_company_rating_heuristic(name)
@@ -118,14 +131,14 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
     if not norm_name: return None
     
     row = db.query(CompanyData).filter(CompanyData.company_name_normalized == norm_name).first()
-    if not row or (row.status == "not_found" and not row.resolved_domain and offer_url):
+    if not row or (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending":
         urls = [offer_url] if offer_url else []
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
             resolved = _resolve_company_record(company_name, urls, client)
             
         if row:
             row.company_name_original = resolved.company_name_original
-            row.resolved_domain = resolved.resolved_domain
+            if resolved.resolved_domain: row.resolved_domain = resolved.resolved_domain
             row.logo_url = resolved.logo_url
             row.status = resolved.status
             row.source = resolved.source
@@ -196,7 +209,7 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
     missing_names = [name for name in normalized_names if name not in rows_by_name]
     retry_names = [
         name for name, row in rows_by_name.items()
-        if row.status == "not_found" and not row.resolved_domain and grouped[name]["urls"]
+        if (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending"
     ]
 
     if missing_names or retry_names:
