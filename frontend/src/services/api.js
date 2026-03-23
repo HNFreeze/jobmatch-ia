@@ -1,5 +1,13 @@
 const API_URL = (process.env.REACT_APP_API_URL || "http://localhost:8001").replace(/\/$/, "");
 
+function forceLogoutFromServer(reason = "session_invalid") {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("token");
+  localStorage.removeItem("email");
+  localStorage.removeItem("alias");
+  window.dispatchEvent(new CustomEvent("jobmatch:force-logout", { detail: { reason } }));
+}
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   return {
@@ -10,6 +18,18 @@ function authHeaders() {
 
 async function buildApiError(response, fallbackMessage) {
   const error = await response.json().catch(() => ({}));
+  const detailText = typeof error.detail === "string" ? error.detail : "";
+
+  if (
+    response.status === 401 ||
+    (response.status === 403 && (
+      error.code === "account_blocked" ||
+      detailText.toLowerCase().includes("bloquead")
+    ))
+  ) {
+    forceLogoutFromServer(error.code || (response.status === 401 ? "token_invalid" : "account_blocked"));
+  }
+
   const err = new Error(error.detail || fallbackMessage);
   Object.assign(err, error);
   err.status = response.status;
