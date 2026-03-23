@@ -83,7 +83,7 @@ export default function Auth({ onAuthSuccess }) {
 
     if (mode === "register") {
       if (password !== confirmPassword) {
-        setError("Las contrasenas no coinciden.");
+        setError("Las contraseñas no coinciden.");
         return;
       }
       if (!alias.trim()) {
@@ -91,15 +91,15 @@ export default function Auth({ onAuthSuccess }) {
         return;
       }
       if (password.length < 8) {
-        setError("La contrasena debe tener al menos 8 caracteres.");
+        setError("La contraseña debe tener al menos 8 caracteres.");
         return;
       }
       if (!canSubmitRegister) {
-        setError(turnstileError || "Completa la proteccion anti-bot antes de crear la cuenta.");
+        setError(turnstileError || "Completa la protección anti-bot antes de crear la cuenta.");
         return;
       }
     } else if (password.length < 8) {
-      setError("La contrasena debe tener al menos 8 caracteres.");
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
 
@@ -126,8 +126,8 @@ export default function Auth({ onAuthSuccess }) {
       setPendingVerificationEmail(data.email || email.trim().toLowerCase());
       setNotice(
         data.email_sent
-          ? "Cuenta creada. Revisa tu correo y verifica tu cuenta antes de iniciar sesion."
-          : "Cuenta creada, pero no se pudo enviar el correo automaticamente. Usa el reenvio manual."
+          ? "Cuenta creada. Revisa tu correo y verifica tu cuenta antes de iniciar sesión."
+          : "Cuenta creada, pero no se pudo enviar el correo automáticamente. Usa el reenvío manual."
       );
       setMode("login");
       setPassword("");
@@ -161,8 +161,8 @@ export default function Auth({ onAuthSuccess }) {
 
   const title = mode === "login" ? "Bienvenido de nuevo." : "Crea tu acceso profesional.";
   const intro = mode === "login"
-    ? "Accede a tu panel de precision y sigue afinando tu siguiente movimiento profesional."
-    : "Activa tu cuenta, protege el acceso con verificacion real y deja listo tu perfil para el matching.";
+    ? "Accede a tu panel de precisión y sigue afinando tu siguiente movimiento profesional."
+    : "Activa tu cuenta, protege el acceso con verificación real y deja listo tu perfil para el matching.";
   const submitLabel = loading
     ? "Cargando..."
     : mode === "login"
@@ -203,7 +203,7 @@ export default function Auth({ onAuthSuccess }) {
                 ...(mode === "login" ? S.modeButtonActive : S.modeButtonIdle),
               }}
             >
-              Iniciar sesion
+              Iniciar sesión
             </button>
             <button
               type="button"
@@ -223,7 +223,7 @@ export default function Auth({ onAuthSuccess }) {
           {pendingVerificationEmail && (
             <div style={S.pendingBox}>
               <div>
-                <p style={S.pendingEyebrow}>Verificacion pendiente</p>
+                <p style={S.pendingEyebrow}>Verificación pendiente</p>
                 <p style={S.pendingText}>
                   La cuenta asociada a <strong>{pendingVerificationEmail}</strong> necesita verificar el correo antes de acceder.
                 </p>
@@ -238,7 +238,7 @@ export default function Auth({ onAuthSuccess }) {
                   cursor: resendLoading ? "not-allowed" : "pointer",
                 }}
               >
-                {resendLoading ? "Reenviando..." : "Reenviar email de verificacion"}
+                {resendLoading ? "Reenviando..." : "Reenviar email de verificación"}
               </button>
             </div>
           )}
@@ -289,7 +289,7 @@ export default function Auth({ onAuthSuccess }) {
             )}
 
             <div style={S.field}>
-              <label style={S.label}>Correo electronico</label>
+              <label style={S.label}>Correo electrónico</label>
               <input
                 type="email"
                 value={email}
@@ -301,13 +301,13 @@ export default function Auth({ onAuthSuccess }) {
             </div>
 
             <div style={S.field}>
-              <label style={S.label}>Contrasena</label>
+              <label style={S.label}>Contraseña</label>
               <input
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
-                placeholder={mode === "register" ? "Minimo 8 caracteres" : "Tu contrasena"}
+                placeholder={mode === "register" ? "Mínimo 8 caracteres" : "Tu contraseña"}
                 style={S.input}
               />
             </div>
@@ -315,13 +315,13 @@ export default function Auth({ onAuthSuccess }) {
             {mode === "register" && (
               <>
                 <div style={S.field}>
-                  <label style={S.label}>Confirmar contrasena</label>
+                  <label style={S.label}>Confirmar contraseña</label>
                   <input
                     type="password"
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}
                     required
-                    placeholder="Repite la contrasena"
+                    placeholder="Repite la contraseña"
                     style={S.input}
                   />
                 </div>
@@ -329,7 +329,7 @@ export default function Auth({ onAuthSuccess }) {
                 <div style={S.securityPanel}>
                   <div style={S.securityHeader}>
                     <span style={S.securityBadge}>Seguridad</span>
-                    <span style={S.securityMeta}>Turnstile + verificacion por email</span>
+                    <span style={S.securityMeta}>Turnstile + verificación por email</span>
                   </div>
                   <TurnstileWidget
                     siteKey={TURNSTILE_SITE_KEY}
@@ -337,7 +337,7 @@ export default function Auth({ onAuthSuccess }) {
                     onError={handleTurnstileError}
                   />
                   <p style={S.securityHelp}>
-                    Usamos Cloudflare Turnstile para reducir registros automaticos y proteger el servicio.
+                    Usamos Cloudflare Turnstile para reducir registros automáticos y proteger el servicio.
                   </p>
                   {turnstileError && <p style={S.turnstileError}>{turnstileError}</p>}
                 </div>
@@ -359,14 +359,14 @@ export default function Auth({ onAuthSuccess }) {
 
           <div style={S.cardFooter}>
             <span style={S.cardFooterText}>
-              {mode === "login" ? "No tienes cuenta?" : "Ya tienes acceso?"}
+              {mode === "login" ? "¿No tienes cuenta?" : "¿Ya tienes acceso?"}
             </span>
             <button
               type="button"
               onClick={() => switchMode(mode === "login" ? "register" : "login")}
               style={S.linkButton}
             >
-              {mode === "login" ? "Registrate gratis" : "Inicia sesion"}
+              {mode === "login" ? "Regístrate gratis" : "Inicia sesión"}
             </button>
           </div>
         </section>
@@ -379,7 +379,7 @@ export default function Auth({ onAuthSuccess }) {
       </main>
 
       <footer style={S.footer}>
-        <span>Cuenta protegida con verificacion por email y anti-bot.</span>
+        <span>Cuenta protegida con verificación por email y anti-bot.</span>
         <span>JobMatch IA · 2026</span>
       </footer>
     </div>
