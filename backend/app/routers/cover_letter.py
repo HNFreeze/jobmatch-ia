@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.database import get_session_local
 from app.routers.user import get_current_user_record
+from app.services.ai_cost_service import record_ai_api_cost
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
@@ -115,6 +116,14 @@ Responde ÚNICAMENTE con los 4 párrafos de la carta, sin encabezado, sin firma,
             model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
+        )
+        record_ai_api_cost(
+            user_id=user.id,
+            feature="cover_letter",
+            model="claude-sonnet-4-6",
+            usage=getattr(message, "usage", None),
+            request_id=getattr(message, "id", None),
+            metadata={"job_title": body.oferta.titulo, "company": body.oferta.empresa},
         )
         carta = message.content[0].text
         return JSONResponse(

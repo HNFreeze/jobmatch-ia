@@ -155,6 +155,7 @@ async def match_offers(
                 api_key,
                 db=db,
                 profile_hash=perfil_hash,
+                user_id=user.id,
             )
         except Exception as e:
             error_msg = str(e)
@@ -192,7 +193,7 @@ async def match_offers(
         skills_gap_data = None
         try:
             skills_gap_data = generate_skills_gap(
-                profile_dict, offers, results, api_key
+                profile_dict, offers, results, api_key, user_id=user.id
             )
         except Exception as e:
             print(f"[SKILLS_GAP] Error no crítico: {e}")

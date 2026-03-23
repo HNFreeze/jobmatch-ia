@@ -9,6 +9,7 @@ from typing import Any
 import anthropic
 
 from app.models.job_offer import JobOffer
+from app.services.ai_cost_service import record_ai_api_cost
 
 MATCH_ENGINE_VERSION = "v2_structured"
 MATCH_SIGNAL_BATCH_SIZE = max(1, min(int(os.getenv("MATCH_SIGNAL_BATCH_SIZE", "8")), 12))
@@ -320,7 +321,7 @@ Ofertas:
 """
 
 
-def _extract_offer_signals_with_ai(offers: list[dict], api_key: str) -> dict[int, dict]:
+def _extract_offer_signals_with_ai(offers: list[dict], api_key: str, user_id: int | None = None) -> dict[int, dict]:
     if not offers:
         return {}
     client = anthropic.Anthropic(api_key=api_key)
@@ -329,6 +330,14 @@ def _extract_offer_signals_with_ai(offers: list[dict], api_key: str) -> dict[int
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
+    )
+    record_ai_api_cost(
+        user_id=user_id,
+        feature="match_signal_extraction",
+        model="claude-haiku-4-5-20251001",
+        usage=getattr(message, "usage", None),
+        request_id=getattr(message, "id", None),
+        metadata={"offers_in_batch": len(offers)},
     )
     payload = _extract_json_payload(message.content[0].text)
     if not isinstance(payload, list):
@@ -397,7 +406,7 @@ def _persist_offer_signals(db, offers: list[dict], signals_by_id: dict[int, dict
         db.commit()
 
 
-def _extract_offer_signals(offers: list[dict], api_key: str, db=None) -> dict[int, dict]:
+def _extract_offer_signals(offers: list[dict], api_key: str, db=None, user_id: int | None = None) -> dict[int, dict]:
     cached_by_id: dict[int, dict] = {}
     uncached_offers = offers
 
@@ -415,7 +424,7 @@ def _extract_offer_signals(offers: list[dict], api_key: str, db=None) -> dict[in
     for start in range(0, len(offers_for_ai), MATCH_SIGNAL_BATCH_SIZE):
         batch = offers_for_ai[start:start + MATCH_SIGNAL_BATCH_SIZE]
         try:
-            ai_results.update(_extract_offer_signals_with_ai(batch, api_key))
+            ai_results.update(_extract_offer_signals_with_ai(batch, api_key, user_id=user_id))
         except Exception as exc:
             print(f"[MATCH_SIGNALS] Error en extraccion AI por lote: {exc}")
             for offer in batch:
@@ -800,9 +809,10 @@ def match_profile_with_offers(
     api_key: str,
     db=None,
     profile_hash: str = None,
+    user_id: int | None = None,
 ) -> list:
     del profile_hash
-    signals_by_id = _extract_offer_signals(offers, api_key, db=db)
+    signals_by_id = _extract_offer_signals(offers, api_key, db=db, user_id=user_id)
     results = []
     for offer in offers:
         signals = signals_by_id.get(offer["id"], _heuristic_offer_signals(offer))
@@ -821,6 +831,7 @@ def generate_skills_gap(
     offers: list,
     results: list,
     api_key: str,
+    user_id: int | None = None,
 ) -> dict | None:
     result_by_id = {result["id"]: result for result in results}
     low_match: list[dict] = []
@@ -877,6 +888,14 @@ Devuelve UNICAMENTE un JSON valido con este formato:
             model="claude-haiku-4-5-20251001",
             max_tokens=1600,
             messages=[{"role": "user", "content": prompt}],
+        )
+        record_ai_api_cost(
+            user_id=user_id,
+            feature="skills_gap",
+            model="claude-haiku-4-5-20251001",
+            usage=getattr(message, "usage", None),
+            request_id=getattr(message, "id", None),
+            metadata={"offers_considered": len(low_match[:15])},
         )
         parsed = _extract_json_payload(message.content[0].text)
         if not isinstance(parsed, dict):

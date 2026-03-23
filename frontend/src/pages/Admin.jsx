@@ -421,14 +421,69 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               <SummaryLine label="Cartas hoy" value={aiUsage?.today_usage?.cover_letters || 0} darkMode={dm} />
             </div>
 
+            <div style={{ ...S.costGrid, marginBottom: 18 }}>
+              <CostCard
+                label="Coste estimado hoy"
+                value={formatUsd(aiUsage?.cost_estimate?.estimated_spent_today_usd)}
+                darkMode={dm}
+              />
+              <CostCard
+                label="Coste desde seguimiento"
+                value={formatUsd(aiUsage?.cost_estimate?.estimated_spent_since_tracking_usd)}
+                darkMode={dm}
+              />
+              <CostCard
+                label="Coste combinado"
+                value={formatUsd(aiUsage?.cost_estimate?.combined_spent_usd)}
+                helper={`Base manual: ${formatUsd(aiUsage?.cost_estimate?.baseline_spent_usd)}`}
+                darkMode={dm}
+              />
+              <CostCard
+                label="Saldo estimado"
+                value={
+                  aiUsage?.cost_estimate?.estimated_remaining_usd === null
+                    ? "No configurado"
+                    : formatUsd(aiUsage?.cost_estimate?.estimated_remaining_usd)
+                }
+                helper={
+                  aiUsage?.cost_estimate?.baseline_remaining_usd
+                    ? `Base manual: ${formatUsd(aiUsage.cost_estimate.baseline_remaining_usd)}`
+                    : "Configurable desde entorno"
+                }
+                darkMode={dm}
+              />
+            </div>
+
             <div style={S.subblock}>
               <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Top usuarios</p>
               {(aiUsage?.top_users || []).map((item) => (
                 <div key={item.email} style={S.listRow}>
-                  <span style={{ color: dm ? "#f8fafc" : "#111827" }}>{item.email}</span>
-                  <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{item.units}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ color: dm ? "#f8fafc" : "#111827" }}>{item.email}</span>
+                    <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                      {formatUsd(item.estimated_cost_usd)} · {item.units} unidades
+                    </span>
+                  </div>
+                  <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{item.analyses + item.cover_letters}</span>
                 </div>
               ))}
+            </div>
+
+            <div style={S.subblock}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Coste por funcionalidad</p>
+              {(aiUsage?.cost_estimate?.feature_breakdown || []).length ? (
+                aiUsage.cost_estimate.feature_breakdown.map((item) => (
+                  <div key={item.feature} style={S.listRow}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ color: dm ? "#f8fafc" : "#111827" }}>{formatFeatureLabel(item.feature)}</span>
+                      <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>{item.requests} llamadas</span>
+                    </div>
+                    <span style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 800 }}>{formatUsd(item.estimated_cost_usd)}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay llamadas registradas para estimar coste.</p>
+              )}
             </div>
 
             <div style={S.subblock}>
@@ -487,6 +542,16 @@ function SummaryLine({ label, value, darkMode }) {
   );
 }
 
+function CostCard({ label, value, helper, darkMode }) {
+  return (
+    <div style={{ ...S.costCard, ...(darkMode ? S.costCardDm : {}) }}>
+      <p style={{ ...S.costLabel, color: darkMode ? "#94a3b8" : "#64748b" }}>{label}</p>
+      <div style={{ ...S.costValue, color: darkMode ? "#f8fafc" : "#0f172a" }}>{value}</div>
+      {helper ? <p style={{ ...S.costHelper, color: darkMode ? "#67e8f9" : TEAL }}>{helper}</p> : null}
+    </div>
+  );
+}
+
 function HeaderButton({ label, onClick }) {
   return (
     <button type="button" onClick={onClick} style={S.headerButton}>
@@ -512,6 +577,20 @@ function formatDate(value, short = false) {
   } catch {
     return "-";
   }
+}
+
+function formatUsd(value) {
+  const numeric = Number(value || 0);
+  return `${numeric.toFixed(4)} USD`;
+}
+
+function formatFeatureLabel(value) {
+  const labels = {
+    match_signal_extraction: "Extraccion de senales",
+    skills_gap: "Plan de mejora",
+    cover_letter: "Carta de presentacion",
+  };
+  return labels[value] || value;
 }
 
 const S = {
@@ -920,6 +999,40 @@ const S = {
     flexDirection: "column",
     gap: 10,
     marginBottom: 16,
+  },
+  costGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 10,
+  },
+  costCard: {
+    borderRadius: 16,
+    border: "1px solid rgba(0,122,138,0.14)",
+    backgroundColor: "rgba(0,122,138,0.06)",
+    padding: "14px 14px 12px",
+  },
+  costCardDm: {
+    backgroundColor: "rgba(6,182,212,0.08)",
+    borderColor: "rgba(103,232,249,0.14)",
+  },
+  costLabel: {
+    margin: "0 0 8px",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    fontWeight: 900,
+  },
+  costValue: {
+    fontSize: 20,
+    fontWeight: 900,
+    lineHeight: 1.1,
+    marginBottom: 6,
+  },
+  costHelper: {
+    margin: 0,
+    fontSize: 12,
+    lineHeight: 1.5,
+    fontWeight: 700,
   },
   subblock: {
     display: "flex",
