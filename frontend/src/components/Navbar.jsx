@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
-  gradients,
   typography,
   transition,
 } from "../constants/theme";
+import BrandLogo from "./BrandLogo";
 
 const BASE_NAV_LINKS = [
   { key: "buscar",       label: "Buscar ofertas" },
@@ -77,8 +77,13 @@ export default function Navbar({
         <div style={S.inner}>
           {/* Logo */}
           <button style={S.logo} onClick={() => navigate("buscar")}>
-            <span style={S.logoGradient}>JobMatch</span>
-            <span style={S.logoAccent}> IA</span>
+            <BrandLogo
+              size={34}
+              showWordmark={true}
+              gap={10}
+              wordmarkSize={22}
+              tone={dm ? "light" : "gradient"}
+            />
           </button>
 
           {/* Desktop links */}
@@ -222,28 +227,11 @@ const S = {
   logo: {
     background: "none",
     border: "none",
-    fontSize: 22,
-    fontWeight: 800,
-    letterSpacing: "-0.03em",
     cursor: "pointer",
-    fontFamily: typography.family,
     padding: 0,
     flexShrink: 0,
     display: "flex",
     alignItems: "center",
-  },
-  logoGradient: {
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-  },
-  logoAccent: {
-    background: gradients.text,
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    backgroundClip: "text",
-    opacity: 0.7,
   },
   links: {
     display: "flex",
