@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-import hashlib
 import re
 import unicodedata
 from datetime import datetime
-from typing import Iterable, Tuple
+from typing import Iterable
 from urllib.parse import urlparse
 
 import httpx
@@ -49,21 +48,6 @@ def _extract_company_domain(url: str | None) -> str | None:
     if _is_ignored_domain(host): return None
     if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", host): return None
     return host
-
-def fetch_company_rating_heuristic(name: str) -> Tuple[float | None, int | None, str]:
-    if not name:
-        return None, None, "not_found"
-    # Deterministic pseudo-rating based on hash, acting as heuristic DB wrapper
-    num = int(hashlib.sha256(name.lower().encode("utf-8")).hexdigest()[:8], 16)
-    val = 3.2 + (num % 18) / 10.0
-    count = 10 + (num % 5000)
-    
-    lname = name.lower()
-    if "google" in lname or "amazon" in lname or "microsoft" in lname or "apple" in lname or "meta" in lname:
-        return 4.5, count + 10000, "heuristic"
-    if len(name) < 3:
-        return None, None, "not_found"
-    return round(val, 1), count, "heuristic"
 
 def _guess_domains(name: str) -> list[str]:
     cleaned = re.sub(r"[^a-zA-Z0-9]", "", name).lower()
@@ -122,16 +106,6 @@ def _resolve_company_record(name: str, urls: Iterable[str], client: httpx.Client
         record.source = "site_favicon"
         record.status = "failed" if last_error else "not_found"
 
-    # Rating Logic
-    r_val, r_count, r_source = fetch_company_rating_heuristic(name)
-    if r_val is not None:
-        record.rating_value = r_val
-        record.rating_count = r_count
-        record.rating_source = r_source
-        record.rating_status = "found"
-    else:
-        record.rating_status = "not_found"
-
     return record
 
 def get_or_create_company_data(db: Session, company_name: str, offer_url: str = None) -> dict | None:
@@ -141,7 +115,7 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
     
     row = db.query(CompanyData).filter(CompanyData.company_name_normalized == norm_name).first()
     resolved = None
-    if not row or (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending":
+    if not row or (row.status == "not_found" and not row.resolved_domain):
         urls = [offer_url] if offer_url else []
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
             resolved = _resolve_company_record(company_name, urls, client)
@@ -152,10 +126,6 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
             row.logo_url = resolved.logo_url
             row.status = resolved.status
             row.source = resolved.source
-            row.rating_value = resolved.rating_value
-            row.rating_count = resolved.rating_count
-            row.rating_source = resolved.rating_source
-            row.rating_status = resolved.rating_status
             row.last_attempt_at = datetime.utcnow()
             row.updated_at = datetime.utcnow()
         else:
@@ -171,27 +141,21 @@ def get_or_create_company_data(db: Session, company_name: str, offer_url: str = 
             return {
                 "name": fallback.company_name_original,
                 "logo_url": fallback.logo_url if fallback.status == "found" else None,
-                "rating_value": fallback.rating_value if fallback.rating_status == "found" else None,
-                "rating_count": fallback.rating_count if fallback.rating_status == "found" else None,
-                "rating_status": fallback.rating_status,
+                "logo_status": fallback.status,
+                "logo_domain": fallback.resolved_domain,
             }
             
     return {
         "name": row.company_name_original,
         "logo_url": row.logo_url if row.status == "found" else None,
-        "rating_value": row.rating_value if row.rating_status == "found" else None,
-        "rating_count": row.rating_count if row.rating_status == "found" else None,
-        "rating_status": row.rating_status,
+        "logo_status": row.status,
+        "logo_domain": row.resolved_domain,
     }
 
 def _apply_company_data(record: CompanyData | None, item: dict) -> dict:
     item["company_logo_url"] = record.logo_url if record and record.status == "found" else None
     item["company_logo_status"] = record.status if record else "not_found"
     item["company_logo_domain"] = record.resolved_domain if record else None
-    
-    item["company_rating_value"] = record.rating_value if record and record.rating_status == "found" else None
-    item["company_rating_count"] = record.rating_count if record and record.rating_status == "found" else None
-    item["company_rating_status"] = record.rating_status if record else "not_found"
     return item
 
 def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]:
@@ -226,7 +190,7 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
     missing_names = [name for name in normalized_names if name not in rows_by_name]
     retry_names = [
         name for name, row in rows_by_name.items()
-        if (row.status == "not_found" and not row.resolved_domain) or row.rating_status == "pending"
+        if row.status == "not_found" and not row.resolved_domain
     ]
 
     transient_rows: dict[str, CompanyData] = {}
@@ -248,10 +212,6 @@ def enrich_items_with_company_data(db: Session, items: list[dict]) -> list[dict]
                 row.logo_url = resolved.logo_url
                 row.status = resolved.status
                 row.source = resolved.source
-                row.rating_value = resolved.rating_value
-                row.rating_count = resolved.rating_count
-                row.rating_source = resolved.rating_source
-                row.rating_status = resolved.rating_status
                 row.last_attempt_at = datetime.utcnow()
                 row.updated_at = datetime.utcnow()
 
