@@ -7,10 +7,12 @@ from app.database import Base
 
 
 class CompanyLogo(Base):
-    """Unified company data: logo + rating + metadata.
+    """Unified company data cache: logo + metadata.
 
     Table keeps the name ``company_logos`` for backward-compat with existing
     migrations; the class is aliased as ``CompanyData`` at module level.
+    Rating columns are kept only for backward-compat with existing deployments
+    and as a possible future slot for real external review data.
     """
 
     __tablename__ = "company_logos"
