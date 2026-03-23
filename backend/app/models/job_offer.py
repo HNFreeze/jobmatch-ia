@@ -17,4 +17,8 @@ class JobOffer(Base):
     fecha_publicacion = Column(String(50))
     url               = Column(String(2000))
     skills_detectadas = Column(Text)   # JSON: ["Python", "Django"]
+    analysis_version  = Column(String(50))
+    analysis_hash     = Column(String(64), index=True)
+    offer_signals_json = Column(Text)
+    signals_updated_at = Column(DateTime)
     created_at        = Column(DateTime, default=datetime.utcnow)

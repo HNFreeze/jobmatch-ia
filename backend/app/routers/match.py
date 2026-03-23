@@ -13,7 +13,7 @@ from app.models.cache import SearchCache
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
-from app.services.matching_service import generate_skills_gap, match_profile_with_offers
+from app.services.matching_service import MATCH_ENGINE_VERSION, generate_skills_gap, match_profile_with_offers
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
 from app.routers.user import get_current_user_record
@@ -31,7 +31,11 @@ class ProfileRequest(BaseModel):
 
 
 def _compute_profile_hash(profile: dict) -> str:
-    profile_str = json.dumps(profile, sort_keys=True, ensure_ascii=False)
+    profile_str = json.dumps(
+        {"engine_version": MATCH_ENGINE_VERSION, "profile": profile},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
     return hashlib.sha256(profile_str.encode()).hexdigest()
 
 
@@ -95,14 +99,14 @@ async def match_offers(
                 bucket_key=f"ip:{client_ip}",
                 limit=40,
                 window_seconds=3600,
-                detail="Has realizado demasiados análisis desde esta IP. Inténtalo más tarde.",
+                detail="Has realizado demasiados analisis desde esta IP. Intentalo mas tarde.",
             ),
             RateLimitRule(
                 action="match_user",
                 bucket_key=f"user:{user.id}",
                 limit=20,
                 window_seconds=3600,
-                detail="Has realizado demasiados análisis en poco tiempo. Espera un poco antes de volver a intentarlo.",
+                detail="Has realizado demasiados analisis en poco tiempo. Espera un poco antes de volver a intentarlo.",
             ),
         ])
 
@@ -176,11 +180,13 @@ async def match_offers(
         except Exception as e:
             print(f"[LOGO_CACHE] Error enriqueciendo ofertas: {e}")
 
-        # ── Ordenar por fit real: APLICA > QUIZÁ > NO_ENCAJA, sub-orden por puntuación ──
-        _RESULT_ORDER = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
+        # Ordenar por fit real: APLICA > QUIZA > NO_ENCAJA, suborden por puntuacion
+        result_order = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
         enriched.sort(key=lambda x: (
-            _RESULT_ORDER.get(x.get("resultado", "NO_ENCAJA"), 2),
-            -(x.get("puntuacion") or 0)
+            result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
+            -(x.get("puntuacion") or 0),
+            len(x.get("blockers") or []),
+            -len(x.get("skills_match") or []),
         ))
 
         skills_gap_data = None
