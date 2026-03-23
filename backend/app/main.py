@@ -9,7 +9,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, user, match, favorites, application, history, cover_letter
+from app.routers import auth, user, match, favorites, application, history, cover_letter, company
 
 app = FastAPI(title="JobMatch-IA API")
 
@@ -37,6 +37,7 @@ app.include_router(favorites.router)
 app.include_router(application.router)
 app.include_router(history.router)
 app.include_router(cover_letter.router)
+app.include_router(company.router)
 
 
 @app.get("/")

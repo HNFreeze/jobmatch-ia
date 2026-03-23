@@ -12,7 +12,7 @@ from app.database import get_session_local
 from app.models.cache import SearchCache
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
-from app.services.company_logo_service import enrich_items_with_company_logos
+from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
 from app.services.matching_service import generate_skills_gap, match_profile_with_offers
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
