@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, literal
+from sqlalchemy import and_, func, inspect, literal
 from sqlalchemy.orm import aliased
-from sqlalchemy.exc import ProgrammingError
 
 from app.database import get_session_local
 from app.models.ai_daily_usage import AIDailyUsage
@@ -476,7 +475,13 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             AIDailyUsage.user_id
         ).subquery()
 
+        has_cost_table = False
         try:
+            has_cost_table = inspect(db.bind).has_table("ai_api_cost_events")
+        except Exception:
+            has_cost_table = False
+
+        if has_cost_table:
             cost_per_user = db.query(
                 AIAPICostEvent.user_id.label("user_id"),
                 func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
@@ -613,10 +618,7 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
                 } for row in recent_events],
                 "tracking_ready": True,
             }
-        except ProgrammingError as exc:
-            db.rollback()
-            if "ai_api_cost_events" not in str(exc).lower():
-                raise
+        else:
             top_users = db.query(
                 User.email,
                 func.coalesce(usage_per_user.c.total_units, 0).label("total_units"),
