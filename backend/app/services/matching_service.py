@@ -9,7 +9,8 @@ def _get_cached_analyses(db, profile_hash: str, adzuna_ids: list[str]) -> dict:
     Busca en search_cache (incluyendo entradas expiradas) análisis previos
     de las ofertas indicadas para el mismo perfil_hash.
 
-    Devuelve {adzuna_id: {"resultado": ..., "motivo": ...}}.
+    Devuelve {adzuna_id: {"resultado": ..., "puntuacion": ..., "motivo": ...,
+                          "skills_match": [...], "skills_missing": [...]}}.
     """
     from app.models.cache import SearchCache
     row = db.query(SearchCache).filter(
@@ -19,20 +20,68 @@ def _get_cached_analyses(db, profile_hash: str, adzuna_ids: list[str]) -> dict:
         return {}
     try:
         raw = json.loads(row.ofertas_json)
-        # Handle both old (array) and new ({offers, skills_gap}) cache formats
         cached_items = raw if isinstance(raw, list) else raw.get("offers", [])
         target_ids = set(adzuna_ids)
         return {
             item["adzuna_id"]: {
-                "resultado": item["resultado"],
-                "puntuacion": item.get("puntuacion"),
-                "motivo": item["motivo"],
+                "resultado":      item["resultado"],
+                "puntuacion":     item.get("puntuacion"),
+                "motivo":         item["motivo"],
+                "skills_match":   item.get("skills_match", []),
+                "skills_missing": item.get("skills_missing", []),
             }
             for item in cached_items
             if item.get("adzuna_id") in target_ids
         }
     except Exception:
         return {}
+
+
+def _build_idiomas_str(profile: dict) -> str:
+    """Construye string legible de idiomas del perfil."""
+    idiomas = profile.get("idiomas") or []
+    if idiomas:
+        parts = []
+        for lang in idiomas:
+            idioma = lang.get("idioma", "").strip()
+            nivel = lang.get("nivel", "").strip()
+            if idioma:
+                parts.append(f"{idioma} ({nivel})" if nivel else idioma)
+        if parts:
+            return ", ".join(parts)
+    english = (profile.get("english") or "").strip()
+    return f"Inglés ({english})" if english else "No especificado"
+
+
+def _prepare_offers_for_analysis(offers: list) -> list:
+    """
+    Prepara las ofertas para el prompt de Claude.
+    Solo incluye campos relevantes para el análisis y acota la descripción
+    a 700 caracteres para controlar el tamaño del contexto.
+    """
+    result = []
+    for o in offers:
+        desc = (o.get("descripcion") or "").strip()
+        if len(desc) > 700:
+            desc = desc[:700] + "..."
+        result.append({
+            "id":        o["id"],
+            "titulo":    o.get("titulo", ""),
+            "empresa":   o.get("empresa", ""),
+            "ubicacion": o.get("ubicacion", ""),
+            "salario":   o.get("salario", "") if o.get("salario") != "Salario no especificado" else "",
+            "descripcion": desc,
+        })
+    return result
+
+
+def _sort_by_fit(results: list) -> list:
+    """Ordena: APLICA > QUIZÁ > NO_ENCAJA, con sub-orden por puntuación descendente."""
+    ORDER = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
+    return sorted(
+        results,
+        key=lambda r: (ORDER.get(r.get("resultado", "NO_ENCAJA"), 2), -(r.get("puntuacion") or 0))
+    )
 
 
 def match_profile_with_offers(
@@ -58,46 +107,84 @@ def match_profile_with_offers(
     if uncached_offers:
         client = anthropic.Anthropic(api_key=api_key)
 
+        idiomas_str   = _build_idiomas_str(profile)
+        ubicaciones   = profile.get("ubicaciones") or []
+        modalidad     = profile.get("modalidad") or []
+        ubicaciones_str = ", ".join(ubicaciones) if ubicaciones else "Sin preferencia (toda España)"
+        modalidad_str   = ", ".join(modalidad)   if modalidad   else "Sin preferencia"
+
+        offers_for_prompt = _prepare_offers_for_analysis(uncached_offers)
+
         prompt = f"""Eres un experto en selección de talento tech en España.
 
-Analiza el perfil de este desarrollador y cada una de las ofertas de trabajo.
-Para cada oferta, decide si el candidato debería aplicar considerando el fit real entre su experiencia y los requisitos de la oferta.
+Analiza el perfil del candidato y cada oferta de trabajo. Usa la descripción completa de cada oferta para extraer señales reales: no te quedes solo con el título.
 
-## Perfil del desarrollador
-- Años de experiencia: {profile["experience"]}
-- Stack tecnológico: {", ".join(profile["stack"])}
-- Nivel de inglés: {profile["english"]}
+## Perfil del candidato
+- Años de experiencia: {profile.get("experience", "No indicado")}
+- Stack tecnológico: {", ".join(profile.get("stack", []))}
+- Idiomas: {idiomas_str}
+- Ubicaciones preferidas: {ubicaciones_str}
+- Modalidad preferida: {modalidad_str}
 
-## Ofertas de trabajo
-{json.dumps(uncached_offers, ensure_ascii=False, indent=2)}
+## Ofertas a analizar
+{json.dumps(offers_for_prompt, ensure_ascii=False, indent=2)}
 
-## Instrucciones
-Para CADA oferta (usa su "id"), devuelve uno de estos resultados:
-- "APLICA": el perfil encaja bien con los requisitos de la oferta.
-- "QUIZÁ": encaja parcialmente, el candidato podría intentarlo y aprender.
-- "NO_ENCAJA": los requisitos no se corresponden con el perfil (por experiencia, stack, o requisitos irreales para el nivel de experiencia del candidato).
+## Cómo analizar cada oferta
+1. Lee la descripción para identificar:
+   - Skills REQUERIDAS (señales: "imprescindible", "required", "must", "necesario", "obligatorio", "experience with", "se requiere")
+   - Skills DESEABLES (señales: "valorable", "nice to have", "plus", "deseable", "se valorará")
+   - Seniority esperado: junior / mid / senior y años de experiencia pedidos si se mencionan
+   - Idioma requerido explícitamente (solo penaliza si la oferta lo exige claramente)
+   - Modalidad real (remoto/híbrido/presencial si se menciona)
 
-Evalúa cada oferta de forma realista:
-- Considera si el candidato tiene el stack necesario
-- Verifica si la experiencia requerida es realista para el nivel de la oferta
-- Detecta ofertas con requisitos absurdos (pedir mucha más experiencia de la que tiene sentido, 10+ tecnologías, etc.) y márcalas como NO_ENCAJA
+2. Compara con el perfil del candidato:
+   - ¿Tiene las skills requeridas? (prioridad alta)
+   - ¿Su experiencia es coherente con el seniority pedido?
+   - ¿Cumple el idioma si es un requisito explícito?
+   - ¿Encaja su modalidad preferida con lo que ofrece la empresa?
 
-Además, asigna una puntuación de compatibilidad del 0 al 100:
-- 80-100: APLICA (buen encaje)
-- 50-79: QUIZÁ (encaje parcial)
-- 0-49: NO_ENCAJA (no encaja)
+3. Decide el resultado:
+   - "APLICA": encaje real — skills principales cubiertas, seniority compatible, sin gaps críticos
+   - "QUIZÁ": encaje parcial — cubre lo esencial pero faltan skills relevantes, o la descripción es vaga y no permite confirmar fit
+   - "NO_ENCAJA": encaje débil — faltan skills obligatorias, seniority muy diferente, o hay un requisito crítico no cumplido
 
-La puntuación debe ser coherente con el resultado: si el resultado es APLICA, la puntuación debe ser >= 80; si es QUIZÁ, entre 50-79; si es NO_ENCAJA, <= 49.
+## Criterios de puntuación (0-100)
+La puntuación debe reflejar el fit real considerando TODOS los factores:
+- 80-100 → APLICA: alta cobertura de skills requeridas + seniority compatible
+- 50-79  → QUIZÁ: cobertura parcial o incertidumbre razonable
+- 0-49   → NO_ENCAJA: gap crítico en skills obligatorias o experiencia incompatible
 
+REGLAS IMPORTANTES:
+- No puntúes alto por coincidir en 1-2 keywords si faltan skills centrales de la oferta
+- Penaliza si la oferta pide claramente más años de experiencia de los que tiene el candidato
+- Si la descripción es muy escasa o genérica, usa QUIZÁ en lugar de APLICA (no asumas fit por el título)
+- Considera idioma y modalidad solo si la oferta los exige explícitamente
+- El motivo debe mencionar skills o criterios concretos, nunca frases genéricas como "buen encaje"
+- La puntuación debe ser coherente con el resultado: APLICA ≥ 80, QUIZÁ entre 50-79, NO_ENCAJA ≤ 49
+
+## Formato de salida
 Responde ÚNICAMENTE con un array JSON válido, sin texto adicional ni bloques de código:
 [
-  {{"id": 1, "resultado": "APLICA", "puntuacion": 87, "motivo": "Explicación breve"}},
+  {{
+    "id": 1,
+    "resultado": "APLICA",
+    "puntuacion": 87,
+    "motivo": "Cumple el stack principal (Python, Django). Experiencia compatible con el seniority pedido. Docker es deseable pero no bloqueante.",
+    "skills_match": ["Python", "Django", "PostgreSQL"],
+    "skills_missing": ["Docker"]
+  }},
   ...
-]"""
+]
+
+Reglas para skills_match y skills_missing:
+- skills_match: skills del candidato que la oferta requiere o valora (máximo 5, las más relevantes)
+- skills_missing: skills que la oferta requiere/valora y el candidato NO tiene declaradas (máximo 3)
+- Solo incluye tecnologías, frameworks, lenguajes, herramientas concretas (no "experiencia" o "comunicación")
+- Si la descripción no menciona skills específicas, deja ambas listas vacías: []"""
 
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=4000,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -121,21 +208,33 @@ Responde ÚNICAMENTE con un array JSON válido, sin texto adicional ni bloques d
         if aid in cached_analyses:
             analysis = cached_analyses[aid]
             entry = {
-                "id": offer["id"],
-                "resultado": analysis["resultado"],
-                "motivo": analysis["motivo"],
+                "id":             offer["id"],
+                "resultado":      analysis["resultado"],
+                "motivo":         analysis["motivo"],
+                "skills_match":   analysis.get("skills_match", []),
+                "skills_missing": analysis.get("skills_missing", []),
             }
             if analysis.get("puntuacion") is not None:
                 entry["puntuacion"] = analysis["puntuacion"]
             final_results.append(entry)
         elif offer["id"] in new_results_by_id:
-            final_results.append(new_results_by_id[offer["id"]])
+            raw = new_results_by_id[offer["id"]]
+            final_results.append({
+                "id":             raw["id"],
+                "resultado":      raw.get("resultado", "NO_ENCAJA"),
+                "puntuacion":     raw.get("puntuacion", 0),
+                "motivo":         raw.get("motivo", ""),
+                "skills_match":   raw.get("skills_match", []) if isinstance(raw.get("skills_match"), list) else [],
+                "skills_missing": raw.get("skills_missing", []) if isinstance(raw.get("skills_missing"), list) else [],
+            })
         else:
             final_results.append({
-                "id": offer["id"],
-                "resultado": "NO_ENCAJA",
-                "puntuacion": 0,
-                "motivo": "Sin análisis disponible",
+                "id":             offer["id"],
+                "resultado":      "NO_ENCAJA",
+                "puntuacion":     0,
+                "motivo":         "Sin análisis disponible",
+                "skills_match":   [],
+                "skills_missing": [],
             })
 
     return final_results
@@ -159,10 +258,11 @@ def generate_skills_gap(
         r = result_by_id.get(offer.get("id") or offer.get("adzuna_id"))
         if r and r.get("resultado") in ("NO_ENCAJA", "QUIZÁ"):
             low_match.append({
-                "titulo": offer.get("titulo", ""),
+                "titulo":    offer.get("titulo", ""),
                 "descripcion": (offer.get("descripcion") or "")[:600],
                 "resultado": r["resultado"],
-                "motivo": r.get("motivo", ""),
+                "motivo":    r.get("motivo", ""),
+                "skills_missing": r.get("skills_missing", []),
             })
 
     if len(low_match) < 1:
@@ -181,7 +281,7 @@ A continuación tienes el perfil de un desarrollador y un listado de ofertas que
 ## Perfil del desarrollador
 - Años de experiencia: {profile.get("experience", "No indicado")}
 - Stack tecnológico: {", ".join(profile.get("stack", []))}
-- Nivel de inglés: {profile.get("english", "No indicado")}
+- Idiomas: {_build_idiomas_str(profile)}
 
 ## Ofertas con bajo encaje (resumen)
 {json.dumps(low_match[:15], ensure_ascii=False, indent=2)}
@@ -213,7 +313,6 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional ni bloques de cód
         )
 
         raw = message.content[0].text.strip()
-        # Limpiar posibles fences markdown
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -222,25 +321,23 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional ni bloques de cód
 
         parsed = json.loads(raw)
 
-        # Validación mínima
         skills = parsed.get("recommended_skills")
         if not isinstance(skills, list) or len(skills) == 0:
             print("[SKILLS_GAP] Claude devolvió estructura inválida")
             return None
 
-        # Sanitizar cada skill
         sanitized_skills = []
         for s in skills[:5]:
             sanitized_skills.append({
-                "name": str(s.get("name", "Skill")),
-                "reason": str(s.get("reason", "")),
-                "category": s.get("category", "tecnica") if s.get("category") in ("tecnica", "idioma", "experiencia", "modalidad") else "tecnica",
+                "name":         str(s.get("name", "Skill")),
+                "reason":       str(s.get("reason", "")),
+                "category":     s.get("category", "tecnica") if s.get("category") in ("tecnica", "idioma", "experiencia", "modalidad") else "tecnica",
                 "demand_count": int(s.get("demand_count", 0)) if str(s.get("demand_count", "0")).isdigit() else 0,
             })
 
         result = {
-            "title": str(parsed.get("title", "Tu plan de mejora")),
-            "summary": str(parsed.get("summary", "")),
+            "title":              str(parsed.get("title", "Tu plan de mejora")),
+            "summary":            str(parsed.get("summary", "")),
             "recommended_skills": sanitized_skills,
         }
         print(f"[SKILLS_GAP] Generadas {len(sanitized_skills)} recomendaciones")

@@ -428,6 +428,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         stack:       profileObj.stack,
         english:     getEnglishForMatch(profileObj.idiomas),
         ubicaciones: profileObj.ubicaciones || [],
+        modalidad:   profileObj.modalidad || [],
+        idiomas:     profileObj.idiomas || [],
       });
       const offersData = Array.isArray(data) ? data : (data.offers || []);
       const skillsGapData = Array.isArray(data) ? null : (data.skills_gap || null);
@@ -594,9 +596,9 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   // ══════════════════════════════════════════════════════════════════════════════
   if (results) {
     const allSorted = [
-      ...results.filter(r => r.resultado === "APLICA"),
-      ...results.filter(r => r.resultado === "QUIZÁ"),
-      ...results.filter(r => r.resultado === "NO_ENCAJA"),
+      ...results.filter(r => r.resultado === "APLICA").sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)),
+      ...results.filter(r => r.resultado === "QUIZÁ").sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)),
+      ...results.filter(r => r.resultado === "NO_ENCAJA").sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)),
     ];
     const visible  = allSorted.filter(r => !discarded.has(r.adzuna_id || r.id));
     const aplica   = visible.filter(r => r.resultado === "APLICA");
@@ -965,6 +967,26 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             <strong style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 700 }}>IA Insight: </strong>
                             {offer.motivo}
                           </p>
+                          {(offer.skills_match?.length > 0 || offer.skills_missing?.length > 0) && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
+                              {(offer.skills_match || []).map(s => (
+                                <span key={s} style={{
+                                  padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
+                                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
+                                  color: dm ? "#34d399" : "#15803d",
+                                  border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
+                                }}>✓ {s}</span>
+                              ))}
+                              {(offer.skills_missing || []).map(s => (
+                                <span key={s} style={{
+                                  padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
+                                  backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
+                                  color: dm ? "#f87171" : "#dc2626",
+                                  border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
+                                }}>– {s}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1188,6 +1210,40 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       <strong style={{ color: dm ? "#5eead4" : TEAL }}>Análisis IA: </strong>
                       {selectedOffer.motivo}
                     </p>
+                    {(selectedOffer.skills_match?.length > 0 || selectedOffer.skills_missing?.length > 0) && (
+                      <div style={{ marginTop: 12 }}>
+                        {selectedOffer.skills_match?.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.04em" }}>Cumples</span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                              {selectedOffer.skills_match.map(s => (
+                                <span key={s} style={{
+                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
+                                  color: dm ? "#34d399" : "#15803d",
+                                  border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
+                                }}>✓ {s}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {selectedOffer.skills_missing?.length > 0 && (
+                          <div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.04em" }}>Te falta</span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                              {selectedOffer.skills_missing.map(s => (
+                                <span key={s} style={{
+                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                  backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
+                                  color: dm ? "#f87171" : "#dc2626",
+                                  border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
+                                }}>– {s}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
