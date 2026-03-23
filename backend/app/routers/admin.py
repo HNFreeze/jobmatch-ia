@@ -33,6 +33,10 @@ class UpdateBlockRequest(BaseModel):
     is_blocked: bool
 
 
+class ResetQuotaUsageRequest(BaseModel):
+    confirm: bool = True
+
+
 def _today_range():
     start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
@@ -213,6 +217,54 @@ def update_admin_user_block(
             "user_id": user.id,
             "is_blocked": bool(user.is_blocked),
             "blocked_at": user.blocked_at.isoformat() if user.blocked_at else None,
+            "updated_by": admin_user.email,
+        })
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/users/{user_id}/quota/reset")
+def reset_admin_user_quota_usage(
+    user_id: int,
+    body: ResetQuotaUsageRequest,
+    admin_user: User = Depends(require_admin_user),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Se requiere confirmacion explicita para resetear la cuota")
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        today = datetime.utcnow().date()
+        usage_row = db.query(AIDailyUsage).filter(
+            AIDailyUsage.user_id == user.id,
+            AIDailyUsage.usage_date == today,
+        ).first()
+
+        if usage_row:
+            usage_row.match_count = 0
+            usage_row.cover_letter_count = 0
+            usage_row.total_units = 0
+            usage_row.updated_at = datetime.utcnow()
+        db.commit()
+
+        return JSONResponse(content={
+            "detail": "Uso diario reseteado correctamente",
+            "user_id": user.id,
+            "used_today": 0,
+            "daily_ai_quota": int(user.daily_ai_quota or 0),
             "updated_by": admin_user.email,
         })
     except HTTPException:

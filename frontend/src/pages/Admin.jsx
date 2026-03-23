@@ -4,6 +4,7 @@ import {
   getAdminAiUsage,
   getAdminDashboard,
   getAdminUsers,
+  resetAdminUserQuotaUsage,
   updateAdminUserBlock,
   updateAdminUserQuota,
 } from "../services/api";
@@ -25,6 +26,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [sortDir, setSortDir] = useState("desc");
   const [quotaDrafts, setQuotaDrafts] = useState({});
   const [savingQuotaId, setSavingQuotaId] = useState(null);
+  const [resettingQuotaId, setResettingQuotaId] = useState(null);
   const [togglingBlockId, setTogglingBlockId] = useState(null);
   const [actionNotice, setActionNotice] = useState("");
   const [actionError, setActionError] = useState("");
@@ -45,6 +47,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         getAdminActivity(12),
         getAdminAiUsage(),
       ]);
+
       setDashboard(dashboardData);
       setUsersData(usersResponse);
       setActivity(activityData);
@@ -52,9 +55,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setQuotaDrafts((prev) => {
         const next = { ...prev };
         (usersResponse.items || []).forEach((user) => {
-          if (next[user.id] === undefined) {
-            next[user.id] = String(user.daily_ai_quota ?? 0);
-          }
+          next[user.id] = next[user.id] ?? user.daily_ai_quota ?? 0;
         });
         return next;
       });
@@ -68,6 +69,10 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   useEffect(() => {
     loadAdminData(1, "", "created_at", "desc");
   }, []);
+
+  function scrollToSection(sectionId) {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function handleSearchSubmit(event) {
     event.preventDefault();
@@ -88,10 +93,18 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     loadAdminData(nextPage, search, sortBy, sortDir);
   }
 
+  function adjustQuotaDraft(userId, delta) {
+    setQuotaDrafts((prev) => {
+      const current = Number(prev[userId] ?? 0);
+      const nextValue = Math.min(200, Math.max(1, current + delta));
+      return { ...prev, [userId]: nextValue };
+    });
+  }
+
   async function handleQuotaSave(user) {
-    const value = Number(quotaDrafts[user.id]);
+    const value = Number(quotaDrafts[user.id] ?? user.daily_ai_quota ?? 0);
     if (!Number.isInteger(value) || value < 1 || value > 200) {
-      setActionError("La cuota debe ser un número entero entre 1 y 200.");
+      setActionError("La cuota debe mantenerse entre 1 y 200.");
       setActionNotice("");
       return;
     }
@@ -101,12 +114,27 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     setActionNotice("");
     try {
       await updateAdminUserQuota(user.id, value);
-      setActionNotice(`Cuota actualizada para ${user.email}.`);
+      setActionNotice(`Cuota diaria actualizada para ${user.email}.`);
       await loadAdminData(page, search, sortBy, sortDir);
     } catch (err) {
       setActionError(err.message || "No se pudo actualizar la cuota.");
     } finally {
       setSavingQuotaId(null);
+    }
+  }
+
+  async function handleQuotaReset(user) {
+    setResettingQuotaId(user.id);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await resetAdminUserQuotaUsage(user.id);
+      setActionNotice(`Uso diario reseteado para ${user.email}.`);
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setActionError(err.message || "No se pudo resetear la cuota.");
+    } finally {
+      setResettingQuotaId(null);
     }
   }
 
@@ -117,9 +145,9 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     try {
       await updateAdminUserBlock(user.id, !user.is_blocked);
       setActionNotice(
-        !user.is_blocked
-          ? `Cuenta bloqueada para ${user.email}.`
-          : `Cuenta desbloqueada para ${user.email}.`
+        user.is_blocked
+          ? `Cuenta desbloqueada para ${user.email}.`
+          : `Cuenta bloqueada para ${user.email}.`
       );
       await loadAdminData(page, search, sortBy, sortDir);
     } catch (err) {
@@ -174,16 +202,16 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             <p style={{ ...S.kicker, color: dm ? "#67e8f9" : TEAL }}>Administración</p>
             <h1 style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de control</h1>
             <p style={{ ...S.subtitle, color: dm ? "#94a3b8" : "#64748b" }}>
-              Gestiona usuarios, cuotas, bloqueos y observa el uso real de la plataforma.
+              Gestiona cuentas, cuotas, bloqueos y el uso global de la aplicación desde una zona separada.
             </p>
           </div>
 
           <div style={S.adminActions}>
             <div style={S.sectionPills}>
-              <a href="#dashboard-admin" style={S.pill}>Dashboard</a>
-              <a href="#usuarios-admin" style={S.pill}>Usuarios</a>
-              <a href="#ia-admin" style={S.pill}>Uso IA</a>
-              <a href="#actividad-admin" style={S.pill}>Actividad</a>
+              <button type="button" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
+              <button type="button" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
+              <button type="button" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
+              <button type="button" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
             </div>
             <div style={S.headerButtons}>
               <button type="button" onClick={toggleDarkMode} style={S.secondaryButton}>
@@ -197,11 +225,13 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         </header>
 
         {(actionNotice || actionError) && (
-          <div style={{
-            ...S.noticeCard,
-            ...(actionError ? S.errorCard : S.successCard),
-            ...(dm ? S.noticeCardDm : {}),
-          }}>
+          <div
+            style={{
+              ...S.noticeCard,
+              ...(actionError ? S.errorCard : S.successCard),
+              ...(dm ? S.noticeCardDm : {}),
+            }}
+          >
             {actionError || actionNotice}
           </div>
         )}
@@ -221,7 +251,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             <div>
               <h2 style={{ ...S.sectionTitle, color: dm ? "#f8fafc" : "#111827" }}>Usuarios</h2>
               <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b" }}>
-                Ajusta la cuota diaria y bloquea o desbloquea cuentas desde un único panel.
+                Ajusta la cuota diaria con botones, guarda el cambio y resetea el uso de hoy cuando necesites devolver acceso completo.
               </p>
             </div>
 
@@ -242,54 +272,70 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               <HeaderButton label="Estado" onClick={() => handleSortChange("is_blocked")} />
               <HeaderButton label="Verificado" onClick={() => handleSortChange("email_verified")} />
               <HeaderButton label="Alta" onClick={() => handleSortChange("created_at")} />
-              <HeaderButton label="Cuota hoy" onClick={() => handleSortChange("quota_used_today")} />
+              <HeaderButton label="Uso hoy" onClick={() => handleSortChange("quota_used_today")} />
               <div style={S.headLabel}>Gestión</div>
             </div>
 
-            {(usersData?.items || []).map((user) => (
-              <div key={user.id} style={{ ...S.tableRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
-                <div style={S.emailCell}>
-                  <div style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>{user.email}</div>
-                  <div style={{ ...S.rowMeta, color: dm ? "#94a3b8" : "#64748b" }}>
-                    {user.is_admin ? "Administrador" : "Usuario"} · {user.is_blocked ? "Bloqueado" : "Activo"}
+            {(usersData?.items || []).map((user) => {
+              const draftQuota = Number(quotaDrafts[user.id] ?? user.daily_ai_quota ?? 0);
+              return (
+                <div key={user.id} style={{ ...S.tableRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
+                  <div style={S.emailCell}>
+                    <div style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>{user.email}</div>
+                    <div style={{ ...S.rowMeta, color: dm ? "#94a3b8" : "#64748b" }}>
+                      {user.is_admin ? "Administrador" : "Usuario"} · {user.is_blocked ? "Bloqueado" : "Activo"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <StatusBadge label={user.is_blocked ? "Bloqueado" : "Activo"} tone={user.is_blocked ? "danger" : "success"} />
+                  </div>
+
+                  <div>{user.email_verified ? "Sí" : "No"}</div>
+                  <div>{formatDate(user.created_at)}</div>
+                  <div>{user.quota_used_today}/{user.daily_ai_quota}</div>
+
+                  <div style={S.manageCell}>
+                    <div style={S.quotaEditor}>
+                      <span style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b" }}>Cuota diaria</span>
+                      <div style={S.quotaControls}>
+                        <button type="button" onClick={() => adjustQuotaDraft(user.id, -1)} style={S.stepButton}>-</button>
+                        <div style={{ ...S.quotaValue, ...(dm ? S.quotaValueDm : {}) }}>{draftQuota}</div>
+                        <button type="button" onClick={() => adjustQuotaDraft(user.id, 1)} style={S.stepButton}>+</button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleQuotaSave(user)}
+                        disabled={savingQuotaId === user.id}
+                        style={{ ...S.secondaryButton, opacity: savingQuotaId === user.id ? 0.6 : 1 }}
+                      >
+                        {savingQuotaId === user.id ? "Guardando..." : "Guardar cuota"}
+                      </button>
+                    </div>
+
+                    <div style={S.actionButtons}>
+                      <button
+                        type="button"
+                        onClick={() => handleQuotaReset(user)}
+                        disabled={resettingQuotaId === user.id}
+                        style={{ ...S.resetButton, opacity: resettingQuotaId === user.id ? 0.6 : 1 }}
+                      >
+                        {resettingQuotaId === user.id ? "Reseteando..." : "Resetear uso de hoy"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleBlockToggle(user)}
+                        disabled={togglingBlockId === user.id}
+                        style={user.is_blocked ? S.unblockButton : S.blockButton}
+                      >
+                        {togglingBlockId === user.id ? "Actualizando..." : user.is_blocked ? "Desbloquear" : "Bloquear"}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <StatusBadge label={user.is_blocked ? "Bloqueado" : "Activo"} tone={user.is_blocked ? "danger" : "success"} />
-                </div>
-                <div>{user.email_verified ? "Sí" : "No"}</div>
-                <div>{formatDate(user.created_at)}</div>
-                <div>{user.quota_used_today}/{user.daily_ai_quota}</div>
-                <div style={S.manageCell}>
-                  <div style={S.quotaEditor}>
-                    <input
-                      type="number"
-                      min="1"
-                      max="200"
-                      value={quotaDrafts[user.id] ?? user.daily_ai_quota}
-                      onChange={(event) => setQuotaDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))}
-                      style={{ ...S.quotaInput, ...(dm ? S.inputDm : {}) }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleQuotaSave(user)}
-                      disabled={savingQuotaId === user.id}
-                      style={{ ...S.secondaryButton, opacity: savingQuotaId === user.id ? 0.6 : 1 }}
-                    >
-                      {savingQuotaId === user.id ? "Guardando..." : "Guardar cuota"}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleBlockToggle(user)}
-                    disabled={togglingBlockId === user.id}
-                    style={user.is_blocked ? S.unblockButton : S.blockButton}
-                  >
-                    {togglingBlockId === user.id ? "Actualizando..." : user.is_blocked ? "Desbloquear" : "Bloquear"}
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {!usersData?.items?.length && (
               <div style={{ ...S.emptyState, color: dm ? "#94a3b8" : "#64748b" }}>No hay usuarios para mostrar.</div>
@@ -487,8 +533,7 @@ const S = {
     flexWrap: "wrap",
     justifyContent: "flex-end",
   },
-  pill: {
-    textDecoration: "none",
+  pillButton: {
     border: "1px solid rgba(0,122,138,0.18)",
     backgroundColor: "rgba(0,122,138,0.08)",
     color: TEAL,
@@ -498,6 +543,8 @@ const S = {
     fontWeight: 800,
     letterSpacing: "0.04em",
     textTransform: "uppercase",
+    cursor: "pointer",
+    fontFamily: typography.family,
   },
   headerButtons: {
     display: "flex",
@@ -610,7 +657,7 @@ const S = {
   },
   tableHead: {
     display: "grid",
-    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.2fr",
+    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.5fr",
     gap: 12,
     padding: "14px 16px",
     backgroundColor: "rgba(0,122,138,0.08)",
@@ -638,7 +685,7 @@ const S = {
   },
   tableRow: {
     display: "grid",
-    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.2fr",
+    gridTemplateColumns: "2.3fr 1fr 1fr 1fr 1fr 2.5fr",
     gap: 12,
     padding: "14px 16px",
     alignItems: "center",
@@ -660,19 +707,50 @@ const S = {
   },
   quotaEditor: {
     display: "flex",
+    flexDirection: "column",
     gap: 8,
-    flexWrap: "wrap",
-    alignItems: "center",
   },
-  quotaInput: {
-    width: 88,
+  quotaLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  quotaControls: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  stepButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#fff",
+    color: "#0f172a",
+    fontSize: 18,
+    fontWeight: 800,
+    cursor: "pointer",
+    fontFamily: typography.family,
+  },
+  quotaValue: {
+    minWidth: 54,
+    textAlign: "center",
     borderRadius: 12,
     border: "1px solid #cbd5e1",
     backgroundColor: "#fff",
-    padding: "10px 12px",
+    padding: "8px 10px",
     fontSize: 14,
-    outline: "none",
-    fontFamily: typography.family,
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+  quotaValueDm: {
+    backgroundColor: "#0f172a",
+    borderColor: "rgba(255,255,255,0.1)",
+    color: "#f8fafc",
+  },
+  actionButtons: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
   },
   statusBadge: {
     display: "inline-flex",
@@ -731,6 +809,17 @@ const S = {
     padding: "10px 14px",
     fontSize: 13,
     fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: typography.family,
+  },
+  resetButton: {
+    border: "1px solid rgba(245,158,11,0.22)",
+    backgroundColor: "rgba(245,158,11,0.10)",
+    color: "#b45309",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
   },
@@ -861,13 +950,6 @@ if (typeof document !== "undefined" && !document.getElementById("admin-spin-styl
   style.textContent = `
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-
-    @media (max-width: 980px) {
-      .admin-table-head,
-      .admin-table-row {
-        grid-template-columns: 1fr;
-      }
     }
   `;
   document.head.appendChild(style);
