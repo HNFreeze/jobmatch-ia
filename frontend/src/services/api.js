@@ -226,3 +226,42 @@ export async function getCompanyInfo(name) {
   if (!response.ok) throw await buildApiError(response, "Error al cargar info de empresa");
   return response.json();
 }
+
+// Admin
+export async function getAdminDashboard() {
+  const response = await fetch(`${API_URL}/api/admin/dashboard`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el dashboard admin");
+  return response.json();
+}
+
+export async function getAdminUsers(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+  const response = await fetch(`${API_URL}/api/admin/users?${query.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar usuarios admin");
+  return response.json();
+}
+
+export async function getAdminActivity(limit = 20) {
+  const response = await fetch(`${API_URL}/api/admin/activity?limit=${encodeURIComponent(limit)}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar actividad admin");
+  return response.json();
+}
+
+export async function getAdminAiUsage() {
+  const response = await fetch(`${API_URL}/api/admin/ai-usage`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar uso IA admin");
+  return response.json();
+}

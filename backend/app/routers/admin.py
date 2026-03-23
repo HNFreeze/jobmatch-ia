@@ -1,0 +1,303 @@
+# -*- coding: utf-8 -*-
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
+from sqlalchemy import and_, func
+from sqlalchemy.orm import aliased
+
+from app.database import get_session_local
+from app.models.ai_daily_usage import AIDailyUsage
+from app.models.application import Application
+from app.models.search_history import SearchHistory
+from app.models.user import User
+from app.routers.user import require_admin_user
+
+router = APIRouter()
+
+USER_SORT_FIELDS = {
+    "created_at": User.created_at,
+    "email": User.email,
+    "email_verified": User.email_verified,
+    "is_admin": User.is_admin,
+}
+
+
+def _today_range():
+    start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return start, end
+
+
+@router.get("/api/admin/dashboard")
+def get_admin_dashboard(_: User = Depends(require_admin_user)):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        day_start, day_end = _today_range()
+        today = day_start.date()
+
+        total_users = db.query(func.count(User.id)).scalar() or 0
+        verified_users = db.query(func.count(User.id)).filter(User.email_verified.is_(True)).scalar() or 0
+        users_today = (
+            db.query(func.count(User.id))
+            .filter(User.created_at >= day_start, User.created_at < day_end)
+            .scalar()
+            or 0
+        )
+
+        usage_totals = db.query(
+            func.coalesce(func.sum(AIDailyUsage.match_count), 0),
+            func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0),
+        ).one()
+        usage_today = db.query(
+            func.coalesce(func.sum(AIDailyUsage.match_count), 0),
+            func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0),
+        ).filter(AIDailyUsage.usage_date == today).one()
+
+        return JSONResponse(content={
+            "total_users": int(total_users),
+            "verified_users": int(verified_users),
+            "users_registered_today": int(users_today),
+            "total_analyses": int(usage_totals[0] or 0),
+            "analyses_today": int(usage_today[0] or 0),
+            "total_cover_letters": int(usage_totals[1] or 0),
+            "cover_letters_today": int(usage_today[1] or 0),
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/users")
+def get_admin_users(
+    _: User = Depends(require_admin_user),
+    page: int = Query(1, ge=1, le=100000),
+    limit: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, max_length=120),
+    sort_by: str = Query("created_at"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        today = datetime.utcnow().date()
+        usage_today = aliased(AIDailyUsage)
+
+        base_query = db.query(
+            User.id,
+            User.email,
+            User.is_admin,
+            User.email_verified,
+            User.created_at,
+            User.daily_ai_quota,
+            func.coalesce(usage_today.total_units, 0).label("quota_used_today"),
+        ).outerjoin(
+            usage_today,
+            and_(usage_today.user_id == User.id, usage_today.usage_date == today),
+        )
+
+        if search:
+            term = f"%{search.strip().lower()}%"
+            base_query = base_query.filter(func.lower(User.email).like(term))
+
+        if sort_by == "quota_used_today":
+            sort_column = func.coalesce(usage_today.total_units, 0)
+        else:
+            sort_column = USER_SORT_FIELDS.get(sort_by, User.created_at)
+
+        if sort_dir == "asc":
+            ordered_query = base_query.order_by(sort_column.asc(), User.id.asc())
+        else:
+            ordered_query = base_query.order_by(sort_column.desc(), User.id.desc())
+
+        total = ordered_query.order_by(None).count()
+        rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+        items = [{
+            "id": row.id,
+            "email": row.email,
+            "is_admin": bool(row.is_admin),
+            "email_verified": bool(row.email_verified),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "quota_used_today": int(row.quota_used_today or 0),
+            "daily_ai_quota": int(row.daily_ai_quota or 0),
+        } for row in rows]
+
+        return JSONResponse(content={
+            "items": items,
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "sort_by": sort_by if sort_by in {*USER_SORT_FIELDS.keys(), "quota_used_today"} else "created_at",
+            "sort_dir": sort_dir,
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/activity")
+def get_admin_activity(
+    _: User = Depends(require_admin_user),
+    limit: int = Query(20, ge=1, le=100),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        search_rows = db.query(
+            SearchHistory.created_at.label("created_at"),
+            User.email.label("email"),
+            SearchHistory.stack.label("stack"),
+            SearchHistory.num_aplica.label("num_aplica"),
+            SearchHistory.num_quiza.label("num_quiza"),
+            SearchHistory.num_no_encaja.label("num_no_encaja"),
+        ).join(User, User.id == SearchHistory.user_id).order_by(SearchHistory.created_at.desc()).limit(limit).all()
+
+        application_rows = db.query(
+            Application.created_at.label("created_at"),
+            User.email.label("email"),
+            Application.empresa.label("empresa"),
+            Application.titulo.label("titulo"),
+            Application.status.label("status"),
+        ).join(User, User.id == Application.user_id).order_by(Application.created_at.desc()).limit(limit).all()
+
+        user_rows = db.query(
+            User.created_at.label("created_at"),
+            User.email.label("email"),
+            User.email_verified.label("email_verified"),
+        ).order_by(User.created_at.desc()).limit(limit).all()
+
+        events = []
+        for row in search_rows:
+            total_results = int((row.num_aplica or 0) + (row.num_quiza or 0) + (row.num_no_encaja or 0))
+            events.append({
+                "type": "analysis",
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "email": row.email,
+                "summary": f"Analisis ejecutado con {total_results} resultados",
+                "meta": {
+                    "stack": row.stack,
+                    "results": total_results,
+                },
+            })
+
+        for row in application_rows:
+            events.append({
+                "type": "application",
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "email": row.email,
+                "summary": f"Candidatura {row.status} en {row.empresa or 'empresa desconocida'}",
+                "meta": {
+                    "titulo": row.titulo,
+                    "empresa": row.empresa,
+                    "status": row.status,
+                },
+            })
+
+        for row in user_rows:
+            events.append({
+                "type": "user",
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "email": row.email,
+                "summary": "Nuevo usuario registrado",
+                "meta": {
+                    "email_verified": bool(row.email_verified),
+                },
+            })
+
+        events.sort(key=lambda item: item["created_at"] or "", reverse=True)
+        return JSONResponse(content={
+            "items": events[:limit],
+            "errors": [],
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/ai-usage")
+def get_admin_ai_usage(_: User = Depends(require_admin_user)):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        today = datetime.utcnow().date()
+
+        totals = db.query(
+            func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("total_units"),
+            func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("total_matches"),
+            func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("total_cover_letters"),
+        ).one()
+
+        totals_today = db.query(
+            func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("today_units"),
+            func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("today_matches"),
+            func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("today_cover_letters"),
+        ).filter(AIDailyUsage.usage_date == today).one()
+
+        total_units_expr = func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("total_units")
+        match_count_expr = func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("match_count")
+        cover_letter_expr = func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letter_count")
+
+        top_users = db.query(
+            User.email,
+            total_units_expr,
+            match_count_expr,
+            cover_letter_expr,
+        ).join(
+            AIDailyUsage, AIDailyUsage.user_id == User.id
+        ).group_by(
+            User.id, User.email
+        ).order_by(
+            total_units_expr.desc(), User.email.asc()
+        ).limit(10).all()
+
+        usage_today = aliased(AIDailyUsage)
+        used_today_expr = func.coalesce(usage_today.total_units, 0).label("used_today")
+        limit_hits = db.query(
+            User.email,
+            User.daily_ai_quota,
+            used_today_expr,
+        ).join(
+            usage_today,
+            and_(usage_today.user_id == User.id, usage_today.usage_date == today),
+        ).filter(
+            used_today_expr >= User.daily_ai_quota
+        ).order_by(
+            used_today_expr.desc(), User.email.asc()
+        ).all()
+
+        return JSONResponse(content={
+            "total_usage": {
+                "units": int(totals.total_units or 0),
+                "analyses": int(totals.total_matches or 0),
+                "cover_letters": int(totals.total_cover_letters or 0),
+            },
+            "today_usage": {
+                "units": int(totals_today.today_units or 0),
+                "analyses": int(totals_today.today_matches or 0),
+                "cover_letters": int(totals_today.today_cover_letters or 0),
+            },
+            "top_users": [{
+                "email": row.email,
+                "units": int(row.total_units or 0),
+                "analyses": int(row.match_count or 0),
+                "cover_letters": int(row.cover_letter_count or 0),
+            } for row in top_users],
+            "limit_hits": [{
+                "email": row.email,
+                "daily_ai_quota": int(row.daily_ai_quota or 0),
+                "used_today": int(row.used_today or 0),
+            } for row in limit_hits],
+        })
+    finally:
+        db.close()
