@@ -126,6 +126,40 @@ function getBlockers(offer) {
   return Array.isArray(offer?.blockers) ? offer.blockers : [];
 }
 
+function getCriticalGaps(offer) {
+  return Array.isArray(offer?.critical_gaps) ? offer.critical_gaps : getBlockers(offer);
+}
+
+function getOfferCompareKey(offer) {
+  return String(offer?.adzuna_id || offer?.id || "");
+}
+
+function getWorkModeLabel(offer) {
+  const workMode = offer?.signals_summary?.work_mode;
+  if (workMode === "remote") return "Remoto";
+  if (workMode === "hybrid") return "Híbrido";
+  if (workMode === "onsite") return "Presencial";
+  return "No indicada";
+}
+
+function getSeniorityLabel(offer) {
+  const seniority = offer?.signals_summary?.seniority_level;
+  if (!seniority) return "No indicado";
+  if (seniority === "junior") return "Junior";
+  if (seniority === "mid") return "Mid";
+  if (seniority === "senior") return "Senior";
+  if (seniority === "lead") return "Lead";
+  return seniority;
+}
+
+function getCompareStrengths(offer) {
+  return Array.from(new Set([...(offer?.skills_match || []), ...getStrengths(offer)])).slice(0, 6);
+}
+
+function getCompareGaps(offer) {
+  return Array.from(new Set([...(offer?.skills_missing || []), ...getGaps(offer)])).slice(0, 6);
+}
+
 function sortByRelevance(offers) {
   const order = { APLICA: 0, "QUIZÁ": 1, NO_ENCAJA: 2 };
   return offers.slice().sort((a, b) => {
@@ -267,6 +301,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   const [error,               setError]               = useState(null);
   const [filter,              setFilter]              = useState("todos");
   const [selectedOffer,       setSelectedOffer]       = useState(null);
+  const [compareSelection,    setCompareSelection]    = useState([]);
+  const [showCompareModal,    setShowCompareModal]    = useState(false);
   const [favorites,           setFavorites]           = useState(new Set());
   const [tracked,             setTracked]             = useState(new Map()); // adzuna_id → app_id
   const [discarded,           setDiscarded]           = useState(new Set());
@@ -333,6 +369,16 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     setCoverLetterError(null);
     setShowCoverLetter(false);
   }, [selectedOffer]);
+
+  useEffect(() => {
+    if (!results?.length) {
+      setCompareSelection([]);
+      setShowCompareModal(false);
+      return;
+    }
+    const available = new Set(results.map(getOfferCompareKey));
+    setCompareSelection(prev => prev.filter(id => available.has(id)));
+  }, [results]);
 
   useEffect(() => {
     if (forceAnalyze && profile && Object.keys(profile).length > 0 && !loading) {
@@ -435,6 +481,29 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       }
     }
     addToast?.("Oferta descartada", "info");
+  }
+
+  function toggleCompareSelection(offer) {
+    const offerKey = getOfferCompareKey(offer);
+    if (!offerKey) return;
+    setCompareSelection(prev => {
+      if (prev.includes(offerKey)) {
+        return prev.filter(id => id !== offerKey);
+      }
+      if (prev.length >= 3) {
+        addToast?.("Puedes comparar un máximo de 3 ofertas", "info");
+        return prev;
+      }
+      return [...prev, offerKey];
+    });
+  }
+
+  function openCompareModal() {
+    if (compareSelection.length < 2) {
+      addToast?.("Selecciona al menos 2 ofertas para comparar", "info");
+      return;
+    }
+    setShowCompareModal(true);
   }
 
   async function handleAnalyzeWith(profileObj, options = {}) {
@@ -673,6 +742,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0));
     }
 
+    const compareOffers = compareSelection
+      .map(id => visible.find(offer => getOfferCompareKey(offer) === id))
+      .filter(Boolean);
+    const bestCompareKey = compareOffers.length
+      ? sortByRelevance(compareOffers)[0] && getOfferCompareKey(sortByRelevance(compareOffers)[0])
+      : null;
     const dm = darkMode;
     const userStack = profile?.stack || [];
 
@@ -904,6 +979,87 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
               ))}
             </div>
 
+            <div style={{
+              marginBottom: 20,
+              padding: "16px 18px",
+              borderRadius: 14,
+              backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#fff",
+              border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: typography.family }}>
+                    Comparador de ofertas
+                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 13, color: dm ? "#94a3b8" : "#64748b", lineHeight: 1.6, fontFamily: typography.family }}>
+                    Selecciona 2 o 3 ofertas para compararlas lado a lado y ver rápidamente en cuál encajas mejor.
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{
+                    padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                    backgroundColor: dm ? "rgba(15,118,110,0.18)" : "rgba(0,117,138,0.08)",
+                    color: dm ? "#5eead4" : TEAL,
+                    border: `1px solid ${dm ? "rgba(94,234,212,0.22)" : "rgba(0,117,138,0.12)"}`,
+                    fontFamily: typography.family,
+                  }}>
+                    {compareSelection.length}/3 seleccionadas
+                  </span>
+                  <button
+                    onClick={() => setCompareSelection([])}
+                    disabled={compareSelection.length === 0}
+                    style={{
+                      ...S.btnOutline,
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      opacity: compareSelection.length === 0 ? 0.55 : 1,
+                      cursor: compareSelection.length === 0 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Limpiar
+                  </button>
+                  <button
+                    onClick={openCompareModal}
+                    disabled={compareSelection.length < 2}
+                    style={{
+                      ...S.btnPrimary,
+                      padding: "8px 16px",
+                      fontSize: 12,
+                      opacity: compareSelection.length < 2 ? 0.55 : 1,
+                      cursor: compareSelection.length < 2 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Comparar ahora
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                {compareOffers.length > 0 ? compareOffers.map(offer => (
+                  <span key={getOfferCompareKey(offer)} style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    padding: "7px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                    backgroundColor: dm ? "rgba(255,255,255,0.05)" : "#f8fafc",
+                    color: dm ? "#e2e8f0" : "#1f2937",
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e2e8f0"}`,
+                    fontFamily: typography.family,
+                  }}>
+                    {offer.titulo}
+                    <button
+                      onClick={() => toggleCompareSelection(offer)}
+                      style={{ background: "none", border: "none", color: dm ? "#94a3b8" : "#6b7280", cursor: "pointer", fontSize: 13, padding: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )) : (
+                  <span style={{ fontSize: 12, color: dm ? "#64748b" : "#94a3af", fontFamily: typography.family }}>
+                    Aún no has seleccionado ofertas para comparar.
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* ── Offer Cards (list layout) ─────────────────────────── */}
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {filtered.length > 0 ? (
@@ -912,6 +1068,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                   const isFav = offer.adzuna_id && favorites.has(offer.adzuna_id);
                   const tags  = extractTechTags(offer, profile?.stack);
                   const isNew = isNewOffer(offer.fecha_publicacion);
+                  const isCompared = compareSelection.includes(getOfferCompareKey(offer));
                   return (
                     <div
                       key={offer.id}
@@ -921,6 +1078,9 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         ...S.offerCard,
                         borderLeftColor: rs.border,
                         animation: `fadeInUp 0.4s ease-out ${index * 0.04}s both`,
+                        boxShadow: isCompared
+                          ? (dm ? "0 0 0 2px rgba(94,234,212,0.22), 0 10px 24px rgba(0,0,0,0.14)" : "0 0 0 2px rgba(0,117,138,0.16), 0 8px 24px rgba(0,117,138,0.10)")
+                          : undefined,
                         ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)", borderLeftColor: rs.border } : {}),
                       }}
                     >
@@ -1069,6 +1229,18 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         <button
                           style={{
                             background: "none", border: "none",
+                            fontSize: 13, fontWeight: 600,
+                            color: isCompared ? (dm ? "#5eead4" : TEAL) : (dm ? "#64748b" : "#6b7280"),
+                            cursor: "pointer", fontFamily: typography.family,
+                            padding: "6px 12px",
+                          }}
+                          onClick={e => { e.stopPropagation(); toggleCompareSelection(offer); }}
+                        >
+                          {isCompared ? "✓ En comparador" : "Comparar"}
+                        </button>
+                        <button
+                          style={{
+                            background: "none", border: "none",
                             fontSize: 13, fontWeight: 500,
                             color: dm ? "#64748b" : "#6b7280",
                             cursor: "pointer", fontFamily: typography.family,
@@ -1207,6 +1379,277 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
             </div>
           );
         })()}
+
+        {/* ── Compare Modal ────────────────────────────────────────── */}
+        {showCompareModal && (
+          <div style={S.modalOverlay} onClick={() => setShowCompareModal(false)}>
+            <div
+              style={{
+                backgroundColor: dm ? "#111827" : "#fff",
+                borderRadius: 22,
+                width: "min(1240px, 96vw)",
+                maxHeight: "92vh",
+                overflow: "hidden",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+                display: "flex",
+                flexDirection: "column",
+                fontFamily: typography.family,
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{
+                padding: "18px 22px",
+                borderBottom: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
+              }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: dm ? "#f8fafc" : "#111827", letterSpacing: "-0.02em" }}>
+                    Comparador de ofertas
+                  </h2>
+                  <p style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
+                    Compara lado a lado salario, modalidad, afinidad y el bloque de “Cumples / Te falta” para decidir mejor.
+                  </p>
+                </div>
+                <button style={S.modalCloseX} onClick={() => setShowCompareModal(false)}>✕</button>
+              </div>
+
+              <div style={{ padding: "20px 22px 24px", overflowY: "auto" }}>
+                {compareOffers.length === 0 ? (
+                  <div style={{
+                    padding: "40px 20px",
+                    borderRadius: 18,
+                    textAlign: "center",
+                    backgroundColor: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
+                    border: `1px dashed ${dm ? "rgba(255,255,255,0.12)" : "#cbd5e1"}`,
+                  }}>
+                    <div style={{ fontSize: 42, marginBottom: 14 }}>🧭</div>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: dm ? "#f8fafc" : "#111827" }}>
+                      Selecciona ofertas para comparar
+                    </h3>
+                    <p style={{ margin: "8px auto 0", maxWidth: 520, fontSize: 14, color: dm ? "#94a3b8" : "#64748b", lineHeight: 1.7 }}>
+                      Elige 2 o 3 ofertas desde el listado y vuelve aquí para ver rápidamente en cuál encajas más y qué te falta en cada una.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${compareOffers.length}, minmax(280px, 1fr))`,
+                    gap: 18,
+                    alignItems: "start",
+                    minWidth: compareOffers.length >= 3 ? 960 : "auto",
+                  }}>
+                    {compareOffers.map(offer => {
+                      const rs = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+                      const compareStrengths = getCompareStrengths(offer);
+                      const compareGaps = getCompareGaps(offer);
+                      const compareCritical = getCriticalGaps(offer);
+                      const isBest = bestCompareKey && bestCompareKey === getOfferCompareKey(offer);
+                      return (
+                        <div key={getOfferCompareKey(offer)} style={{
+                          backgroundColor: dm ? "#1f2937" : "#fff",
+                          borderRadius: 18,
+                          border: `1px solid ${isBest ? rs.border : (dm ? "rgba(255,255,255,0.08)" : "#e5e7eb")}`,
+                          boxShadow: isBest ? (dm ? `0 0 0 1px ${rs.border}40, 0 14px 34px rgba(0,0,0,0.22)` : `0 0 0 1px ${rs.border}22, 0 14px 34px rgba(15,23,42,0.08)`) : "0 6px 18px rgba(15,23,42,0.06)",
+                          overflow: "hidden",
+                        }}>
+                          <div style={{
+                            padding: "18px 18px 16px",
+                            borderBottom: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#eef2f7"}`,
+                            background: dm ? "linear-gradient(135deg, rgba(0,117,138,0.10), rgba(37,99,235,0.08))" : "linear-gradient(135deg, rgba(0,117,138,0.05), rgba(37,99,235,0.04))",
+                          }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 12 }}>
+                              <CompanyLogo name={offer.empresa} logoUrl={offer.company_logo_url} size={46} darkMode={dm} />
+                              <button
+                                onClick={() => toggleCompareSelection(offer)}
+                                style={{ background: "none", border: "none", color: dm ? "#94a3b8" : "#64748b", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: 0 }}
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{
+                                  display: "inline-flex", alignItems: "center", gap: 6,
+                                  padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800,
+                                  backgroundColor: dm ? `${rs.border}20` : rs.bg,
+                                  color: rs.border, border: `1px solid ${rs.border}30`,
+                                }}>
+                                  {rs.label}
+                                </span>
+                                {isBest && (
+                                  <span style={{
+                                    padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800,
+                                    backgroundColor: dm ? "rgba(251,191,36,0.16)" : "#fef3c7",
+                                    color: dm ? "#fbbf24" : "#b45309",
+                                    border: `1px solid ${dm ? "rgba(251,191,36,0.25)" : "#fde68a"}`,
+                                  }}>
+                                    Mejor afinidad
+                                  </span>
+                                )}
+                              </div>
+                              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, lineHeight: 1.3, color: dm ? "#f8fafc" : "#111827" }}>
+                                {offer.titulo}
+                              </h3>
+                              <p style={{ margin: 0, fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 600 }}>
+                                {offer.empresa}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div style={{ padding: "18px", display: "flex", flexDirection: "column", gap: 16 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                              {[
+                                { label: "Match", value: `${offer.match_score ?? offer.puntuacion ?? "?"}%` },
+                                { label: "Modalidad", value: getWorkModeLabel(offer) },
+                                { label: "Ubicación", value: offer.ubicacion || "No indicada" },
+                                { label: "Seniority", value: getSeniorityLabel(offer) },
+                                { label: "Contrato", value: detectContract(offer) === "temporal" ? "Temporal / Prácticas" : detectContract(offer) === "freelance" ? "Freelance" : "Jornada completa" },
+                                { label: "Salario", value: offer.salario && offer.salario !== "Salario no especificado" ? offer.salario : "No indicado" },
+                              ].map(item => (
+                                <div key={`${offer.id}-${item.label}`} style={{
+                                  padding: "10px 12px",
+                                  borderRadius: 12,
+                                  backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
+                                  border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+                                }}>
+                                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: dm ? "#94a3b8" : "#6b7280", marginBottom: 5 }}>
+                                    {item.label}
+                                  </div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#f8fafc" : "#111827", lineHeight: 1.4 }}>
+                                    {item.value}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div style={{
+                              padding: "14px 16px",
+                              borderRadius: 14,
+                              backgroundColor: dm ? "rgba(0,117,138,0.10)" : "rgba(0,117,138,0.04)",
+                              border: `1px solid ${dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.10)"}`,
+                            }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                                Resumen
+                              </div>
+                              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: dm ? "#cbd5e1" : "#475569" }}>
+                                {getDecisionReason(offer) || "No hay explicación adicional para esta oferta."}
+                              </p>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                                Cumples
+                              </div>
+                              {compareStrengths.length > 0 ? (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                  {compareStrengths.map(item => (
+                                    <span key={`${offer.id}-ok-${item}`} style={{
+                                      padding: "5px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                                      backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
+                                      color: dm ? "#34d399" : "#15803d",
+                                      border: `1px solid ${dm ? "rgba(16,185,129,0.22)" : "#bbf7d0"}`,
+                                    }}>
+                                      ✓ {item}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p style={{ margin: 0, fontSize: 12, color: dm ? "#64748b" : "#94a3af", lineHeight: 1.6 }}>
+                                  No hay señales suficientes para destacar requisitos cumplidos.
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                  Te falta
+                                </div>
+                                {compareCritical.length > 0 && (
+                                  <span style={{ fontSize: 10, fontWeight: 800, color: dm ? "#fbbf24" : "#b45309", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    Carencia importante
+                                  </span>
+                                )}
+                              </div>
+                              {compareGaps.length > 0 || compareCritical.length > 0 ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {compareCritical.length > 0 && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {compareCritical.map(item => (
+                                        <span key={`${offer.id}-critical-${item}`} style={{
+                                          padding: "5px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                                          backgroundColor: dm ? "rgba(239,68,68,0.14)" : "#fee2e2",
+                                          color: dm ? "#f87171" : "#dc2626",
+                                          border: `1px solid ${dm ? "rgba(239,68,68,0.24)" : "#fecaca"}`,
+                                        }}>
+                                          ✕ {item}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {compareGaps.length > 0 && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {compareGaps.filter(item => !compareCritical.includes(item)).map(item => (
+                                        <span key={`${offer.id}-gap-${item}`} style={{
+                                          padding: "5px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                                          backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7",
+                                          color: dm ? "#fbbf24" : "#b45309",
+                                          border: `1px solid ${dm ? "rgba(245,158,11,0.22)" : "#fde68a"}`,
+                                        }}>
+                                          △ {item}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <p style={{ margin: 0, fontSize: 12, color: dm ? "#64748b" : "#94a3af", lineHeight: 1.6 }}>
+                                  No se detectan carencias relevantes con la información disponible.
+                                </p>
+                              )}
+                            </div>
+
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                              <button
+                                onClick={() => {
+                                  setShowCompareModal(false);
+                                  setSelectedOffer(offer);
+                                }}
+                                style={{ ...S.btnDetail, flex: 1, minWidth: 140 }}
+                              >
+                                Ver detalle completo
+                              </button>
+                              {offer.redirect_url && (
+                                <a
+                                  href={offer.redirect_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    ...S.btnOutline,
+                                    flex: 1,
+                                    minWidth: 140,
+                                    textDecoration: "none",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  Abrir oferta
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Offer Detail Modal ───────────────────────────────────── */}
         {selectedOffer && (() => {
@@ -1644,6 +2087,19 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       onClick={() => handleTrackOffer(selectedOffer)}
                     >
                       {isTrackedModal ? "✓ Siguiendo" : "Seguir oferta"}
+                    </button>
+                    <button
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                        backgroundColor: compareSelection.includes(getOfferCompareKey(selectedOffer)) ? (dm ? "rgba(15,118,110,0.18)" : "rgba(0,117,138,0.08)") : (dm ? "rgba(255,255,255,0.06)" : "#f1f5f9"),
+                        color: compareSelection.includes(getOfferCompareKey(selectedOffer)) ? (dm ? "#5eead4" : TEAL) : (dm ? "#94a3b8" : "#374151"),
+                        border: `1px solid ${compareSelection.includes(getOfferCompareKey(selectedOffer)) ? (dm ? "rgba(94,234,212,0.22)" : "rgba(0,117,138,0.12)") : (dm ? "rgba(255,255,255,0.1)" : "#e2e8f0")}`,
+                        cursor: "pointer", fontFamily: typography.family,
+                      }}
+                      onClick={() => toggleCompareSelection(selectedOffer)}
+                    >
+                      {compareSelection.includes(getOfferCompareKey(selectedOffer)) ? "✓ En comparador" : "Comparar"}
                     </button>
                     <button
                       style={{
