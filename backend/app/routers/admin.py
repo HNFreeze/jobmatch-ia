@@ -21,8 +21,8 @@ from app.routers.user import require_admin_user
 
 router = APIRouter()
 ADMIN_DELETE_CONFIRMATION_CODE = os.getenv("ADMIN_DELETE_CONFIRMATION_CODE", "715345")
-AI_COST_BASELINE_SPENT_USD = float(os.getenv("AI_COST_BASELINE_SPENT_USD", "0"))
-AI_COST_BASELINE_REMAINING_USD = float(os.getenv("AI_COST_BASELINE_REMAINING_USD", "0"))
+AI_COST_BASELINE_SPENT_USD = float(os.getenv("AI_COST_BASELINE_SPENT_USD", "0.96"))
+AI_COST_BASELINE_REMAINING_USD = float(os.getenv("AI_COST_BASELINE_REMAINING_USD", "4.03"))
 
 USER_SORT_FIELDS = {
     "created_at": User.created_at,
