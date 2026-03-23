@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, literal
 from sqlalchemy.orm import aliased
+from sqlalchemy.exc import ProgrammingError
 
 from app.database import get_session_local
 from app.models.ai_daily_usage import AIDailyUsage
@@ -63,6 +64,24 @@ def _day_bounds(day):
     start = datetime.combine(day, datetime.min.time())
     end = start + timedelta(days=1)
     return start, end
+
+
+def _empty_cost_estimate() -> dict:
+    return {
+        "baseline_spent_usd": _round_money(AI_COST_BASELINE_SPENT_USD),
+        "baseline_remaining_usd": _round_money(AI_COST_BASELINE_REMAINING_USD),
+        "estimated_spent_since_tracking_usd": 0.0,
+        "estimated_spent_today_usd": 0.0,
+        "combined_spent_usd": _round_money(AI_COST_BASELINE_SPENT_USD),
+        "estimated_remaining_usd": _round_money(
+            max((AI_COST_BASELINE_SPENT_USD + AI_COST_BASELINE_REMAINING_USD) - AI_COST_BASELINE_SPENT_USD, 0.0)
+        ) if (AI_COST_BASELINE_SPENT_USD + AI_COST_BASELINE_REMAINING_USD) > 0 else None,
+        "feature_breakdown": [],
+        "daily_breakdown": [],
+        "model_breakdown": [],
+        "recent_events": [],
+        "tracking_ready": False,
+    }
 
 
 @router.get("/api/admin/dashboard")
@@ -434,6 +453,7 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
     db = SessionLocal()
     try:
         today = datetime.utcnow().date()
+        cost_estimate = _empty_cost_estimate()
 
         totals = db.query(
             func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("total_units"),
@@ -456,151 +476,113 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             AIDailyUsage.user_id
         ).subquery()
 
-        cost_per_user = db.query(
-            AIAPICostEvent.user_id.label("user_id"),
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
-        ).group_by(
-            AIAPICostEvent.user_id
-        ).subquery()
+        try:
+            cost_per_user = db.query(
+                AIAPICostEvent.user_id.label("user_id"),
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+            ).group_by(
+                AIAPICostEvent.user_id
+            ).subquery()
 
-        top_users = db.query(
-            User.email,
-            func.coalesce(usage_per_user.c.total_units, 0).label("total_units"),
-            func.coalesce(usage_per_user.c.match_count, 0).label("match_count"),
-            func.coalesce(usage_per_user.c.cover_letter_count, 0).label("cover_letter_count"),
-            func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).label("estimated_cost_usd"),
-        ).outerjoin(
-            usage_per_user, usage_per_user.c.user_id == User.id
-        ).outerjoin(
-            cost_per_user, cost_per_user.c.user_id == User.id
-        ).filter(
-            (usage_per_user.c.user_id.isnot(None)) | (cost_per_user.c.user_id.isnot(None))
-        ).order_by(
-            func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).desc(),
-            func.coalesce(usage_per_user.c.total_units, 0).desc(),
-            User.email.asc()
-        ).limit(10).all()
-
-        usage_today = aliased(AIDailyUsage)
-        used_today_expr = func.coalesce(usage_today.total_units, 0).label("used_today")
-        limit_hits = db.query(
-            User.email,
-            User.daily_ai_quota,
-            used_today_expr,
-        ).join(
-            usage_today,
-            and_(usage_today.user_id == User.id, usage_today.usage_date == today),
-        ).filter(
-            used_today_expr >= User.daily_ai_quota
-        ).order_by(
-            used_today_expr.desc(), User.email.asc()
-        ).all()
-
-        total_estimated_cost = db.query(
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
-        ).scalar() or 0.0
-        today_estimated_cost = db.query(
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
-        ).filter(
-            AIAPICostEvent.created_at >= datetime.combine(today, datetime.min.time()),
-            AIAPICostEvent.created_at < datetime.combine(today + timedelta(days=1), datetime.min.time()),
-        ).scalar() or 0.0
-
-        by_feature = db.query(
-            AIAPICostEvent.feature,
-            func.count(AIAPICostEvent.id).label("requests"),
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
-        ).group_by(
-            AIAPICostEvent.feature
-        ).order_by(
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
-            AIAPICostEvent.feature.asc(),
-        ).all()
-
-        combined_spent = AI_COST_BASELINE_SPENT_USD + float(total_estimated_cost or 0.0)
-        total_budget_reference = AI_COST_BASELINE_SPENT_USD + AI_COST_BASELINE_REMAINING_USD
-        estimated_remaining = (
-            max(total_budget_reference - combined_spent, 0.0)
-            if total_budget_reference > 0
-            else None
-        )
-
-        daily_rows = []
-        for offset in range(6, -1, -1):
-            day = today - timedelta(days=offset)
-            day_start, day_end = _day_bounds(day)
-            usage_row = db.query(
-                func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("units"),
-                func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("analyses"),
-                func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letters"),
+            top_users = db.query(
+                User.email,
+                func.coalesce(usage_per_user.c.total_units, 0).label("total_units"),
+                func.coalesce(usage_per_user.c.match_count, 0).label("match_count"),
+                func.coalesce(usage_per_user.c.cover_letter_count, 0).label("cover_letter_count"),
+                func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).label("estimated_cost_usd"),
+            ).outerjoin(
+                usage_per_user, usage_per_user.c.user_id == User.id
+            ).outerjoin(
+                cost_per_user, cost_per_user.c.user_id == User.id
             ).filter(
-                AIDailyUsage.usage_date == day
-            ).one()
-            cost_value = db.query(
+                (usage_per_user.c.user_id.isnot(None)) | (cost_per_user.c.user_id.isnot(None))
+            ).order_by(
+                func.coalesce(cost_per_user.c.estimated_cost_usd, 0.0).desc(),
+                func.coalesce(usage_per_user.c.total_units, 0).desc(),
+                User.email.asc()
+            ).limit(10).all()
+
+            total_estimated_cost = db.query(
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
+            ).scalar() or 0.0
+            today_estimated_cost = db.query(
                 func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
             ).filter(
-                AIAPICostEvent.created_at >= day_start,
-                AIAPICostEvent.created_at < day_end,
+                AIAPICostEvent.created_at >= datetime.combine(today, datetime.min.time()),
+                AIAPICostEvent.created_at < datetime.combine(today + timedelta(days=1), datetime.min.time()),
             ).scalar() or 0.0
-            daily_rows.append({
-                "date": day.isoformat(),
-                "units": int(usage_row.units or 0),
-                "analyses": int(usage_row.analyses or 0),
-                "cover_letters": int(usage_row.cover_letters or 0),
-                "estimated_cost_usd": _round_money(cost_value),
-            })
 
-        model_breakdown = db.query(
-            AIAPICostEvent.model,
-            func.count(AIAPICostEvent.id).label("requests"),
-            func.coalesce(func.sum(AIAPICostEvent.input_tokens), 0).label("input_tokens"),
-            func.coalesce(func.sum(AIAPICostEvent.output_tokens), 0).label("output_tokens"),
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
-        ).group_by(
-            AIAPICostEvent.model
-        ).order_by(
-            func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
-            AIAPICostEvent.model.asc(),
-        ).all()
+            by_feature = db.query(
+                AIAPICostEvent.feature,
+                func.count(AIAPICostEvent.id).label("requests"),
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+            ).group_by(
+                AIAPICostEvent.feature
+            ).order_by(
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
+                AIAPICostEvent.feature.asc(),
+            ).all()
 
-        recent_events = db.query(
-            AIAPICostEvent.created_at,
-            AIAPICostEvent.feature,
-            AIAPICostEvent.model,
-            AIAPICostEvent.input_tokens,
-            AIAPICostEvent.output_tokens,
-            AIAPICostEvent.estimated_cost_usd,
-            User.email.label("email"),
-        ).outerjoin(
-            User, User.id == AIAPICostEvent.user_id
-        ).order_by(
-            AIAPICostEvent.created_at.desc()
-        ).limit(12).all()
+            daily_rows = []
+            for offset in range(6, -1, -1):
+                day = today - timedelta(days=offset)
+                day_start, day_end = _day_bounds(day)
+                usage_row = db.query(
+                    func.coalesce(func.sum(AIDailyUsage.total_units), 0).label("units"),
+                    func.coalesce(func.sum(AIDailyUsage.match_count), 0).label("analyses"),
+                    func.coalesce(func.sum(AIDailyUsage.cover_letter_count), 0).label("cover_letters"),
+                ).filter(
+                    AIDailyUsage.usage_date == day
+                ).one()
+                cost_value = db.query(
+                    func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0)
+                ).filter(
+                    AIAPICostEvent.created_at >= day_start,
+                    AIAPICostEvent.created_at < day_end,
+                ).scalar() or 0.0
+                daily_rows.append({
+                    "date": day.isoformat(),
+                    "units": int(usage_row.units or 0),
+                    "analyses": int(usage_row.analyses or 0),
+                    "cover_letters": int(usage_row.cover_letters or 0),
+                    "estimated_cost_usd": _round_money(cost_value),
+                })
 
-        return JSONResponse(content={
-            "total_usage": {
-                "units": int(totals.total_units or 0),
-                "analyses": int(totals.total_matches or 0),
-                "cover_letters": int(totals.total_cover_letters or 0),
-            },
-            "today_usage": {
-                "units": int(totals_today.today_units or 0),
-                "analyses": int(totals_today.today_matches or 0),
-                "cover_letters": int(totals_today.today_cover_letters or 0),
-            },
-            "top_users": [{
-                "email": row.email,
-                "units": int(row.total_units or 0),
-                "analyses": int(row.match_count or 0),
-                "cover_letters": int(row.cover_letter_count or 0),
-                "estimated_cost_usd": _round_money(row.estimated_cost_usd),
-            } for row in top_users],
-            "limit_hits": [{
-                "email": row.email,
-                "daily_ai_quota": int(row.daily_ai_quota or 0),
-                "used_today": int(row.used_today or 0),
-            } for row in limit_hits],
-            "cost_estimate": {
+            model_breakdown = db.query(
+                AIAPICostEvent.model,
+                func.count(AIAPICostEvent.id).label("requests"),
+                func.coalesce(func.sum(AIAPICostEvent.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(AIAPICostEvent.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).label("estimated_cost_usd"),
+            ).group_by(
+                AIAPICostEvent.model
+            ).order_by(
+                func.coalesce(func.sum(AIAPICostEvent.estimated_cost_usd), 0.0).desc(),
+                AIAPICostEvent.model.asc(),
+            ).all()
+
+            recent_events = db.query(
+                AIAPICostEvent.created_at,
+                AIAPICostEvent.feature,
+                AIAPICostEvent.model,
+                AIAPICostEvent.input_tokens,
+                AIAPICostEvent.output_tokens,
+                AIAPICostEvent.estimated_cost_usd,
+                User.email.label("email"),
+            ).outerjoin(
+                User, User.id == AIAPICostEvent.user_id
+            ).order_by(
+                AIAPICostEvent.created_at.desc()
+            ).limit(12).all()
+
+            combined_spent = AI_COST_BASELINE_SPENT_USD + float(total_estimated_cost or 0.0)
+            total_budget_reference = AI_COST_BASELINE_SPENT_USD + AI_COST_BASELINE_REMAINING_USD
+            estimated_remaining = (
+                max(total_budget_reference - combined_spent, 0.0)
+                if total_budget_reference > 0
+                else None
+            )
+            cost_estimate = {
                 "baseline_spent_usd": _round_money(AI_COST_BASELINE_SPENT_USD),
                 "baseline_remaining_usd": _round_money(AI_COST_BASELINE_REMAINING_USD),
                 "estimated_spent_since_tracking_usd": _round_money(total_estimated_cost),
@@ -629,7 +611,66 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
                     "output_tokens": int(row.output_tokens or 0),
                     "estimated_cost_usd": _round_money(row.estimated_cost_usd),
                 } for row in recent_events],
+                "tracking_ready": True,
+            }
+        except ProgrammingError as exc:
+            db.rollback()
+            if "ai_api_cost_events" not in str(exc).lower():
+                raise
+            top_users = db.query(
+                User.email,
+                func.coalesce(usage_per_user.c.total_units, 0).label("total_units"),
+                func.coalesce(usage_per_user.c.match_count, 0).label("match_count"),
+                func.coalesce(usage_per_user.c.cover_letter_count, 0).label("cover_letter_count"),
+                literal(0.0).label("estimated_cost_usd"),
+            ).outerjoin(
+                usage_per_user, usage_per_user.c.user_id == User.id
+            ).filter(
+                usage_per_user.c.user_id.isnot(None)
+            ).order_by(
+                func.coalesce(usage_per_user.c.total_units, 0).desc(),
+                User.email.asc()
+            ).limit(10).all()
+
+        usage_today = aliased(AIDailyUsage)
+        used_today_expr = func.coalesce(usage_today.total_units, 0).label("used_today")
+        limit_hits = db.query(
+            User.email,
+            User.daily_ai_quota,
+            used_today_expr,
+        ).join(
+            usage_today,
+            and_(usage_today.user_id == User.id, usage_today.usage_date == today),
+        ).filter(
+            used_today_expr >= User.daily_ai_quota
+        ).order_by(
+            used_today_expr.desc(), User.email.asc()
+        ).all()
+
+        return JSONResponse(content={
+            "total_usage": {
+                "units": int(totals.total_units or 0),
+                "analyses": int(totals.total_matches or 0),
+                "cover_letters": int(totals.total_cover_letters or 0),
             },
+            "today_usage": {
+                "units": int(totals_today.today_units or 0),
+                "analyses": int(totals_today.today_matches or 0),
+                "cover_letters": int(totals_today.today_cover_letters or 0),
+            },
+            "top_users": [{
+                "email": row.email,
+                "units": int(row.total_units or 0),
+                "analyses": int(row.match_count or 0),
+                "cover_letters": int(row.cover_letter_count or 0),
+                "estimated_cost_usd": _round_money(row.estimated_cost_usd),
+            } for row in top_users],
+            "limit_hits": [{
+                "email": row.email,
+                "daily_ai_quota": int(row.daily_ai_quota or 0),
+                "used_today": int(row.used_today or 0),
+            } for row in limit_hits],
+            "cost_estimate": cost_estimate,
         })
     finally:
         db.close()
