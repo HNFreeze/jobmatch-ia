@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,11 +11,15 @@ from sqlalchemy.orm import aliased
 from app.database import get_session_local
 from app.models.ai_daily_usage import AIDailyUsage
 from app.models.application import Application
+from app.models.email_verification_token import EmailVerificationToken
+from app.models.favorite import Favorite
+from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.search_history import SearchHistory
 from app.models.user import User
 from app.routers.user import require_admin_user
 
 router = APIRouter()
+ADMIN_DELETE_CONFIRMATION_CODE = os.getenv("ADMIN_DELETE_CONFIRMATION_CODE", "715345")
 
 USER_SORT_FIELDS = {
     "created_at": User.created_at,
@@ -35,6 +40,10 @@ class UpdateBlockRequest(BaseModel):
 
 class ResetQuotaUsageRequest(BaseModel):
     confirm: bool = True
+
+
+class DeleteAdminUserRequest(BaseModel):
+    confirmation_code: str = Field(..., min_length=1, max_length=32)
 
 
 def _today_range():
@@ -268,6 +277,52 @@ def reset_admin_user_quota_usage(
             "updated_by": admin_user.email,
         })
     except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.delete("/api/admin/users/{user_id}")
+def delete_admin_user(
+    user_id: int,
+    body: DeleteAdminUserRequest,
+    admin_user: User = Depends(require_admin_user),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    if body.confirmation_code.strip() != ADMIN_DELETE_CONFIRMATION_CODE:
+        raise HTTPException(status_code=403, detail="Clave de confirmacion incorrecta")
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        if user.id == admin_user.id:
+            raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta de administrador")
+
+        db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).delete(synchronize_session=False)
+        db.query(AIDailyUsage).filter(AIDailyUsage.user_id == user.id).delete(synchronize_session=False)
+        db.query(Favorite).filter(Favorite.user_id == user.id).delete(synchronize_session=False)
+        db.query(SearchHistory).filter(SearchHistory.user_id == user.id).delete(synchronize_session=False)
+        db.query(Application).filter(Application.user_id == user.id).delete(synchronize_session=False)
+        db.query(RateLimitBucket).filter(RateLimitBucket.bucket_key == f"email:{user.email}").delete(synchronize_session=False)
+        db.delete(user)
+        db.commit()
+
+        return JSONResponse(content={
+            "detail": "Usuario eliminado correctamente",
+            "user_id": user_id,
+            "deleted_email": user.email,
+            "deleted_by": admin_user.email,
+        })
+    except HTTPException:
+        db.rollback()
         raise
     except Exception:
         db.rollback()

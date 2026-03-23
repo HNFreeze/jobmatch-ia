@@ -306,6 +306,16 @@ export async function updateAdminUserBlock(userId, isBlocked) {
   return response.json();
 }
 
+export async function deleteAdminUser(userId, confirmationCode) {
+  const response = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+    body: JSON.stringify({ confirmation_code: confirmationCode }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al eliminar el usuario");
+  return response.json();
+}
+
 export async function resetAdminUserQuotaUsage(userId) {
   const response = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/quota/reset`, {
     method: "POST",

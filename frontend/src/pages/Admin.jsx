@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  deleteAdminUser,
   getAdminActivity,
   getAdminAiUsage,
   getAdminDashboard,
@@ -29,6 +30,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [savingQuotaId, setSavingQuotaId] = useState(null);
   const [resettingQuotaId, setResettingQuotaId] = useState(null);
   const [togglingBlockId, setTogglingBlockId] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
   const [actionNotice, setActionNotice] = useState("");
   const [actionError, setActionError] = useState("");
 
@@ -155,6 +157,29 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setActionError(err.message || "No se pudo actualizar el bloqueo.");
     } finally {
       setTogglingBlockId(null);
+    }
+  }
+
+  async function handleDeleteUser(user) {
+    const confirmationCode = window.prompt(
+      `Para eliminar a ${user.email}, introduce la clave de confirmacion`
+    );
+
+    if (confirmationCode === null) {
+      return;
+    }
+
+    setDeletingUserId(user.id);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await deleteAdminUser(user.id, confirmationCode.trim());
+      setActionNotice(`Usuario eliminado: ${user.email}.`);
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setActionError(err.message || "No se pudo eliminar el usuario.");
+    } finally {
+      setDeletingUserId(null);
     }
   }
 
@@ -341,6 +366,17 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                       >
                         {togglingBlockId === user.id ? "Actualizando..." : user.is_blocked ? "Desbloquear" : "Bloquear"}
                       </button>
+
+                      {!user.is_admin && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(user)}
+                          disabled={deletingUserId === user.id}
+                          style={{ ...S.deleteButton, opacity: deletingUserId === user.id ? 0.6 : 1 }}
+                        >
+                          {deletingUserId === user.id ? "Eliminando..." : "Eliminar"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -852,6 +888,17 @@ const S = {
     border: "1px solid rgba(16,185,129,0.22)",
     backgroundColor: "rgba(16,185,129,0.10)",
     color: "#047857",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+    fontFamily: typography.family,
+  },
+  deleteButton: {
+    border: "1px solid rgba(127,29,29,0.22)",
+    backgroundColor: "rgba(127,29,29,0.10)",
+    color: "#991b1b",
     borderRadius: 999,
     padding: "10px 14px",
     fontSize: 13,
