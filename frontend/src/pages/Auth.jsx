@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { login, register, resendVerificationEmail } from "../services/api";
 import { typography, transition } from "../constants/theme";
 import TurnstileWidget from "../components/TurnstileWidget";
@@ -37,6 +37,27 @@ export default function Auth({ onAuthSuccess }) {
   const handleTurnstileError = useCallback((message) => {
     setTurnstileToken("");
     setTurnstileError(message);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const flashMessage = sessionStorage.getItem("jobmatch_auth_message");
+      const flashType = sessionStorage.getItem("jobmatch_auth_message_type");
+      if (!flashMessage) {
+        return;
+      }
+
+      if (flashType === "notice") {
+        setNotice(flashMessage);
+      } else {
+        setError(flashMessage);
+      }
+
+      sessionStorage.removeItem("jobmatch_auth_message");
+      sessionStorage.removeItem("jobmatch_auth_message_type");
+    } catch {
+      // Non-critical browser storage issue.
+    }
   }, []);
 
   async function handleResend(targetEmail = pendingVerificationEmail || email) {
@@ -117,6 +138,11 @@ export default function Auth({ onAuthSuccess }) {
       setApellidos("");
       setTurnstileToken("");
     } catch (err) {
+      if (err.code === "account_blocked") {
+        setPendingVerificationEmail("");
+        setError("Tu cuenta ha sido bloqueada y no puedes iniciar sesión. Si crees que es un error, contacta con administración.");
+        return;
+      }
       if (err.code === "email_not_verified") {
         setPendingVerificationEmail(err.email || email.trim().toLowerCase());
       }
