@@ -126,7 +126,7 @@ function App() {
     return () => window.removeEventListener("hashchange", resolve);
   }, []);
 
-  const showNavbar = PROTECTED.includes(page);
+  const showNavbar = PROTECTED.includes(page) && page !== "admin";
   const profileComplete = profileCompletion >= 60;
   const progressDone = profileComplete && hasSearched;
 
@@ -204,7 +204,13 @@ function App() {
           darkMode={darkMode}
         />
       )}
-      {page === "admin" && <Admin darkMode={darkMode} />}
+      {page === "admin" && (
+        <Admin
+          darkMode={darkMode}
+          onLogout={handleLogout}
+          toggleDarkMode={toggleDarkMode}
+        />
+      )}
 
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>

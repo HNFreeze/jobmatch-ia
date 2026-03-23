@@ -239,6 +239,13 @@ def login(body: LoginRequest, request: Request):
                 media_type="application/json; charset=utf-8",
             )
 
+        if user.is_blocked:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Tu cuenta ha sido bloqueada. Contacta con administracion", "code": "account_blocked"},
+                media_type="application/json; charset=utf-8",
+            )
+
         if not user.email_verified:
             return JSONResponse(
                 status_code=403,

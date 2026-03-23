@@ -265,3 +265,23 @@ export async function getAdminAiUsage() {
   if (!response.ok) throw await buildApiError(response, "Error al cargar uso IA admin");
   return response.json();
 }
+
+export async function updateAdminUserQuota(userId, dailyAiQuota) {
+  const response = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/quota`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ daily_ai_quota: dailyAiQuota }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al actualizar la cuota del usuario");
+  return response.json();
+}
+
+export async function updateAdminUserBlock(userId, isBlocked) {
+  const response = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/block`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ is_blocked: isBlocked }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al actualizar el bloqueo del usuario");
+  return response.json();
+}
