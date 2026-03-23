@@ -15,6 +15,7 @@ import { getUserProfile, updateUserProfile, getHistory } from "./services/api";
 
 const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
+const USER_APP_PAGES = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas"];
 const PAGE_TITLES = {
   home: "JobMatch IA | Matching inteligente de ofertas",
   landing: "JobMatch IA | Matching inteligente de ofertas",
@@ -100,12 +101,13 @@ function App() {
     }
   }
 
-  const navigateTo = (newPage) => {
+  const navigateTo = useCallback((newPage) => {
     window.location.hash = newPage;
     setPage(newPage);
-  };
+  }, []);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((options = {}) => {
+    const targetPage = options.targetPage || "home";
     localStorage.removeItem("token");
     localStorage.removeItem("email");
     localStorage.removeItem("alias");
@@ -115,12 +117,13 @@ function App() {
     setProfileCompletion(0);
     setHasSearched(false);
     setCurrentUser(null);
-    navigateTo("home");
+    window.location.replace(`#${targetPage}`);
+    setPage(targetPage);
   }, []);
 
   useEffect(() => {
     function handleForcedLogout() {
-      handleLogout();
+      handleLogout({ targetPage: "auth" });
     }
 
     window.addEventListener("jobmatch:force-logout", handleForcedLogout);
@@ -140,8 +143,20 @@ function App() {
       const hash = window.location.hash.slice(1) || "home";
       const baseHash = hash.split("?")[0] || "home";
       const hasToken = Boolean(localStorage.getItem("token"));
+      const isAdmin = Boolean(currentUser?.is_admin);
 
       if (hasToken && AUTH_ONLY.includes(baseHash) && baseHash !== "verify-email") {
+        const target = isAdmin ? "admin" : "buscar";
+        window.location.replace(`#${target}`);
+        setPage(target);
+        return;
+      }
+      if (hasToken && isAdmin && USER_APP_PAGES.includes(baseHash)) {
+        window.location.replace("#admin");
+        setPage("admin");
+        return;
+      }
+      if (hasToken && !isAdmin && baseHash === "admin") {
         window.location.replace("#buscar");
         setPage("buscar");
         return;
@@ -157,9 +172,28 @@ function App() {
     resolve();
     window.addEventListener("hashchange", resolve);
     return () => window.removeEventListener("hashchange", resolve);
-  }, []);
+  }, [currentUser?.is_admin]);
 
-  const showNavbar = PROTECTED.includes(page) && page !== "admin";
+  useEffect(() => {
+    const hasToken = Boolean(localStorage.getItem("token"));
+    if (!hasToken || !currentUser) {
+      return;
+    }
+
+    if (currentUser.is_admin && page !== "admin") {
+      window.location.replace("#admin");
+      setPage("admin");
+      return;
+    }
+
+    if (!currentUser.is_admin && page === "admin") {
+      window.location.replace("#buscar");
+      setPage("buscar");
+    }
+  }, [currentUser, page]);
+
+  const isAdminSession = Boolean(currentUser?.is_admin);
+  const showNavbar = PROTECTED.includes(page) && page !== "admin" && !isAdminSession;
   const profileComplete = profileCompletion >= 60;
   const progressDone = profileComplete && hasSearched;
 
@@ -196,10 +230,12 @@ function App() {
               }
               setCurrentUser(profile);
               setProfileCompletion(computeCompletion(profile));
+              const targetPage = profile.is_admin ? "admin" : "buscar";
+              navigateTo(targetPage);
             } catch {
               // ignore
+              navigateTo("buscar");
             }
-            navigateTo("buscar");
             refreshProfileState();
           }}
         />
@@ -207,7 +243,7 @@ function App() {
 
       {page === "verify-email" && <VerifyEmail />}
 
-      {page === "buscar" && (
+      {page === "buscar" && !isAdminSession && (
         <Profile
           analysisResults={analysisResults}
           setAnalysisResults={(data) => {
@@ -220,10 +256,10 @@ function App() {
           onAnalyzeStarted={() => setForceAnalyze(false)}
         />
       )}
-      {page === "mapa" && <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />}
-      {page === "favoritos" && <Favoritos addToast={addToast} darkMode={darkMode} />}
-      {page === "candidaturas" && <Candidaturas addToast={addToast} darkMode={darkMode} />}
-      {page === "user-profile" && (
+      {page === "mapa" && !isAdminSession && <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />}
+      {page === "favoritos" && !isAdminSession && <Favoritos addToast={addToast} darkMode={darkMode} />}
+      {page === "candidaturas" && !isAdminSession && <Candidaturas addToast={addToast} darkMode={darkMode} />}
+      {page === "user-profile" && !isAdminSession && (
         <UserProfile
           onProfileSaved={() => {
             setAnalysisResults(null);
@@ -237,7 +273,7 @@ function App() {
           darkMode={darkMode}
         />
       )}
-      {page === "admin" && (
+      {page === "admin" && isAdminSession && (
         <Admin
           darkMode={darkMode}
           onLogout={handleLogout}

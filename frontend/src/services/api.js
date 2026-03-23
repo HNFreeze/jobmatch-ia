@@ -1,7 +1,19 @@
 const API_URL = (process.env.REACT_APP_API_URL || "http://localhost:8001").replace(/\/$/, "");
 
+const FORCED_LOGOUT_MESSAGES = {
+  account_blocked: "Tu cuenta ha sido bloqueada y la sesión se ha cerrado. Si necesitas ayuda, contacta con administración.",
+  token_invalid: "Tu sesión ha caducado o ya no es válida. Inicia sesión de nuevo para continuar.",
+  session_invalid: "Tu sesión ya no está disponible. Vuelve a iniciar sesión para continuar.",
+};
+
 function forceLogoutFromServer(reason = "session_invalid") {
   if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem("jobmatch_auth_message", FORCED_LOGOUT_MESSAGES[reason] || FORCED_LOGOUT_MESSAGES.session_invalid);
+    sessionStorage.setItem("jobmatch_auth_message_type", "error");
+  } catch {
+    // Non-critical UI hint.
+  }
   localStorage.removeItem("token");
   localStorage.removeItem("email");
   localStorage.removeItem("alias");
