@@ -26,6 +26,8 @@ class ProfileRequest(BaseModel):
     stack: list[str]
     english: str
     ubicaciones: list[str] = []
+    modalidad: list[str] = []
+    idiomas: list[dict] = []
 
 
 def _compute_profile_hash(profile: dict) -> str:
@@ -173,6 +175,13 @@ async def match_offers(
             enriched = enrich_items_with_company_logos(db, enriched)
         except Exception as e:
             print(f"[LOGO_CACHE] Error enriqueciendo ofertas: {e}")
+
+        # ── Ordenar por fit real: APLICA > QUIZÁ > NO_ENCAJA, sub-orden por puntuación ──
+        _RESULT_ORDER = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
+        enriched.sort(key=lambda x: (
+            _RESULT_ORDER.get(x.get("resultado", "NO_ENCAJA"), 2),
+            -(x.get("puntuacion") or 0)
+        ))
 
         skills_gap_data = None
         try:
