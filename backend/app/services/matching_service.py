@@ -761,6 +761,7 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
         "id": offer["id"],
         "resultado": result,
         "puntuacion": score,
+        "match_score": score,
         "motivo": decision_reason,
         "decision_reason": decision_reason,
         "skills_match": matched_skills[:5],
@@ -768,6 +769,7 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
         "strengths": strengths,
         "gaps": gaps,
         "blockers": blockers,
+        "critical_gaps": blockers,
         "signals_summary": {
             "normalized_role": signals.get("normalized_role"),
             "seniority_level": signals.get("seniority_level"),
