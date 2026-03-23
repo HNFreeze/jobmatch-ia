@@ -79,6 +79,8 @@ export default function CompanyLogo({ name, logoUrl, size = 48, darkMode = false
             src={logoUrl}
             alt={name || "Empresa"}
             loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
             onError={() => setImgFailed(true)}
             style={{
               width: "100%",
