@@ -1439,7 +1439,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     display: "grid",
                     gridTemplateColumns: `repeat(${compareOffers.length}, minmax(280px, 1fr))`,
                     gap: 18,
-                    alignItems: "start",
+                    alignItems: "stretch",
+                    gridAutoRows: "1fr",
                     minWidth: compareOffers.length >= 3 ? 960 : "auto",
                   }}>
                     {compareOffers.map(offer => {
@@ -1455,6 +1456,9 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           border: `1px solid ${isBest ? rs.border : (dm ? "rgba(255,255,255,0.08)" : "#e5e7eb")}`,
                           boxShadow: isBest ? (dm ? `0 0 0 1px ${rs.border}40, 0 14px 34px rgba(0,0,0,0.22)` : `0 0 0 1px ${rs.border}22, 0 14px 34px rgba(15,23,42,0.08)`) : "0 6px 18px rgba(15,23,42,0.06)",
                           overflow: "hidden",
+                          display: "flex",
+                          flexDirection: "column",
+                          height: "100%",
                         }}>
                           <div style={{
                             padding: "18px 18px 16px",
@@ -1500,7 +1504,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             </div>
                           </div>
 
-                          <div style={{ padding: "18px", display: "flex", flexDirection: "column", gap: 16 }}>
+                          <div style={{ padding: "18px", display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                               {[
                                 { label: "Match", value: `${offer.match_score ?? offer.puntuacion ?? "?"}%` },
@@ -1613,7 +1617,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                               )}
                             </div>
 
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 }}>
                               <button
                                 onClick={() => {
                                   setShowCompareModal(false);
