@@ -285,3 +285,13 @@ export async function updateAdminUserBlock(userId, isBlocked) {
   if (!response.ok) throw await buildApiError(response, "Error al actualizar el bloqueo del usuario");
   return response.json();
 }
+
+export async function resetAdminUserQuotaUsage(userId) {
+  const response = await fetch(`${API_URL}/api/admin/users/${encodeURIComponent(userId)}/quota/reset`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ confirm: true }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al resetear el uso diario del usuario");
+  return response.json();
+}
