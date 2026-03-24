@@ -337,3 +337,12 @@ export async function resetAdminUserQuotaUsage(userId) {
   if (!response.ok) throw await buildApiError(response, "Error al resetear el uso diario del usuario");
   return response.json();
 }
+
+export async function clearAdminCache() {
+  const response = await fetch(`${API_URL}/api/admin/cache/clear`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al limpiar el caché");
+  return response.json();
+}

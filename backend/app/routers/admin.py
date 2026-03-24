@@ -12,6 +12,7 @@ from app.database import get_session_local
 from app.models.ai_daily_usage import AIDailyUsage
 from app.models.ai_api_cost_event import AIAPICostEvent
 from app.models.application import Application
+from app.models.cache import SearchCache
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
 from app.models.rate_limit_bucket import RateLimitBucket
@@ -674,5 +675,24 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
             } for row in limit_hits],
             "cost_estimate": cost_estimate,
         })
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/cache/clear")
+def clear_search_cache(_: User = Depends(require_admin_user)):
+    """Delete all search-cache entries so the next search fetches fresh results."""
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        deleted = db.query(SearchCache).delete(synchronize_session=False)
+        db.commit()
+        return JSONResponse(content={"deleted": deleted})
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         db.close()
