@@ -15,13 +15,13 @@ const STATUSES = [
 ];
 
 const S = {
-  page: { padding: "40px 24px", minHeight: "100vh", fontFamily: typography.family, background: "#f8f9fc" },
+  page: { padding: "clamp(20px, 5vw, 40px) clamp(12px, 4vw, 24px)", minHeight: "100vh", fontFamily: typography.family, background: "#f8f9fc" },
   dmPage: { background: "#0f172a" },
   header: { marginBottom: 32 },
   title: { fontSize: 26, fontWeight: 800, margin: 0 },
   subtitle: { fontSize: 14, margin: "6px 0 0" },
-  board: { display: "flex", gap: 24, overflowX: "auto", paddingBottom: 24 },
-  column: { flex: "0 0 320px", display: "flex", flexDirection: "column", gap: 16 },
+  board: { display: "flex", gap: 24, overflowX: "auto", paddingBottom: 24, alignItems: "flex-start" },
+  column: { flex: "0 0 300px", display: "flex", flexDirection: "column", gap: 16 },
   colHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   colTitle: { margin: 0, fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" },
   card: { padding: 18, borderRadius: 12, border: "1px solid", position: "relative", display: "flex", flexDirection: "column", gap: 10, transition: "transform 0.2s" },
@@ -48,7 +48,7 @@ export default function Candidaturas({ darkMode, addToast }) {
       const data = await getApplications();
       setApps(data);
     } catch (e) {
-      setError("Error cargando candidaturas.");
+      setError("No se pudieron cargar las candidaturas. Inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -73,13 +73,13 @@ export default function Candidaturas({ darkMode, addToast }) {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm("¿Seguro que quieres borrar esta candidatura?")) return;
+    if (!window.confirm("¿Eliminar esta candidatura? Esta acción no se puede deshacer.")) return;
     try {
       await deleteApplication(id);
       setApps(apps.filter(a => a.id !== id));
-      addToast?.("Candidatura borrada", "success");
+      addToast?.("Candidatura eliminada", "success");
     } catch {
-      addToast?.("Error al borrar", "error");
+      addToast?.("Error al eliminar", "error");
     }
   }
 
@@ -94,26 +94,29 @@ export default function Candidaturas({ darkMode, addToast }) {
         </p>
       </div>
 
+      {/* Mobile filters button is not needed - board scrolls */}
       {loading ? (
-        <div style={{ textAlign: "center", padding: 40, color: dm ? "#94a3b8" : "#6b7280" }}>Cargando...</div>
+        <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid", borderColor: dm ? "rgba(255,255,255,0.1)" : "#e2e8f0", borderTopColor: "#00758A", animation: "cand-spin 0.75s linear infinite" }} />
+        </div>
       ) : error ? (
-        <div style={{ color: "#ef4444" }}>{error}</div>
+        <div style={{ padding: "16px 20px", borderRadius: 14, backgroundColor: dm ? "rgba(239,68,68,0.08)" : "#fef2f2", border: "1px solid #fecaca", color: dm ? "#f87171" : "#b91c1c", fontSize: 14, lineHeight: 1.55, fontFamily: typography.family }}>{error}</div>
       ) : apps.length === 0 ? (
         <div style={{ textAlign: "center", padding: 60 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
           <p style={{ fontSize: 16, fontWeight: 600, color: dm ? "#f1f5f9" : "#374151", margin: "0 0 8px" }}>
-            Aún no tienes candidaturas trackeadas
+            Aún no tienes candidaturas
           </p>
           <p style={{ color: dm ? "#64748b" : "#9ca3af", margin: 0, fontSize: 14 }}>
-            Guarda alguna oferta interesante desde la vista de resultados.
+            Cuando uses 'Seguir oferta' en los resultados, aparecerán aquí.
           </p>
         </div>
       ) : (
-        <div style={S.board}>
+        <div className="cand-board" style={S.board}>
           {STATUSES.map(col => {
             const colApps = apps.filter(a => a.status === col.id);
             return (
-              <div key={col.id} style={S.column}>
+              <div key={col.id} className="cand-col" style={S.column}>
                 <div style={S.colHeader}>
                   <h3 style={{ ...S.colTitle, color: dm ? col.dmColor : col.color }}>{col.label}</h3>
                   <span style={{
@@ -166,7 +169,7 @@ export default function Candidaturas({ darkMode, addToast }) {
                       {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                     </select>
 
-                    <p style={{ ...S.cardDate, color: dm ? "#64748b" : "#9ca3af" }}>Actualizada: {new Date(app.updated_at).toLocaleDateString()}</p>
+                    <p style={{ ...S.cardDate, color: dm ? "#64748b" : "#9ca3af" }}>Actualizada: {app.updated_at ? new Date(app.updated_at).toLocaleDateString("es-ES") : "—"}</p>
                   </div>
                 ))}
                 {colApps.length === 0 && (
@@ -184,4 +187,24 @@ export default function Candidaturas({ darkMode, addToast }) {
       )}
     </div>
   );
+}
+
+if (typeof document !== "undefined" && !document.getElementById("cand-styles")) {
+  const s = document.createElement("style");
+  s.id = "cand-styles";
+  s.textContent = `
+    @keyframes cand-spin { to { transform: rotate(360deg); } }
+    @media (max-width: 640px) {
+      .cand-board {
+        flex-direction: column !important;
+        overflow-x: visible !important;
+        gap: 16px !important;
+      }
+      .cand-col {
+        flex: 1 1 auto !important;
+        width: 100% !important;
+      }
+    }
+  `;
+  document.head.appendChild(s);
 }

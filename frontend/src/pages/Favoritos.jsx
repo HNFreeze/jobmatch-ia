@@ -66,7 +66,7 @@ export default function Favoritos({ addToast, darkMode }) {
   if (loading) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: 36, height: 36, border: "3px solid #e5e7eb", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <div style={{ width: 36, height: 36, border: "3px solid #e5e7eb", borderTop: "3px solid #00758A", borderRadius: "50%", animation: "spin 0.75s linear infinite" }} role="status" aria-label="Cargando" />
       </div>
     );
   }
@@ -112,7 +112,7 @@ export default function Favoritos({ addToast, darkMode }) {
           const rs = RESULT_STYLES[offer.resultado_ia] || RESULT_STYLES.QUIZÁ;
           return (
             <div key={offer.adzuna_id} className="fav-card" style={{
-              padding: "20px 24px", borderRadius: 16,
+              padding: "16px 20px", borderRadius: 16,
               backgroundColor: dm ? "#1e293b" : "#fff",
               border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e8ecf1"}`,
               borderLeft: `4px solid ${rs.border}`,
@@ -145,13 +145,14 @@ export default function Favoritos({ addToast, darkMode }) {
                     whiteSpace: "nowrap",
                   }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: rs.border, display: "inline-block" }} />
-                    {offer.resultado_ia || "N/A"}
+                    {RESULT_STYLES[offer.resultado_ia]?.label || offer.resultado_ia || "—"}
                   </span>
                 </div>
 
                 {/* Actions */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                <div className="fav-card-actions" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, gap: 8, flexWrap: "wrap" }}>
                   <button
+                    className="fav-btn-ghost fav-btn-ghost-danger"
                     onClick={() => handleRemoveFavorite(offer.adzuna_id)}
                     style={{
                       padding: "6px 14px", fontSize: 12, fontWeight: 600, color: dm ? "#94a3b8" : "#6b7280",
@@ -164,6 +165,7 @@ export default function Favoritos({ addToast, darkMode }) {
                   {offer.url && (
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
+                        className="fav-btn-track"
                         onClick={() => handleTrackOffer(offer)}
                         style={{
                           padding: "6px 16px", fontSize: 12, fontWeight: 600, color: dm ? "#5eead4" : "#00758A",
@@ -173,10 +175,11 @@ export default function Favoritos({ addToast, darkMode }) {
                       >
                         Seguir oferta
                       </button>
-                      <a href={offer.url} target="_blank" rel="noopener noreferrer" style={{
+                      <a className="fav-btn-adzuna" href={offer.url} target="_blank" rel="noopener noreferrer" style={{
                         padding: "6px 16px", fontSize: 12, fontWeight: 600, color: "#fff",
                         background: gradients.primary, textDecoration: "none", borderRadius: 8,
                         fontFamily: typography.family, boxShadow: "0 2px 6px rgba(37,99,235,0.2)",
+                        display: "inline-block",
                       }}>
                         Ver en Adzuna →
                       </a>
@@ -196,14 +199,14 @@ const S = {
   page: {
     minHeight: "100vh",
     background: "#f8f9fc",
-    padding: "32px 24px",
+    padding: "clamp(20px, 5vw, 32px) clamp(12px, 4vw, 24px)",
     fontFamily: typography.family,
   },
   dmPage: { background: "#0f172a" },
   emptyCard: {
     textAlign: "center",
     backgroundColor: "#fff",
-    padding: "56px 48px",
+    padding: "clamp(28px, 8vw, 56px) clamp(20px, 6vw, 48px)",
     borderRadius: 16,
     border: "1px solid #e8ecf1",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
@@ -237,6 +240,20 @@ if (typeof document !== "undefined" && !document.getElementById("fav-styles")) {
     .fav-card:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0,0,0,0.08) !important;
+    }
+    .fav-btn-ghost { transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease; border-radius: 8px; }
+    .fav-btn-ghost:hover { background: rgba(0,117,138,0.07) !important; color: #00758A !important; transform: translateY(-1px); }
+    .fav-btn-ghost-danger:hover { background: rgba(239,68,68,0.07) !important; color: #ef4444 !important; }
+    .fav-btn-track { transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease; }
+    .fav-btn-track:hover { background: rgba(0,117,138,0.1) !important; border-color: rgba(0,117,138,0.5) !important; transform: translateY(-1px); }
+    .fav-btn-adzuna { transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease; }
+    .fav-btn-adzuna:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 5px 16px rgba(37,99,235,0.3) !important; }
+    @media (max-width: 480px) {
+      .fav-card { flex-direction: column !important; }
+      .fav-card-actions { flex-direction: column !important; align-items: stretch !important; }
+      .fav-card-actions > div { width: 100%; justify-content: stretch; }
+      .fav-card-actions button,
+      .fav-card-actions a { flex: 1; text-align: center; justify-content: center; }
     }
   `;
   document.head.appendChild(s);

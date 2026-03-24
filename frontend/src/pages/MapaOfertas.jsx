@@ -9,7 +9,7 @@ const RESULT_META = {
 };
 
 function normalizeLocationLabel(rawLocation) {
-  if (!rawLocation) return "Sin ubicacion clara";
+  if (!rawLocation) return "Sin ubicación";
 
   const raw = String(rawLocation).trim();
   const lower = raw.toLowerCase();
@@ -23,18 +23,18 @@ function normalizeLocationLabel(rawLocation) {
   }
 
   const firstChunk = raw.split(",")[0]?.trim() || raw;
-  return firstChunk || "Sin ubicacion clara";
+  return firstChunk || "Sin ubicación";
 }
 
 function inferWorkMode(offer) {
   const explicit = offer?.signals_summary?.work_mode;
   if (explicit === "remote") return "Remoto";
-  if (explicit === "hybrid") return "Hibrido";
+  if (explicit === "hybrid") return "Híbrido";
   if (explicit === "onsite") return "Presencial";
 
   const text = `${offer?.ubicacion || ""} ${offer?.descripcion || ""}`.toLowerCase();
   if (text.includes("remote") || text.includes("remoto") || text.includes("teletrabajo")) return "Remoto";
-  if (text.includes("hybrid") || text.includes("hibrid") || text.includes("hibrido")) return "Hibrido";
+  if (text.includes("hybrid") || text.includes("hibrid") || text.includes("hibrido")) return "Híbrido";
   if (text.includes("presencial") || text.includes("onsite")) return "Presencial";
   return "No indicado";
 }
@@ -83,7 +83,7 @@ function buildLocationGroups(offers) {
 }
 
 function formatWorkModeSummary(offers) {
-  const summary = { Remoto: 0, Hibrido: 0, Presencial: 0, "No indicado": 0 };
+  const summary = { Remoto: 0, Híbrido: 0, Presencial: 0, "No indicado": 0 };
   offers.forEach((offer) => {
     const mode = inferWorkMode(offer);
     summary[mode] = (summary[mode] || 0) + 1;
@@ -99,8 +99,8 @@ function formatOfferAge(dateString) {
     const diff = Math.max(0, now - published);
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     if (days === 0) return "Publicada hoy";
-    if (days === 1) return "Publicada hace 1 dia";
-    return `Publicada hace ${days} dias`;
+    if (days === 1) return "Publicada hace 1 día";
+    return `Publicada hace ${days} días`;
   } catch {
     return "Fecha no disponible";
   }
@@ -133,10 +133,10 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
         <div style={{ ...S.emptyCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
           <div style={S.emptyIcon}>Ubicaciones</div>
           <h2 style={{ ...S.emptyTitle, color: darkMode ? "#f8fafc" : "#0f172a" }}>
-            Aun no hay distribucion geografica
+            Aún no hay distribución geográfica
           </h2>
           <p style={{ ...S.emptyText, color: darkMode ? "#94a3b8" : "#64748b" }}>
-            Primero analiza ofertas y despues veras en que ciudades o zonas se concentra mejor tu busqueda.
+            Primero analiza ofertas y después verás en qué ciudades o zonas se concentra mejor tu búsqueda.
           </p>
         </div>
       </div>
@@ -144,16 +144,16 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
   }
 
   return (
-    <div style={{ ...S.page, ...(darkMode ? S.pageDark : {}) }}>
+    <div className="locations-page-wrap" style={{ ...S.page, ...(darkMode ? S.pageDark : {}) }}>
       <div style={S.container}>
-        <header style={{ ...S.heroCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
+        <header className="locations-hero-card" style={{ ...S.heroCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
           <div>
             <p style={{ ...S.kicker, color: darkMode ? "#5eead4" : TEAL }}>Ubicaciones</p>
-            <h1 style={{ ...S.heroTitle, color: darkMode ? "#f8fafc" : "#0f172a" }}>
+            <h1 className="locations-hero-title" style={{ ...S.heroTitle, color: darkMode ? "#f8fafc" : "#0f172a" }}>
               Donde se concentran las mejores oportunidades
             </h1>
             <p style={{ ...S.heroText, color: darkMode ? "#94a3b8" : "#64748b" }}>
-              Hemos sustituido el mapa exacto por una vista mas util y honesta: agrupamos las ofertas por ciudad o zona publicada, sin fingir coordenadas reales de empresa.
+              Hemos sustituido el mapa exacto por una vista más útil y honesta: agrupamos las ofertas por ciudad o zona publicada, sin fingir coordenadas reales de empresa.
             </p>
           </div>
 
@@ -177,15 +177,15 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
             darkMode={darkMode}
           />
           <MetricCard
-            label="Hibrido"
-            value={workModeSummary.Hibrido || 0}
+            label="Híbrido"
+            value={workModeSummary.Híbrido || 0}
             hint="requiere presencia parcial"
             darkMode={darkMode}
           />
           <MetricCard
             label="Presencial"
             value={workModeSummary.Presencial || 0}
-            hint="depende mas de ubicacion"
+            hint="depende más de ubicación"
             darkMode={darkMode}
           />
         </section>
@@ -196,7 +196,7 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
               <div>
                 <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Mejores ubicaciones para ti</h2>
                 <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
-                  Priorizadas por volumen de APLICA, afinidad media y numero total de ofertas.
+                  Priorizadas por volumen de APLICA, afinidad media y número total de ofertas.
                 </p>
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
                             border: `1px solid ${darkMode ? `${RESULT_META[item.key].color}44` : `${RESULT_META[item.key].color}22`}`,
                           }}
                         >
-                          {item.key} · {item.value}
+                          {RESULT_META[item.key]?.label || item.key} · {item.value}
                         </span>
                       ))}
                     </div>
@@ -254,9 +254,9 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
           </div>
 
           <div style={{ ...S.sectionCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
-            <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Mejores ofertas del analisis</h2>
+            <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Mejores ofertas del análisis</h2>
             <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
-              Una vista rapida de las oportunidades con mejor afinidad actual, manteniendo visible donde estan publicadas.
+              Una vista rápida de las oportunidades con mejor afinidad actual, manteniendo visible donde estan publicadas.
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
@@ -272,7 +272,7 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
                     </div>
                     <div style={S.offerRowRight}>
                       <span style={{ ...S.resultPill, backgroundColor: darkMode ? `${meta.color}22` : meta.bg, color: meta.color, border: `1px solid ${darkMode ? `${meta.color}44` : `${meta.color}22`}` }}>
-                        {offer.resultado}
+                        {RESULT_META[offer.resultado]?.label || offer.resultado}
                       </span>
                       <span style={{ ...S.scorePill, color: darkMode ? "#f8fafc" : "#111827" }}>
                         {offer.match_score ?? offer.puntuacion ?? 0}%
@@ -288,14 +288,14 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
         <section style={{ ...S.sectionCard, ...(darkMode ? S.cardDark : S.cardLight) }}>
           <div style={S.sectionHeader}>
             <div>
-              <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Ofertas agrupadas por ubicacion</h2>
+              <h2 style={{ ...S.sectionTitle, color: darkMode ? "#f8fafc" : "#111827" }}>Ofertas agrupadas por ubicación</h2>
               <p style={{ ...S.sectionText, color: darkMode ? "#94a3b8" : "#64748b" }}>
                 Esta vista sustituye al pin exacto por contexto real: ciudad o zona publicada, modalidad y mejores oportunidades de cada grupo.
               </p>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
             {locationGroups.map((group) => (
               <div key={group.location} style={{ ...S.groupColumn, ...(darkMode ? S.groupColumnDark : {}) }}>
                 <div style={S.groupHeader}>
@@ -306,7 +306,7 @@ export default function MapaOfertas({ analysisResults, darkMode }) {
                     </div>
                   </div>
                   <span style={{ ...S.groupBadge, color: darkMode ? "#5eead4" : TEAL }}>
-                    {group.counts.APLICA} aplica
+                    {group.counts.APLICA} APLICA
                   </span>
                 </div>
 
@@ -363,7 +363,7 @@ const S = {
   page: {
     minHeight: "100vh",
     backgroundColor: "#f8fafc",
-    padding: "28px 20px 40px",
+    padding: "clamp(16px, 4vw, 28px) clamp(12px, 3vw, 20px) 40px",
     fontFamily: typography.family,
   },
   pageDark: {
@@ -440,7 +440,7 @@ const S = {
   },
   metricsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
     gap: 14,
   },
   metricCard: {
@@ -679,6 +679,21 @@ if (typeof document !== "undefined" && !document.getElementById("locations-view-
     @media (max-width: 980px) {
       .locations-section-grid {
         grid-template-columns: 1fr !important;
+      }
+    }
+    @media (max-width: 600px) {
+      .locations-page-wrap {
+        padding: 16px 12px 32px !important;
+      }
+      .locations-hero-card {
+        flex-direction: column !important;
+        align-items: stretch !important;
+      }
+      .locations-hero-title {
+        font-size: 24px !important;
+      }
+      .locations-section-title {
+        font-size: 17px !important;
       }
     }
   `;

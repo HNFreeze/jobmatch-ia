@@ -245,6 +245,7 @@ export async function generateCoverLetter(oferta, perfil) {
   const response = await fetch(`${API_URL}/api/cover-letter`, {
     method: "POST",
     headers: authHeaders(),
+    body: JSON.stringify({ oferta, perfil }),
   });
   if (!response.ok) throw await buildApiError(response, "Error al generar la carta");
   return response.json();

@@ -43,6 +43,7 @@ export default function Toast({ toasts, onRemove }) {
           style={{
             ...styles.toast,
             background: t.type === "success" ? "#059669"
+                      : t.type === "error"   ? "#dc2626"
                       : t.type === "warning" ? "#d97706"
                       : "#1f2937",
           }}
@@ -66,21 +67,23 @@ const styles = {
     flexDirection: "column",
     gap: 8,
     pointerEvents: "none",
+    minWidth: 260,
   },
   toast: {
     display: "flex",
     alignItems: "center",
     gap: 10,
-    padding: "12px 16px",
+    padding: "12px 18px",
     color: "#fff",
-    borderRadius: 10,
+    borderRadius: 12,
     fontSize: 14,
-    fontWeight: 500,
-    boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-    animation: "toastIn 0.3s ease",
-    maxWidth: 320,
+    fontWeight: 600,
+    boxShadow: "0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10)",
+    animation: "toastIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)",
+    maxWidth: 340,
     pointerEvents: "auto",
     fontFamily: "'Segoe UI', system-ui, sans-serif",
+    letterSpacing: "-0.01em",
   },
   icon: { fontSize: 16 },
   msg: { flex: 1 },

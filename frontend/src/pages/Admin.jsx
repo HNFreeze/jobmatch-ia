@@ -222,7 +222,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const totalPages = usersData ? Math.max(1, Math.ceil(usersData.total / usersData.limit)) : 1;
 
   return (
-    <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
+    <div className="admin-page-wrap" style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
       <div style={S.bgGlowOne} />
       <div style={S.bgGlowTwo} />
       <div style={S.container}>
@@ -238,7 +238,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               />
             </div>
             <p style={{ ...S.kicker, color: dm ? "#67e8f9" : TEAL }}>Administración</p>
-            <h1 style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de control</h1>
+            <h1 className="admin-header-title" style={{ ...S.title, color: dm ? "#f8fafc" : "#0f172a" }}>Panel de control</h1>
             <p style={{ ...S.subtitle, color: dm ? "#94a3b8" : "#64748b" }}>
               Gestiona cuentas, cuotas, bloqueos y el uso global de la aplicación desde una zona separada.
             </p>
@@ -246,16 +246,26 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
 
           <div style={S.adminActions}>
             <div style={S.sectionPills}>
-              <button type="button" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
-              <button type="button" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
-              <button type="button" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
-              <button type="button" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
             </div>
             <div style={S.headerButtons}>
-              <button type="button" onClick={toggleDarkMode} style={S.secondaryButton}>
+              <button
+                type="button"
+                className="admin-btn-secondary"
+                onClick={() => loadAdminData(page, search, sortBy, sortDir)}
+                disabled={loading}
+                style={{ ...S.secondaryButton, opacity: loading ? 0.6 : 1 }}
+                title="Actualizar datos"
+              >
+                {loading ? "↻ Actualizando…" : "↻ Actualizar"}
+              </button>
+              <button type="button" className="admin-btn-secondary" onClick={toggleDarkMode} style={S.secondaryButton}>
                 {dm ? "Modo claro" : "Modo oscuro"}
               </button>
-              <button type="button" onClick={onLogout} style={S.primaryButton}>
+              <button type="button" className="admin-btn-primary" onClick={onLogout} style={S.primaryButton}>
                 Cerrar sesión
               </button>
             </div>
@@ -295,16 +305,18 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
 
             <form onSubmit={handleSearchSubmit} style={S.searchForm}>
               <input
+                className="admin-search-input"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar por email"
                 style={{ ...S.input, ...(dm ? S.inputDm : {}) }}
               />
-              <button type="submit" style={S.primaryButton}>Buscar</button>
+              <button type="submit" className="admin-btn-primary" style={S.primaryButton}>Buscar</button>
             </form>
           </div>
 
           <div style={{ ...S.tableWrap, ...(dm ? S.panelDm : S.panel) }}>
+            <div style={{ minWidth: 720 }}>
             <div style={S.tableHead}>
               <HeaderButton label="Email" onClick={() => handleSortChange("email")} />
               <HeaderButton label="Estado" onClick={() => handleSortChange("is_blocked")} />
@@ -317,7 +329,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             {(usersData?.items || []).map((user) => {
               const draftQuota = Number(quotaDrafts[user.id] ?? user.daily_ai_quota ?? 0);
               return (
-                <div key={user.id} style={{ ...S.tableRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}>
+                <div key={user.id} className="admin-table-row" style={{ ...S.tableRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb", transition: "background 0.14s ease" }}>
                   <div style={S.emailCell}>
                     <div style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>{user.email}</div>
                     <div style={{ ...S.rowMeta, color: dm ? "#94a3b8" : "#64748b" }}>
@@ -343,6 +355,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                       </div>
                       <button
                         type="button"
+                        className="admin-btn-secondary"
                         onClick={() => handleQuotaSave(user)}
                         disabled={savingQuotaId === user.id}
                         style={{ ...S.secondaryButton, opacity: savingQuotaId === user.id ? 0.6 : 1 }}
@@ -354,6 +367,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                     <div style={S.actionButtons}>
                       <button
                         type="button"
+                        className="admin-btn-reset"
                         onClick={() => handleQuotaReset(user)}
                         disabled={resettingQuotaId === user.id}
                         style={{ ...S.resetButton, opacity: resettingQuotaId === user.id ? 0.6 : 1 }}
@@ -363,6 +377,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
 
                       <button
                         type="button"
+                        className={user.is_blocked ? "admin-btn-unblock" : "admin-btn-block"}
                         onClick={() => handleBlockToggle(user)}
                         disabled={togglingBlockId === user.id}
                         style={user.is_blocked ? S.unblockButton : S.blockButton}
@@ -373,6 +388,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                       {!user.is_admin && (
                         <button
                           type="button"
+                          className="admin-btn-delete"
                           onClick={() => handleDeleteUser(user)}
                           disabled={deletingUserId === user.id}
                           style={{ ...S.deleteButton, opacity: deletingUserId === user.id ? 0.6 : 1 }}
@@ -389,6 +405,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             {!usersData?.items?.length && (
               <div style={{ ...S.emptyState, color: dm ? "#94a3b8" : "#64748b" }}>No hay usuarios para mostrar.</div>
             )}
+            </div>
           </div>
 
           <div style={S.pagination}>
@@ -725,9 +742,9 @@ function formatUsd(value) {
 
 function formatFeatureLabel(value) {
   const labels = {
-    match_signal_extraction: "Extraccion de senales",
+    match_signal_extraction: "Extracción de señales",
     skills_gap: "Plan de mejora",
-    cover_letter: "Carta de presentacion",
+    cover_letter: "Carta de presentación",
   };
   return labels[value] || value;
 }
@@ -766,7 +783,7 @@ const S = {
   page: {
     minHeight: "100vh",
     backgroundColor: "#f8fafc",
-    padding: "28px 20px 40px",
+    padding: "clamp(16px, 4vw, 28px) clamp(12px, 3vw, 20px) 40px",
     fontFamily: typography.family,
     position: "relative",
     overflowX: "hidden",
@@ -914,7 +931,7 @@ const S = {
   },
   metricsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
     gap: 14,
   },
   metricCard: {
@@ -952,6 +969,7 @@ const S = {
   tableWrap: {
     borderRadius: 18,
     overflow: "hidden",
+    overflowX: "auto",
   },
   tableHead: {
     display: "grid",
@@ -1098,6 +1116,7 @@ const S = {
     fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease",
   },
   secondaryButton: {
     border: "1px solid #cbd5e1",
@@ -1109,6 +1128,7 @@ const S = {
     fontWeight: 700,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "background 0.14s ease, border-color 0.14s ease, transform 0.14s ease",
   },
   resetButton: {
     border: "1px solid rgba(245,158,11,0.22)",
@@ -1120,6 +1140,7 @@ const S = {
     fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "background 0.14s ease, transform 0.14s ease",
   },
   blockButton: {
     border: "1px solid rgba(239,68,68,0.22)",
@@ -1131,6 +1152,7 @@ const S = {
     fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "background 0.14s ease, transform 0.14s ease",
   },
   unblockButton: {
     border: "1px solid rgba(16,185,129,0.22)",
@@ -1142,6 +1164,7 @@ const S = {
     fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "background 0.14s ease, transform 0.14s ease",
   },
   deleteButton: {
     border: "1px solid rgba(127,29,29,0.22)",
@@ -1153,6 +1176,7 @@ const S = {
     fontWeight: 800,
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "background 0.14s ease, transform 0.14s ease",
   },
   twoCol: {
     display: "grid",
@@ -1332,4 +1356,25 @@ if (typeof document !== "undefined" && !document.getElementById("admin-spin-styl
     }
   `;
   document.head.appendChild(style);
+}
+
+if (typeof document !== "undefined" && !document.getElementById("admin-hover-styles")) {
+  const s = document.createElement("style");
+  s.id = "admin-hover-styles";
+  s.textContent = `
+    .admin-btn-primary:hover  { filter: brightness(1.12); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,117,138,0.32) !important; }
+    .admin-btn-secondary:hover { background: #f1f5f9 !important; border-color: #94a3b8 !important; transform: translateY(-1px); }
+    .admin-btn-reset:hover    { background: rgba(245,158,11,0.18) !important; transform: translateY(-1px); }
+    .admin-btn-block:hover    { background: rgba(239,68,68,0.18) !important; transform: translateY(-1px); }
+    .admin-btn-unblock:hover  { background: rgba(16,185,129,0.18) !important; transform: translateY(-1px); }
+    .admin-btn-delete:hover   { background: rgba(127,29,29,0.18) !important; transform: translateY(-1px); }
+    .admin-table-row:hover    { background: rgba(0,122,138,0.03) !important; }
+    .admin-pill-btn:hover     { background: rgba(0,122,138,0.14) !important; transform: translateY(-1px); }
+    @media (max-width: 640px) {
+      .admin-page-wrap { padding: 16px 12px 32px !important; }
+      .admin-header-title { font-size: 24px !important; }
+      .admin-search-input { min-width: 0 !important; width: 100% !important; }
+    }
+  `;
+  document.head.appendChild(s);
 }
