@@ -67,6 +67,10 @@ class ProfileData(BaseModel):
     onboarding_completed: Optional[bool] = None
 
 
+class ConsentRequest(BaseModel):
+    accepted: bool
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -75,6 +79,39 @@ class ChangePasswordRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     current_password: str
     confirmation_text: str
+
+
+@router.patch("/api/user/consent")
+def update_consent(body: ConsentRequest, user_id: int = Depends(get_current_user_id)):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Base de datos no disponible"},
+            media_type="application/json; charset=utf-8",
+        )
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        user.analytics_consent = body.accepted
+        db.commit()
+        return JSONResponse(
+            content={"detail": "Preferencia de analítica guardada", "analytics_consent": body.accepted},
+            media_type="application/json; charset=utf-8",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(e)},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        db.close()
 
 
 @router.get("/api/user/profile")
@@ -106,6 +143,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
                 "ubicaciones": json.loads(user.ubicaciones) if user.ubicaciones else [],
                 "modalidad": json.loads(user.modalidad) if user.modalidad else [],
                 "onboarding_completed": bool(user.onboarding_completed),
+                "analytics_consent": user.analytics_consent,
             },
             media_type="application/json; charset=utf-8",
         )
