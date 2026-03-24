@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  clearAdminCache,
   deleteAdminUser,
   getAdminActivity,
   getAdminAiUsage,
@@ -33,6 +34,8 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [actionNotice, setActionNotice] = useState("");
   const [actionError, setActionError] = useState("");
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheNotice, setCacheNotice] = useState("");
 
   async function loadAdminData(currentPage = page, currentSearch = search, currentSortBy = sortBy, currentSortDir = sortDir) {
     setLoading(true);
@@ -579,6 +582,61 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               ) : (
                 <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay llamadas recientes registradas.</p>
               )}
+            </div>
+          </div>
+
+          <div id="sistema-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+            <h2 style={{ ...S.sectionTitle, marginBottom: 4, color: dm ? "#f8fafc" : "#111827" }}>Sistema</h2>
+            <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b", marginBottom: 20 }}>
+              Herramientas de mantenimiento de la plataforma.
+            </p>
+
+            <div style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`, paddingTop: 18 }}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Caché de búsquedas</p>
+              <p style={{ fontSize: 13, color: dm ? "#94a3b8" : "#64748b", marginBottom: 14, lineHeight: 1.6 }}>
+                Fuerza que todos los usuarios obtengan resultados frescos en su próxima búsqueda.
+                Útil tras cambios en el matching o en los datos de empresa.
+              </p>
+              {cacheNotice && (
+                <div style={{
+                  padding: "8px 12px", borderRadius: 8, fontSize: 13, marginBottom: 12,
+                  backgroundColor: cacheNotice.startsWith("Error") ? (dm ? "rgba(239,68,68,0.12)" : "#fee2e2") : (dm ? "rgba(16,185,129,0.12)" : "#dcfce7"),
+                  color: cacheNotice.startsWith("Error") ? "#dc2626" : "#15803d",
+                  border: `1px solid ${cacheNotice.startsWith("Error") ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`,
+                }}>
+                  {cacheNotice}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={clearingCache}
+                onClick={async () => {
+                  if (!window.confirm("¿Borrar toda la caché de búsquedas? Los usuarios verán resultados frescos en su próxima consulta.")) return;
+                  setClearingCache(true);
+                  setCacheNotice("");
+                  try {
+                    const res = await clearAdminCache();
+                    setCacheNotice(`✓ Caché borrada — ${res.deleted} ${res.deleted === 1 ? "entrada eliminada" : "entradas eliminadas"}.`);
+                  } catch (err) {
+                    setCacheNotice(`Error: ${err.message || "No se pudo borrar el caché."}`);
+                  } finally {
+                    setClearingCache(false);
+                  }
+                }}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "9px 18px", borderRadius: 9, fontSize: 13, fontWeight: 600,
+                  backgroundColor: clearingCache ? (dm ? "rgba(239,68,68,0.07)" : "#fee2e2") : (dm ? "rgba(239,68,68,0.1)" : "#fff1f2"),
+                  color: "#dc2626",
+                  border: "1px solid rgba(239,68,68,0.25)",
+                  cursor: clearingCache ? "not-allowed" : "pointer",
+                  fontFamily: typography.family,
+                  opacity: clearingCache ? 0.7 : 1,
+                  transition: "opacity 0.15s ease",
+                }}
+              >
+                {clearingCache ? "Borrando…" : "🗑 Limpiar caché de búsquedas"}
+              </button>
             </div>
           </div>
 
