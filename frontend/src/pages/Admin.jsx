@@ -250,6 +250,15 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
+              <a
+                href="https://clarity.microsoft.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="admin-pill-btn"
+                style={{ ...S.pillButton, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                📊 Analítica
+              </a>
             </div>
             <div style={S.headerButtons}>
               <button
