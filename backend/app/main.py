@@ -9,6 +9,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from alembic.config import Config
+from alembic import command
+
 from app.routers import auth, user, match, favorites, application, history, cover_letter, company, admin
 from app.services.admin_bootstrap_service import ensure_bootstrap_admin
 
@@ -44,6 +47,9 @@ app.include_router(admin.router)
 
 @app.on_event("startup")
 def startup_tasks():
+    alembic_cfg = Config(Path(__file__).resolve().parent.parent / "alembic.ini")
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
+    command.upgrade(alembic_cfg, "head")
     ensure_bootstrap_admin()
 
 
