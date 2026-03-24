@@ -107,7 +107,7 @@ function App() {
   useEffect(() => {
     if (!currentUser) return;
     if (currentUser.analytics_consent === true) {
-      initClarity();
+      initClarity({ isAdmin: Boolean(currentUser.is_admin) });
       setShowConsentBanner(false);
     } else if (currentUser.analytics_consent === false) {
       stopClarity();

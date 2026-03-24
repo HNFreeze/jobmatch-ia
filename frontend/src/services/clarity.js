@@ -1,7 +1,8 @@
 const CLARITY_ID = process.env.REACT_APP_CLARITY_ID;
 
-export function initClarity() {
+export function initClarity({ isAdmin = false } = {}) {
   if (!CLARITY_ID) return;
+  if (isAdmin) return; // never track admin sessions
   if (document.getElementById("clarity-script")) return;
 
   // Official Clarity inline snippet (dynamically injected)
