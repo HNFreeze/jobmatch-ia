@@ -52,6 +52,9 @@ function App() {
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  // Starts true when a token exists so we don't render the wrong view before the
+  // profile (and its is_admin flag) has been fetched from the server.
+  const [authLoading, setAuthLoading] = useState(() => Boolean(localStorage.getItem("token")));
 
   useEffect(() => {
     localStorage.setItem("darkMode", darkMode);
@@ -75,7 +78,10 @@ function App() {
   }, []);
 
   const refreshProfileState = useCallback(async () => {
-    if (!localStorage.getItem("token")) return;
+    if (!localStorage.getItem("token")) {
+      setAuthLoading(false);
+      return;
+    }
     try {
       const [profile, history] = await Promise.all([
         getUserProfile(),
@@ -87,6 +93,8 @@ function App() {
     } catch {
       // token invalid or server down
       setCurrentUser(null);
+    } finally {
+      setAuthLoading(false);
     }
   }, []);
 
@@ -139,6 +147,10 @@ function App() {
   }, [refreshProfileState, currentUser?.id]);
 
   useEffect(() => {
+    // Don't resolve routes while the auth state is still loading — this prevents
+    // the brief redirect to #buscar that caused the admin-view flicker.
+    if (authLoading) return;
+
     const resolve = () => {
       const hash = window.location.hash.slice(1) || "home";
       const baseHash = hash.split("?")[0] || "home";
@@ -172,9 +184,10 @@ function App() {
     resolve();
     window.addEventListener("hashchange", resolve);
     return () => window.removeEventListener("hashchange", resolve);
-  }, [currentUser?.is_admin]);
+  }, [currentUser?.is_admin, authLoading]);
 
   useEffect(() => {
+    if (authLoading) return;
     const hasToken = Boolean(localStorage.getItem("token"));
     if (!hasToken || !currentUser) {
       return;
@@ -190,12 +203,35 @@ function App() {
       window.location.replace("#buscar");
       setPage("buscar");
     }
-  }, [currentUser, page]);
+  }, [currentUser, page, authLoading]);
 
   const isAdminSession = Boolean(currentUser?.is_admin);
   const showNavbar = PROTECTED.includes(page) && page !== "admin" && !isAdminSession;
   const profileComplete = profileCompletion >= 60;
   const progressDone = profileComplete && hasSearched;
+
+  // Show a neutral loading screen while we resolve the user's role.
+  // This prevents briefly rendering the wrong view (e.g. Profile for an admin).
+  if (authLoading) {
+    return (
+      <>
+        <style>{`@keyframes jm-spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          minHeight: "100vh",
+          backgroundColor: darkMode ? "#0f172a" : "#f8fafc",
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: "50%",
+            border: "3px solid",
+            borderColor: darkMode ? "rgba(255,255,255,0.1)" : "#e2e8f0",
+            borderTopColor: "#00758A",
+            animation: "jm-spin 0.75s linear infinite",
+          }} />
+        </div>
+      </>
+    );
+  }
 
   return (
     <div>

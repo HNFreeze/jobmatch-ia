@@ -1227,6 +1227,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           {calculateDaysAgo(offer.fecha_publicacion)}
                         </span>
                         <button
+                          className="btn-card-ghost"
                           style={{
                             background: "none", border: "none",
                             fontSize: 13, fontWeight: 600,
@@ -1239,6 +1240,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           {isCompared ? "✓ En comparador" : "Comparar"}
                         </button>
                         <button
+                          className="btn-card-ghost btn-card-ghost-danger"
                           style={{
                             background: "none", border: "none",
                             fontSize: 13, fontWeight: 500,
@@ -1255,6 +1257,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           const isTracked = tracked.has(aid);
                           return (
                             <button
+                              className="btn-card-ghost"
                               style={{
                                 background: "none", border: "none",
                                 fontSize: 13, fontWeight: 500,
@@ -1271,6 +1274,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           );
                         })()}
                         <button
+                          className="btn-card-detail"
                           onClick={e => { e.stopPropagation(); setSelectedOffer(offer); }}
                           style={S.btnDetail}
                         >
@@ -2067,6 +2071,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <button
+                      className="btn-modal-outline"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
@@ -2080,6 +2085,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       {isFavModal ? "★ Guardado" : "☆ Guardar"}
                     </button>
                     <button
+                      className="btn-modal-outline"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
@@ -2093,6 +2099,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       {isTrackedModal ? "✓ Siguiendo" : "Seguir oferta"}
                     </button>
                     <button
+                      className="btn-modal-outline"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
@@ -2106,6 +2113,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       {compareSelection.includes(getOfferCompareKey(selectedOffer)) ? "✓ En comparador" : "Comparar"}
                     </button>
                     <button
+                      className="btn-modal-cover"
                       style={{
                         padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600,
                         background: "linear-gradient(135deg, #7c3aed, #2563eb)",
@@ -2118,6 +2126,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     </button>
                     {selectedOffer.redirect_url && (
                       <a
+                        className="btn-modal-adzuna"
                         href={selectedOffer.redirect_url}
                         target="_blank" rel="noopener noreferrer"
                         style={{
@@ -2642,6 +2651,57 @@ if (typeof document !== "undefined" && !document.getElementById("profile-animati
     .job-card:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0,0,0,0.07) !important;
+    }
+    /* ── Card action ghost buttons (Comparar, Descartar, Seguir) ─── */
+    .btn-card-ghost {
+      transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+      border-radius: 8px;
+    }
+    .btn-card-ghost:hover {
+      background: rgba(0,117,138,0.07) !important;
+      color: #00758A !important;
+      transform: translateY(-1px);
+    }
+    .btn-card-ghost-danger:hover {
+      background: rgba(239,68,68,0.07) !important;
+      color: #ef4444 !important;
+    }
+    /* ── Card primary button (Ver detalle) ───────────────────────── */
+    .btn-card-detail {
+      transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+    }
+    .btn-card-detail:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 16px rgba(0,117,138,0.38) !important;
+      filter: brightness(1.06);
+    }
+    /* ── Modal outline buttons (Guardar, Seguir oferta, Comparar) ── */
+    .btn-modal-outline {
+      transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+    }
+    .btn-modal-outline:hover {
+      background: rgba(0,117,138,0.06) !important;
+      border-color: rgba(0,117,138,0.3) !important;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07) !important;
+    }
+    /* ── Modal cover-letter gradient button ─────────────────────── */
+    .btn-modal-cover {
+      transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+    }
+    .btn-modal-cover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 18px rgba(124,58,237,0.42) !important;
+      filter: brightness(1.08);
+    }
+    /* ── Modal Adzuna link ───────────────────────────────────────── */
+    .btn-modal-adzuna {
+      transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+    }
+    .btn-modal-adzuna:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 18px rgba(0,117,138,0.4) !important;
+      filter: brightness(1.06);
     }
     .analyze-ripple-btn::after {
       content: '';

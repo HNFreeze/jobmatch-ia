@@ -5,7 +5,7 @@ const TEAL = "#007A8A";
 const RESULT_META = {
   APLICA: { color: "#10b981", bg: "rgba(16,185,129,0.12)", label: "Aplica" },
   "QUIZÁ": { color: "#f59e0b", bg: "rgba(245,158,11,0.12)", label: "Quizá" },
-  NO_ENCAJA: { color: "#f43f5e", bg: "rgba(244,63,94,0.12)", label: "No encaja" },
+  NO_ENCAJA: { color: "#f43f5e", bg: "rgba(244,63,94,0.12)", label: "NO ENCAJA" },
 };
 
 function normalizeLocationLabel(rawLocation) {
