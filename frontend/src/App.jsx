@@ -11,7 +11,9 @@ import Favoritos from "./pages/Favoritos";
 import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
 import Admin from "./pages/Admin";
-import { getUserProfile, updateUserProfile, getHistory } from "./services/api";
+import { getUserProfile, updateUserProfile, getHistory, updateConsent } from "./services/api";
+import ConsentBanner from "./components/ConsentBanner";
+import { initClarity, stopClarity } from "./services/clarity";
 
 const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
@@ -55,6 +57,7 @@ function App() {
   // Starts true when a token exists so we don't render the wrong view before the
   // profile (and its is_admin flag) has been fetched from the server.
   const [authLoading, setAuthLoading] = useState(() => Boolean(localStorage.getItem("token")));
+  const [showConsentBanner, setShowConsentBanner] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("darkMode", darkMode);
@@ -99,6 +102,21 @@ function App() {
   }, []);
 
   useEffect(() => { refreshProfileState(); }, [refreshProfileState]);
+
+  // Clarity: activate if consent already given, show banner if pending (null)
+  useEffect(() => {
+    if (!currentUser) return;
+    if (currentUser.analytics_consent === true) {
+      initClarity();
+      setShowConsentBanner(false);
+    } else if (currentUser.analytics_consent === false) {
+      stopClarity();
+      setShowConsentBanner(false);
+    } else {
+      // null → not decided yet
+      setShowConsentBanner(true);
+    }
+  }, [currentUser?.id, currentUser?.analytics_consent]);
 
   async function handleDismissOnboarding() {
     setShowOnboarding(false);
@@ -204,6 +222,20 @@ function App() {
       setPage("buscar");
     }
   }, [currentUser, page, authLoading]);
+
+  async function handleConsentAccept() {
+    try {
+      await updateConsent(true);
+      setCurrentUser(prev => prev ? { ...prev, analytics_consent: true } : prev);
+    } catch { /* non-critical */ }
+  }
+
+  async function handleConsentReject() {
+    try {
+      await updateConsent(false);
+      setCurrentUser(prev => prev ? { ...prev, analytics_consent: false } : prev);
+    } catch { /* non-critical */ }
+  }
 
   const isAdminSession = Boolean(currentUser?.is_admin);
   const showNavbar = PROTECTED.includes(page) && page !== "admin" && !isAdminSession;
@@ -314,6 +346,14 @@ function App() {
           darkMode={darkMode}
           onLogout={handleLogout}
           toggleDarkMode={toggleDarkMode}
+        />
+      )}
+
+      {showConsentBanner && (
+        <ConsentBanner
+          onAccept={handleConsentAccept}
+          onReject={handleConsentReject}
+          darkMode={darkMode}
         />
       )}
 

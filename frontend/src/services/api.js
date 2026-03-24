@@ -113,6 +113,16 @@ export async function getUserProfile() {
   return response.json();
 }
 
+export async function updateConsent(accepted) {
+  const response = await fetch(`${API_URL}/api/user/consent`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ accepted }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al guardar preferencia");
+  return response.json();
+}
+
 export async function getAiQuota() {
   const response = await fetch(`${API_URL}/api/user/ai-quota`, {
     headers: authHeaders(),
