@@ -688,16 +688,20 @@ def _score_minor_signals(profile_stack_norm: set[str], signals: dict) -> tuple[f
     return 0, notes
 
 
+_RESULT_LABEL = {"APLICA": "APLICA", "QUIZÁ": "QUIZÁ", "NO_ENCAJA": "NO ENCAJA"}
+
+
 def _compose_decision_reason(result: str, strengths: list[str], gaps: list[str], blockers: list[str]) -> str:
+    label = _RESULT_LABEL.get(result, result)
     if blockers:
-        return f"{result}: hay incompatibilidades importantes ({'; '.join(blockers[:2])})."
+        return f"{label}: hay incompatibilidades importantes ({'; '.join(blockers[:2])})."
     if strengths and not gaps:
-        return f"{result}: cumples bien los requisitos principales y no se ven carencias criticas."
+        return f"{label}: cumples bien los requisitos principales y no se ven carencias criticas."
     if strengths and gaps:
-        return f"{result}: encajas en lo esencial, pero quedan gaps a revisar ({'; '.join(gaps[:2])})."
+        return f"{label}: encajas en lo esencial, pero quedan gaps a revisar ({'; '.join(gaps[:2])})."
     if gaps:
-        return f"{result}: el titulo puede parecer alineado, pero faltan senales clave ({'; '.join(gaps[:2])})."
-    return f"{result}: informacion limitada o encaje parcial."
+        return f"{label}: el titulo puede parecer alineado, pero faltan senales clave ({'; '.join(gaps[:2])})."
+    return f"{label}: informacion limitada o encaje parcial."
 
 
 def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
