@@ -170,13 +170,13 @@ export default function Auth({ onAuthSuccess }) {
     ? "Accede a tu panel de precisión y sigue afinando tu siguiente movimiento profesional."
     : "Activa tu cuenta, protege el acceso con verificación real y deja listo tu perfil para el matching.";
   const submitLabel = loading
-    ? "Cargando..."
+    ? (mode === "login" ? "Entrando..." : "Creando cuenta...")
     : mode === "login"
       ? "Entrar"
       : "Crear cuenta";
 
   return (
-    <div style={S.page}>
+    <div className="auth-page" style={S.page}>
       <div style={S.backgroundLayer}>
         <div style={S.topBlob} />
         <div style={S.bottomBlob} />
@@ -189,10 +189,10 @@ export default function Auth({ onAuthSuccess }) {
         <div style={S.headerMeta}>Precision Match Technology</div>
       </header>
 
-      <main style={S.main}>
+      <main className="auth-main" style={S.main}>
         <section style={S.hero}>
           <p style={S.kicker}>Acceso profesional</p>
-          <h1 style={S.heroTitle}>{title}</h1>
+          <h1 className="auth-hero-title" style={S.heroTitle}>{title}</h1>
           <p style={S.heroText}>{intro}</p>
         </section>
 
@@ -733,3 +733,16 @@ const S = {
     fontWeight: 700,
   },
 };
+
+if (typeof document !== "undefined" && !document.getElementById("auth-responsive-styles")) {
+  const s = document.createElement("style");
+  s.id = "auth-responsive-styles";
+  s.textContent = `
+    @media (max-width: 480px) {
+      .auth-hero-title { font-size: 32px !important; }
+      .auth-main { padding-top: 24px !important; }
+      .auth-page { padding-left: 12px !important; padding-right: 12px !important; }
+    }
+  `;
+  document.head.appendChild(s);
+}

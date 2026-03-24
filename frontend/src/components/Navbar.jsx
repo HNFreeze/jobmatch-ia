@@ -57,7 +57,7 @@ export default function Navbar({
         {/* Progress bar */}
         {!progressDone && (
           <div style={S.progressBar}>
-            <div style={S.progressLabel}>
+            <div className="nav-progress-label" style={S.progressLabel}>
               {!profileComplete
                 ? `Perfil ${profileCompletion}% — complétalo para mejorar la IA`
                 : !hasSearched
@@ -75,7 +75,7 @@ export default function Navbar({
           </div>
         )}
 
-        <div style={S.inner}>
+        <div className="nav-inner" style={S.inner}>
           {/* Logo */}
           <button style={S.logo} onClick={() => navigate("buscar")}>
             <BrandLogo
@@ -178,7 +178,11 @@ export default function Navbar({
               {item.label}
             </button>
           ))}
-          <button style={S.mobileSeparator} onClick={onLogout}>
+          <button style={{
+            ...S.mobileSeparator,
+            borderTopColor: dm ? "rgba(255,255,255,0.08)" : "#e8ecf1",
+            color: dm ? "#94a3b8" : "#6b7280",
+          }} onClick={onLogout}>
             Cerrar sesión
           </button>
         </div>
@@ -345,6 +349,11 @@ if (!document.getElementById("navbar-responsive")) {
       .nav-links { display: none !important; }
       .nav-hamburger { display: flex !important; }
       .nav-logout { display: none !important; }
+      .nav-inner { padding: 10px 16px !important; }
+    }
+    @media (max-width: 480px) {
+      .nav-inner { padding: 10px 12px !important; }
+      .nav-progress-label { font-size: 11px !important; white-space: normal !important; max-width: 200px; }
     }
   `;
   document.head.appendChild(s);

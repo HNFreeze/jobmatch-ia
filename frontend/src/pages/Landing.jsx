@@ -46,6 +46,14 @@ if (typeof document !== "undefined" && !document.getElementById("landing-v2-styl
       .lv2-hero-title  { font-size: 42px !important; }
       .lv2-mockup-wrap { display: none !important; }
     }
+    @media (max-width: 600px) {
+      .lv2-hero-title  { font-size: 30px !important; }
+      .lv2-hero-section { padding: 44px 16px 56px !important; }
+      .lv2-features-section { padding: 48px 16px !important; }
+      .lv2-pricing-section { padding: 48px 16px !important; }
+      .lv2-hero-subtitle { font-size: 15px !important; }
+      .lv2-section-title { font-size: 26px !important; }
+    }
   `;
   document.head.appendChild(s);
 }
@@ -166,7 +174,7 @@ export default function Landing({ onStartClick }) {
       </nav>
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <section id="como-funciona" style={{ padding: "80px 24px 96px", maxWidth: 1200, margin: "0 auto" }}>
+      <section id="como-funciona" className="lv2-hero-section" style={{ padding: "80px 24px 96px", maxWidth: 1200, margin: "0 auto" }}>
         <div className="lv2-hero-grid" style={{
           display: "grid", gridTemplateColumns: "1fr 1fr",
           gap: 64, alignItems: "center",
@@ -187,7 +195,7 @@ export default function Landing({ onStartClick }) {
 
               <h1 className="lv2-hero-title" style={{
                 margin: "0 0 20px", fontSize: 62, fontWeight: 800,
-                color: NAVY, letterSpacing: "-0.03em", lineHeight: 1.05,
+                color: NAVY, letterSpacing: "-0.03em", lineHeight: 1.05, wordBreak: "break-word",
               }}>
                 El match perfecto<br />
                 para tu carrera,<br />
@@ -195,7 +203,7 @@ export default function Landing({ onStartClick }) {
               </h1>
             </div>
 
-            <p className="lv2-fadein-2" style={{
+            <p className="lv2-fadein-2 lv2-hero-subtitle" style={{
               margin: "0 0 36px", fontSize: 18, color: GRAY_500,
               lineHeight: 1.75, maxWidth: 480,
             }}>
@@ -301,13 +309,13 @@ export default function Landing({ onStartClick }) {
       </section>
 
       {/* ── Features ────────────────────────────────────────────────────────── */}
-      <section id="features" style={{
+      <section id="features" className="lv2-features-section" style={{
         padding: "80px 24px", backgroundColor: "#fff",
         borderTop: `1px solid ${GRAY_200}`,
       }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <h2 style={{
+            <h2 className="lv2-section-title" style={{
               margin: "0 0 14px", fontSize: 38, fontWeight: 800,
               color: NAVY, letterSpacing: "-0.025em",
             }}>
@@ -369,7 +377,7 @@ export default function Landing({ onStartClick }) {
       </section>
 
       {/* ── Pricing ─────────────────────────────────────────────────────────── */}
-      <section id="pricing" style={{
+      <section id="pricing" className="lv2-pricing-section" style={{
         padding: "80px 24px", backgroundColor: "#fff",
         borderTop: `1px solid ${GRAY_200}`,
       }}>

@@ -650,8 +650,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   // ── Loading state ──────────────────────────────────────────────────────────────
   if (profileLoading) {
     return (
-      <div style={S.centeredContainer}>
-        <div style={S.spinner} />
+      <div style={{ ...S.centeredContainer, ...(darkMode ? { background: "#0f172a", minHeight: "100vh" } : {}) }}>
+        <div style={{ ...S.spinner, ...(darkMode ? { borderColor: "rgba(255,255,255,0.1)", borderTopColor: TEAL } : {}) }} />
       </div>
     );
   }
@@ -660,7 +660,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   if (loading) {
     const phase = LOADING_PHASES[loadingPhase];
     return (
-      <div style={{ ...S.resultsPage, ...(darkMode ? S.dmPage : {}) }}>
+      <div className="profile-results-page" style={{ ...S.resultsPage, ...(darkMode ? S.dmPage : {}) }}>
         <div style={{ textAlign: "center", marginBottom: 48, paddingTop: 24 }}>
           <div style={{ fontSize: 56, marginBottom: 20, display: "inline-block", animation: "floatBounce 2s ease-in-out infinite" }}>
             {phase.icon}
@@ -752,7 +752,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     const userStack = profile?.stack || [];
 
     return (
-      <div style={{ ...S.resultsPage, ...(dm ? S.dmPage : {}) }}>
+      <div className="profile-results-page" style={{ ...S.resultsPage, ...(dm ? S.dmPage : {}) }}>
         {aiQuota && (
           <div style={{ maxWidth: isMobile ? "100%" : 320, marginBottom: 18 }}>
             <QuotaCard quota={aiQuota} darkMode={dm} compact />
@@ -870,17 +870,26 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                 </div>
               )}
 
-              {/* Apply button */}
+              {/* Clear filters button */}
               <button
                 style={{
                   width: "100%", padding: "10px 16px", fontSize: 14, fontWeight: 600,
-                  color: "#fff", backgroundColor: TEAL, border: "none", borderRadius: 10,
+                  color: dm ? "#94a3b8" : "#6b7280",
+                  backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
+                  borderRadius: 10,
                   cursor: "pointer", fontFamily: typography.family, marginTop: 8,
-                  boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
                 }}
-                onClick={() => { /* filters applied reactively */ }}
+                onClick={() => {
+                  setKeywordFilter("");
+                  setLocationFilter("");
+                  setSalaryMin("");
+                  setSalaryMax("");
+                  setContractFilter("todos");
+                  setSortBy("relevancia");
+                }}
               >
-                Aplicar Filtros
+                Limpiar filtros
               </button>
             </div>
           )}
@@ -1292,6 +1301,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       <p style={{ ...S.emptyTitle, color: dm ? "#f1f5f9" : "#374151" }}>Aún no has guardado ninguna oferta</p>
                       <p style={{ ...S.emptySub, color: dm ? "#64748b" : "#9ca3af" }}>Marca las ofertas que más te interesen con la estrella</p>
                     </>
+                  ) : visible.length === 0 ? (
+                    <>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
+                      <p style={{ ...S.emptyTitle, color: dm ? "#f1f5f9" : "#374151" }}>Has descartado todas las ofertas</p>
+                      <p style={{ ...S.emptySub, color: dm ? "#64748b" : "#9ca3af" }}>Haz una nueva búsqueda para ver más coincidencias</p>
+                    </>
                   ) : (
                     <>
                       <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
@@ -1305,10 +1320,10 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
 
             {/* ── Action buttons row ─────────────────────────────────── */}
             <div style={{ display: "flex", gap: 10, marginTop: 28, justifyContent: "flex-end" }}>
-              <button onClick={handleShare} style={{ ...S.btnOutline, ...(dm ? { color: "#94a3b8", borderColor: "rgba(255,255,255,0.12)" } : {}) }}>
+              <button className="btn-action-outline" onClick={handleShare} style={{ ...S.btnOutline, ...(dm ? { color: "#94a3b8", borderColor: "rgba(255,255,255,0.12)" } : {}) }}>
                 Compartir
               </button>
-              <button onClick={handleReset} style={S.btnPrimary}>
+              <button className="btn-action-primary" onClick={handleReset} style={S.btnPrimary}>
                 + Nueva búsqueda
               </button>
             </div>
@@ -1739,21 +1754,15 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                               <span style={{ fontSize: 13 }}>🏢</span> {selectedOffer.empresa}
                             </span>
-                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontSize: 13 }}>📍</span> {selectedOffer.ubicacion}
-                            </span>
+                            {selectedOffer.ubicacion && (
+                              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <span style={{ fontSize: 13 }}>📍</span> {selectedOffer.ubicacion}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
                           <CompanyLogo name={selectedOffer.empresa} logoUrl={selectedOffer.company_logo_url} size={56} darkMode={dm} />
-                          <div style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af", fontFamily: typography.family, textAlign: "center", maxWidth: 120, lineHeight: 1.2 }}>
-                            Logo reutilizado cuando ya existe un dominio fiable en cache
-                          </div>
-                          {selectedOffer.company_logo_domain && (
-                            <div style={{ fontSize: 10, color: dm ? "#94a3b8" : "#64748b", fontFamily: typography.family, textAlign: "center", maxWidth: 140, lineHeight: 1.35 }}>
-                              Dominio detectado: {selectedOffer.company_logo_domain}
-                            </div>
-                          )}
                         </div>
                       </div>
 
@@ -1799,7 +1808,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                               Opiniones externas
                             </p>
                             <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
-                              Abrimos fuentes externas donde puede haber valoraciones y reseñas sobre la empresa. No mostramos opiniones embebidas todavia.
+                              Consulta valoraciones y reseñas externas sobre esta empresa. Las opiniones no se muestran embebidas aún.
                             </p>
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -2024,7 +2033,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             <span style={{ fontSize: 13, color: dm ? "#94a3b8" : "#6b7280" }}>Generando...</span>
                           </div>
                         ) : coverLetterError ? (
-                          <div style={{ padding: "8px 10px", backgroundColor: "#fee2e2", color: "#991b1b", borderRadius: 8, fontSize: 12, border: "1px solid #fecaca" }}>{coverLetterError}</div>
+                          <div style={{ padding: "8px 10px", borderRadius: 8, fontSize: 12, backgroundColor: dm ? "rgba(239,68,68,0.08)" : "#fee2e2", color: dm ? "#f87171" : "#991b1b", border: `1px solid ${dm ? "rgba(239,68,68,0.2)" : "#fecaca"}` }}>{coverLetterError}</div>
                         ) : coverLetter ? (
                           <>
                             <textarea
@@ -2066,7 +2075,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       {selectedOffer.titulo}
                     </div>
                     <div style={{ fontSize: 12, color: dm ? "#475569" : "#9ca3af", marginTop: 1 }}>
-                      {selectedOffer.empresa} · {selectedOffer.ubicacion}
+                      {selectedOffer.empresa}{selectedOffer.ubicacion ? ` · ${selectedOffer.ubicacion}` : ""}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2156,8 +2165,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   if (!hasProfile(profile)) {
     const dm = darkMode;
     return (
-      <div style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
-        <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}), textAlign: "center", padding: "48px 32px" }}>
+      <div className="profile-pre-page" style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
+        <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}), textAlign: "center", padding: "clamp(24px, 6vw, 48px) clamp(16px, 5vw, 32px)" }}>
           <div style={{ fontSize: 52, marginBottom: 16 }}>👤</div>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", margin: "0 0 12px", fontFamily: typography.family }}>Completa tu perfil primero</h2>
           <p style={{ color: dm ? "#94a3b8" : "#6b7280", marginBottom: 28, lineHeight: 1.6, fontSize: 15, fontFamily: typography.family }}>
@@ -2188,13 +2197,13 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   const totalEstimated = chartData.reduce((s, t) => s + (MARKET_DATA[t] || 0), 0);
 
   return (
-    <div style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
-      <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}) }}>
+    <div className="profile-pre-page" style={{ ...S.prePage, ...(dm ? S.dmPage : {}) }}>
+      <div style={{ ...S.preCard, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}), padding: "clamp(20px, 4vw, 32px)" }}>
         <h2 style={{ margin: "0 0 24px", fontSize: 26, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.02em", fontFamily: typography.family }}>
           Buscar ofertas
         </h2>
 
-        {error && <div style={S.errorBox}>{error}</div>}
+        {error && <div style={{ ...S.errorBox, ...(dm ? { backgroundColor: "rgba(239,68,68,0.08)", color: "#f87171", borderColor: "rgba(239,68,68,0.2)" } : {}) }}>{error}</div>}
         {aiQuota && <QuotaCard quota={aiQuota} darkMode={dm} />}
 
         {/* Profile summary */}
@@ -2304,9 +2313,6 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     {item.num_total || (item.num_aplica + item.num_quiza + item.num_no_encaja)} resultados en la última ejecución
                   </p>
                   <p style={{ margin: 0, fontSize: 11, color: "#9ca3af" }}>{formatSearchDate(item.created_at)}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 10, color: dm ? "#94a3b8" : "#6b7280", lineHeight: 1.5, fontFamily: typography.family }}>
-                    Se volverá a analizar con tu perfil actual y el contexto de esta búsqueda.
-                  </p>
                   <button
                     onClick={() => handleRepeat(item)}
                     disabled={loading}
@@ -2377,7 +2383,7 @@ const S = {
     border: `3px solid #e5e7eb`,
     borderTop: `3px solid ${TEAL}`,
     borderRadius: "50%",
-    animation: "spin 1s linear infinite",
+    animation: "spin 0.75s linear infinite",
   },
 
   // ── Results page ───────────────────────────────────────────────────────────
@@ -2488,7 +2494,7 @@ const S = {
   // ── Chip ──────────────────────────────────────────────────────────────────
   chip: {
     display: "inline-flex", alignItems: "center", gap: 5,
-    padding: "5px 12px", borderRadius: 6,
+    padding: "4px 12px", borderRadius: 20,
     fontSize: 12, fontWeight: 500,
     backgroundColor: "#f8fafc",
     color: "#475569",
@@ -2507,14 +2513,14 @@ const S = {
     padding: "9px 20px",
     fontSize: 14, fontWeight: 600,
     color: "#fff",
-    backgroundColor: TEAL,
+    background: TEAL,
     border: "none",
     borderRadius: 10,
     cursor: "pointer",
     fontFamily: typography.family,
     boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
     whiteSpace: "nowrap",
-    background: TEAL,
+    transition: "transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease",
   },
   btnOutline: {
     padding: "9px 20px",
@@ -2533,17 +2539,17 @@ const S = {
     color: "#fff",
     backgroundColor: TEAL,
     border: "none",
-    borderRadius: 8,
+    borderRadius: 10,
     cursor: "pointer",
     fontFamily: typography.family,
     boxShadow: "0 2px 6px rgba(0,117,138,0.2)",
+    transition: "transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease",
   },
   btnAnalyze: {
     width: "100%",
     padding: "14px 20px",
     fontSize: 18, fontWeight: 800,
     color: "#fff",
-    backgroundColor: TEAL,
     background: TEAL,
     border: "none",
     borderRadius: 12,
@@ -2588,7 +2594,9 @@ const S = {
   // ── Modal ─────────────────────────────────────────────────────────────────
   modalOverlay: {
     position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(15,23,42,0.62)",
+    backdropFilter: "blur(3px)",
+    WebkitBackdropFilter: "blur(3px)",
     display: "flex", alignItems: "center", justifyContent: "center",
     zIndex: 1000, padding: 16,
   },
@@ -2721,6 +2729,10 @@ if (typeof document !== "undefined" && !document.getElementById("profile-animati
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(0,117,138,0.35) !important;
     }
+    .btn-action-primary { transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease; }
+    .btn-action-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,117,138,0.38) !important; filter: brightness(1.08); }
+    .btn-action-outline { transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease; }
+    .btn-action-outline:hover { background: rgba(0,117,138,0.05) !important; border-color: rgba(0,117,138,0.28) !important; transform: translateY(-1px); }
     .summary-number-anim {
       animation: countPop 0.5s ease-out both;
     }
@@ -2729,8 +2741,25 @@ if (typeof document !== "undefined" && !document.getElementById("profile-animati
       .metrics-row-responsive {
         grid-template-columns: repeat(2, 1fr) !important;
       }
+      .profile-results-page {
+        padding: 20px 16px !important;
+      }
+      .profile-pre-page {
+        padding-top: 24px !important;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+        padding-bottom: 24px !important;
+      }
     }
     @media (max-width: 500px) {
+      .metrics-row-responsive {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      .profile-results-page {
+        padding: 14px 12px !important;
+      }
+    }
+    @media (max-width: 380px) {
       .metrics-row-responsive {
         grid-template-columns: 1fr !important;
       }

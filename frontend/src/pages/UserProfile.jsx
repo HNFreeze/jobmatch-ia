@@ -181,6 +181,10 @@ if (typeof document !== "undefined" && !document.getElementById("user-profile-st
     }
     @media (max-width: 768px) {
       .profile-sidebar { display: none !important; }
+      .profile-layout { padding: 20px 16px !important; gap: 0 !important; }
+    }
+    @media (max-width: 480px) {
+      .profile-layout { padding: 16px 12px !important; }
     }
     .custom-scrollbar::-webkit-scrollbar { width: 5px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -428,7 +432,7 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
 
   return (
     <div style={{ ...S.page, ...(dm ? { background: "#0f172a" } : {}) }}>
-      <div style={S.layout}>
+      <div className="profile-layout" style={S.layout}>
 
         {/* ── Sidebar ──────────────────────────────────────────────────────── */}
         <aside className="profile-sidebar" style={S.sidebar}>
