@@ -11,19 +11,21 @@ import Favoritos from "./pages/Favoritos";
 import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
 import Admin from "./pages/Admin";
+import CVSearch from "./pages/CVSearch";
 import { getUserProfile, updateUserProfile, getHistory, updateConsent } from "./services/api";
 import ConsentBanner from "./components/ConsentBanner";
 import { initClarity, stopClarity } from "./services/clarity";
 
-const PROTECTED = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
+const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
-const USER_APP_PAGES = ["buscar", "user-profile", "mapa", "favoritos", "candidaturas"];
+const USER_APP_PAGES = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas"];
 const PAGE_TITLES = {
   home: "JobMatch IA | Matching inteligente de ofertas",
   landing: "JobMatch IA | Matching inteligente de ofertas",
   auth: "Acceso | JobMatch IA",
   "verify-email": "Verificar correo | JobMatch IA",
   buscar: "Ofertas analizadas | JobMatch IA",
+  "cv-buscar": "Buscar por CV | JobMatch IA",
   mapa: "Ubicaciones | JobMatch IA",
   favoritos: "Favoritos | JobMatch IA",
   candidaturas: "Candidaturas | JobMatch IA",
@@ -323,6 +325,9 @@ function App() {
           forceAnalyze={forceAnalyze}
           onAnalyzeStarted={() => setForceAnalyze(false)}
         />
+      )}
+      {page === "cv-buscar" && !isAdminSession && (
+        <CVSearch addToast={addToast} darkMode={darkMode} />
       )}
       {page === "mapa" && !isAdminSession && <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />}
       {page === "favoritos" && !isAdminSession && <Favoritos addToast={addToast} darkMode={darkMode} />}
