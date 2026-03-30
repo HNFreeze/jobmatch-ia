@@ -17,6 +17,7 @@ class AIDailyUsage(Base):
     usage_date = Column(Date, nullable=False, default=date.today, index=True)
     match_count = Column(Integer, nullable=False, default=0)
     cover_letter_count = Column(Integer, nullable=False, default=0)
+    cv_analysis_count = Column(Integer, nullable=False, default=0)
     total_units = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, onupdate=datetime.utcnow)
