@@ -261,6 +261,28 @@ export async function generateCoverLetter(oferta, perfil) {
   return response.json();
 }
 
+// CV Analysis
+export async function analyzeCV(file) {
+  const token = localStorage.getItem("token");
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_URL}/api/cv/analyze`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al analizar el CV");
+  return response.json();
+}
+
+export async function getLatestCVAnalysis() {
+  const response = await fetch(`${API_URL}/api/cv/latest`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el análisis de CV");
+  return response.json();
+}
+
 // Company
 export async function getCompanyInfo(name) {
   const response = await fetch(`${API_URL}/api/company/${encodeURIComponent(name)}`, {
