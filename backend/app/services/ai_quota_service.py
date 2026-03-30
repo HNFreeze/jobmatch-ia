@@ -37,6 +37,7 @@ def get_quota_snapshot(db, user) -> dict:
     used = usage.total_units if usage else 0
     match_count = usage.match_count if usage else 0
     cover_letter_count = usage.cover_letter_count if usage else 0
+    cv_analysis_count = usage.cv_analysis_count if usage else 0
     remaining = max(limit - used, 0)
     return {
         "date": str(today),
@@ -45,6 +46,7 @@ def get_quota_snapshot(db, user) -> dict:
         "remaining": remaining,
         "match_count": match_count,
         "cover_letter_count": cover_letter_count,
+        "cv_analysis_count": cv_analysis_count,
     }
 
 
@@ -63,6 +65,8 @@ def consume_ai_quota(db, user, action: str) -> dict:
         usage.match_count = (usage.match_count or 0) + 1
     elif action == "cover_letter":
         usage.cover_letter_count = (usage.cover_letter_count or 0) + 1
+    elif action == "cv_analysis":
+        usage.cv_analysis_count = (usage.cv_analysis_count or 0) + 1
 
     usage.total_units = (usage.total_units or 0) + 1
     usage.updated_at = datetime.utcnow()
@@ -76,4 +80,5 @@ def consume_ai_quota(db, user, action: str) -> dict:
         "remaining": max(limit - usage.total_units, 0),
         "match_count": usage.match_count or 0,
         "cover_letter_count": usage.cover_letter_count or 0,
+        "cv_analysis_count": usage.cv_analysis_count or 0,
     }

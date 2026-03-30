@@ -8,3 +8,5 @@ psycopg2-binary
 alembic
 bcrypt
 PyJWT
+pypdf
+python-multipart
