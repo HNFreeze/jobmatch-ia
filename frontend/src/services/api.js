@@ -296,6 +296,52 @@ export async function improveCV(file) {
   return response.json();
 }
 
+export async function improveCVFull(file) {
+  const token = localStorage.getItem("token");
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_URL}/api/cv/improve-full`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al mejorar el CV");
+  return response.json();
+}
+
+export async function downloadCVPdf(improvementId) {
+  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al descargar el PDF");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `cv_mejorado_${improvementId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function getMyImprovements() {
+  const response = await fetch(`${API_URL}/api/cv/my-improvements`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar tus CVs mejorados");
+  return response.json();
+}
+
+export async function searchFromImprovement(improvementId) {
+  const response = await fetch(`${API_URL}/api/cv/search-from-improvement/${improvementId}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al buscar ofertas desde CV mejorado");
+  return response.json();
+}
+
 // Company
 export async function getCompanyInfo(name) {
   const response = await fetch(`${API_URL}/api/company/${encodeURIComponent(name)}`, {
