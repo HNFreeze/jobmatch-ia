@@ -7,6 +7,7 @@ from app.models.ai_daily_usage import AIDailyUsage
 
 
 DEFAULT_DAILY_AI_QUOTA = 8
+CV_IMPROVE_DAILY_LIMIT = 2
 
 
 def _get_or_create_usage(db, user_id: int, usage_date: date) -> AIDailyUsage:
@@ -38,6 +39,7 @@ def get_quota_snapshot(db, user) -> dict:
     match_count = usage.match_count if usage else 0
     cover_letter_count = usage.cover_letter_count if usage else 0
     cv_analysis_count = usage.cv_analysis_count if usage else 0
+    cv_improve_count = usage.cv_improve_count if usage else 0
     remaining = max(limit - used, 0)
     return {
         "date": str(today),
@@ -47,6 +49,8 @@ def get_quota_snapshot(db, user) -> dict:
         "match_count": match_count,
         "cover_letter_count": cover_letter_count,
         "cv_analysis_count": cv_analysis_count,
+        "cv_improve_count": cv_improve_count,
+        "cv_improve_remaining": max(CV_IMPROVE_DAILY_LIMIT - cv_improve_count, 0),
     }
 
 
@@ -67,6 +71,15 @@ def consume_ai_quota(db, user, action: str) -> dict:
         usage.cover_letter_count = (usage.cover_letter_count or 0) + 1
     elif action == "cv_analysis":
         usage.cv_analysis_count = (usage.cv_analysis_count or 0) + 1
+    elif action == "cv_improve":
+        # Cuota independiente: máx CV_IMPROVE_DAILY_LIMIT al día
+        current = usage.cv_improve_count or 0
+        if current >= CV_IMPROVE_DAILY_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Has alcanzado el límite de {CV_IMPROVE_DAILY_LIMIT} mejoras de CV por día. Vuelve mañana.",
+            )
+        usage.cv_improve_count = current + 1
 
     usage.total_units = (usage.total_units or 0) + 1
     usage.updated_at = datetime.utcnow()
@@ -81,4 +94,6 @@ def consume_ai_quota(db, user, action: str) -> dict:
         "match_count": usage.match_count or 0,
         "cover_letter_count": usage.cover_letter_count or 0,
         "cv_analysis_count": usage.cv_analysis_count or 0,
+        "cv_improve_count": usage.cv_improve_count or 0,
+        "cv_improve_remaining": max(CV_IMPROVE_DAILY_LIMIT - (usage.cv_improve_count or 0), 0),
     }
