@@ -3,6 +3,7 @@
 Router para la funcionalidad "Buscar por CV".
 Endpoints:
   POST /api/cv/analyze  — Sube un CV, extrae perfil y busca ofertas
+  POST /api/cv/improve  — Sube un CV y devuelve sugerencias de mejora ATS
   GET  /api/cv/latest   — Devuelve el último análisis guardado del usuario
 """
 import hashlib
@@ -24,6 +25,7 @@ from app.services.cv_service import (
     build_adzuna_search_params,
     build_matching_profile,
     extract_text_from_pdf,
+    improve_cv_with_ai,
     read_and_validate_content,
     validate_cv_upload,
 )
@@ -199,6 +201,54 @@ async def analyze_cv(
             media_type="application/json; charset=utf-8",
         )
 
+    finally:
+        if db:
+            db.close()
+
+
+@router.post("/api/cv/improve")
+async def improve_cv(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user_record),
+):
+    """Analiza el CV con IA y devuelve sugerencias de mejora orientadas a ATS."""
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "CLAUDE_API_KEY no configurada"},
+            media_type="application/json; charset=utf-8",
+        )
+
+    validate_cv_upload(file)
+    content = await read_and_validate_content(file)
+
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Base de datos no disponible"},
+                media_type="application/json; charset=utf-8",
+            )
+
+        # Cuota independiente: máx 2 mejoras/día
+        quota = consume_ai_quota(db, user, "cv_improve")
+
+        cv_text = extract_text_from_pdf(content)
+        improvement, ai_usage = await improve_cv_with_ai(cv_text, api_key, user_id=user.id)
+
+        return JSONResponse(
+            content={
+                "improvement": improvement,
+                "quota": {
+                    "cv_improve_used": quota["cv_improve_count"],
+                    "cv_improve_remaining": quota["cv_improve_remaining"],
+                },
+            },
+            media_type="application/json; charset=utf-8",
+        )
     finally:
         if db:
             db.close()

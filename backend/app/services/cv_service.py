@@ -268,6 +268,131 @@ CV:
     return profile, response.usage
 
 
+async def improve_cv_with_ai(text: str, api_key: str, user_id: Optional[int] = None) -> tuple[dict, object]:
+    """
+    Llama a Claude para mejorar el CV en base a criterios ATS.
+    Devuelve (improvement_result, usage).
+    """
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "Eres un experto en CVs optimizados para ATS (Applicant Tracking Systems) con 15 años de experiencia "
+        "en selección de personal en el sector tecnológico español. "
+        "Analizas CVs y los mejoras siguiendo las mejores prácticas ATS: palabras clave, formato limpio, "
+        "verbos de acción, métricas cuantificables y estructura clara. "
+        "Respondes ÚNICAMENTE con JSON válido, sin texto adicional ni bloques markdown."
+    )
+
+    user_prompt = f"""Analiza este CV y devuelve un JSON con exactamente esta estructura:
+
+{{
+  "ats_score_before": número entero 0-100,
+  "ats_score_after": número entero 0-100,
+  "summary_improved": "resumen profesional reescrito y optimizado para ATS (3-4 frases con palabras clave del sector)",
+  "key_improvements": ["mejora concreta 1", "mejora concreta 2"],
+  "keywords_to_add": ["keyword1", "keyword2"],
+  "format_suggestions": ["sugerencia de formato 1", "sugerencia de formato 2"],
+  "experience_bullets": ["• Logro reescrito con verbo de acción + métrica 1", "• Logro reescrito 2"],
+  "skills_section": "sección de habilidades reorganizada por categorías",
+  "critical_issues": ["problema crítico ATS 1", "problema crítico 2"]
+}}
+
+Reglas:
+- ats_score_before: evalúa el CV original (0=muy malo, 100=perfecto ATS). Considera: palabras clave, formato limpio, secciones definidas, verbos de acción, métricas
+- ats_score_after: puntuación estimada DESPUÉS de aplicar las mejoras (siempre >= before)
+- summary_improved: reescribe el resumen con palabras clave del sector tecnológico
+- key_improvements: 4-6 mejoras concretas aplicadas
+- keywords_to_add: 5-10 palabras clave técnicas que faltan y deberían añadirse
+- format_suggestions: 3-5 sugerencias de formato para mejorar legibilidad ATS (evitar tablas, columnas, headers con imágenes)
+- experience_bullets: 3-5 ejemplos de logros reescritos con verbos de acción (Desarrollé, Lideré, Incrementé, Reduje, Implementé) y métricas
+- skills_section: texto sugerido para sección de habilidades agrupado por categorías (Lenguajes, Frameworks, Cloud, etc.)
+- critical_issues: 2-4 problemas que actualmente reducen la visibilidad en ATS
+
+CV a analizar:
+{_truncate_cv_text(text)}"""
+
+    try:
+        response = client.messages.create(
+            model=CV_AI_MODEL,
+            max_tokens=3000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except anthropic.APIStatusError as exc:
+        if exc.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="Límite de API de Claude alcanzado. Inténtalo en unos minutos.",
+            )
+        raise HTTPException(status_code=502, detail=f"Error de Claude API: {exc.message}")
+
+    raw_text = response.content[0].text if response.content else ""
+
+    try:
+        raw_result = _extract_json_from_response(raw_text)
+    except (json.JSONDecodeError, Exception):
+        raise HTTPException(
+            status_code=502,
+            detail="La IA no pudo analizar el CV correctamente. Inténtalo de nuevo.",
+        )
+
+    result = _sanitize_improve_result(raw_result)
+
+    try:
+        from app.database import get_session_local
+        SessionLocal = get_session_local()
+        if SessionLocal:
+            db_cost = SessionLocal()
+            try:
+                record_ai_api_cost(
+                    db=db_cost,
+                    feature="cv_improve",
+                    model=CV_AI_MODEL,
+                    usage=response.usage,
+                    user_id=user_id,
+                )
+                db_cost.commit()
+            finally:
+                db_cost.close()
+    except Exception as e:
+        print(f"[CV_IMPROVE_COST] Error registrando coste: {e}")
+
+    return result, response.usage
+
+
+def _sanitize_improve_result(raw: dict) -> dict:
+    """Normaliza la respuesta de mejora de CV de Claude."""
+    def safe_int(val, default: int, lo: int = 0, hi: int = 100) -> int:
+        try:
+            return max(lo, min(hi, int(val)))
+        except (TypeError, ValueError):
+            return default
+
+    def safe_list_str(val, max_items: int = 20) -> list[str]:
+        if not isinstance(val, list):
+            return []
+        return [str(x).strip() for x in val[:max_items] if str(x).strip()]
+
+    def safe_str(val, fallback: str = "") -> str:
+        s = str(val or "").strip()
+        return s if s else fallback
+
+    score_before = safe_int(raw.get("ats_score_before"), 40)
+    score_after = max(safe_int(raw.get("ats_score_after"), score_before + 20), score_before)
+
+    return {
+        "ats_score_before": score_before,
+        "ats_score_after": score_after,
+        "summary_improved": safe_str(raw.get("summary_improved")),
+        "key_improvements": safe_list_str(raw.get("key_improvements"), 8),
+        "keywords_to_add": safe_list_str(raw.get("keywords_to_add"), 15),
+        "format_suggestions": safe_list_str(raw.get("format_suggestions"), 6),
+        "experience_bullets": safe_list_str(raw.get("experience_bullets"), 8),
+        "skills_section": safe_str(raw.get("skills_section")),
+        "critical_issues": safe_list_str(raw.get("critical_issues"), 5),
+    }
+
+
 def build_matching_profile(structured_profile: dict) -> dict:
     """
     Convierte el perfil estructurado del CV al formato de ProfileRequest

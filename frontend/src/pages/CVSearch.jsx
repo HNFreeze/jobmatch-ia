@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeCV, getLatestCVAnalysis } from "../services/api";
+import { analyzeCV, improveCV } from "../services/api";
 import CompanyLogo from "../components/CompanyLogo";
 import {
   gradients,
@@ -578,14 +578,40 @@ function LoadingIndicator({ step, dm }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
+const SESSION_KEY = "cv_search_result";
+
 export default function CVSearch({ addToast, darkMode: dm }) {
+  const [activeTab, setActiveTab] = useState("buscar");
+
+  // ── Tab: Buscar ──
   const [file, setFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem(SESSION_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
   const [selectedOffer, setSelectedOffer] = useState(null);
+
+  // ── Tab: Mejorar ──
+  const [improveFile, setImproveFile] = useState(null);
+  const [improveIsDragging, setImproveIsDragging] = useState(false);
+  const [improveLoading, setImproveLoading] = useState(false);
+  const [improveError, setImproveError] = useState(null);
+  const [improveResult, setImproveResult] = useState(null);
+  const [improveQuota, setImproveQuota] = useState(null);
+
+  // Persistir resultado de búsqueda en sessionStorage
+  useEffect(() => {
+    try {
+      if (result) sessionStorage.setItem(SESSION_KEY, JSON.stringify(result));
+      else sessionStorage.removeItem(SESSION_KEY);
+    } catch { /* noop */ }
+  }, [result]);
 
   // Simular avance de pasos mientras carga
   useEffect(() => {
@@ -644,6 +670,25 @@ export default function CVSearch({ addToast, darkMode: dm }) {
     addToast?.("Ve a «Mi perfil» para actualizar tus datos manualmente con la información detectada.", "success");
   };
 
+  const handleImprove = async () => {
+    if (!improveFile) return;
+    setImproveError(null);
+    setImproveResult(null);
+    setImproveLoading(true);
+    try {
+      const data = await improveCV(improveFile);
+      setImproveResult(data.improvement);
+      setImproveQuota(data.quota);
+      addToast?.("CV analizado con éxito", "success");
+    } catch (err) {
+      const msg = err?.detail || err?.message || "Error al mejorar el CV. Inténtalo de nuevo.";
+      setImproveError(msg);
+      addToast?.(msg, "error");
+    } finally {
+      setImproveLoading(false);
+    }
+  };
+
   const counts = result ? {
     aplica: result.offers.filter(o => o.resultado === "APLICA").length,
     quiza: result.offers.filter(o => o.resultado === "QUIZÁ").length,
@@ -669,29 +714,74 @@ export default function CVSearch({ addToast, darkMode: dm }) {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 60px" }}>
 
         {/* ── Cabecera ── */}
-        <div style={{ marginBottom: 28, textAlign: "center" }}>
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: dm ? "rgba(37,99,235,0.15)" : "rgba(37,99,235,0.08)",
-            borderRadius: 20, padding: "5px 14px", marginBottom: 14,
-          }}>
-            <span style={{ fontSize: 16 }}>📋</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", letterSpacing: "0.06em" }}>
-              NUEVA FUNCIONALIDAD
-            </span>
-          </div>
+        <div style={{ marginBottom: 24, textAlign: "center" }}>
           <h1 style={{
             fontSize: 28, fontWeight: 800,
             background: gradients.text, WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent", backgroundClip: "text",
             margin: "0 0 10px",
           }}>
-            Buscar ofertas con tu CV
+            Tu CV, potenciado con IA
           </h1>
           <p style={{ fontSize: 14, color: dm ? "#94a3b8" : "#6b7280", maxWidth: 520, margin: "0 auto" }}>
-            Sube tu CV en PDF y la IA detectará tu perfil automáticamente para encontrar las ofertas más relevantes.
+            Sube tu CV en PDF para buscar ofertas compatibles o mejorar su puntuación ATS.
           </p>
         </div>
+
+        {/* ── Tabs ── */}
+        <div style={{
+          display: "flex", gap: 4, marginBottom: 28,
+          background: dm ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+          borderRadius: 14, padding: 4, maxWidth: 420, margin: "0 auto 28px",
+        }}>
+          {[
+            { id: "buscar", label: "Buscar ofertas", icon: "🔍" },
+            { id: "mejorar", label: "Mejorar CV con IA", icon: "✨" },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                flex: 1, padding: "9px 14px", borderRadius: 10, border: "none",
+                cursor: "pointer", fontFamily: typography.family,
+                fontSize: 13, fontWeight: 600,
+                transition: `all ${transition.smooth}`,
+                background: activeTab === tab.id
+                  ? (dm ? "#334155" : "#fff")
+                  : "transparent",
+                color: activeTab === tab.id
+                  ? (dm ? "#f1f5f9" : "#111827")
+                  : (dm ? "#64748b" : "#6b7280"),
+                boxShadow: activeTab === tab.id
+                  ? (dm ? "0 1px 4px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.08)")
+                  : "none",
+              }}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ══════════════ TAB: MEJORAR CV ══════════════ */}
+        {activeTab === "mejorar" && (
+          <ImproveTab
+            improveFile={improveFile}
+            setImproveFile={setImproveFile}
+            improveIsDragging={improveIsDragging}
+            setImproveIsDragging={setImproveIsDragging}
+            improveLoading={improveLoading}
+            improveError={setImproveError}
+            improveErrorMsg={improveError}
+            improveResult={improveResult}
+            setImproveResult={setImproveResult}
+            improveQuota={improveQuota}
+            onImprove={handleImprove}
+            dm={dm}
+          />
+        )}
+
+        {/* ══════════════ TAB: BUSCAR OFERTAS ══════════════ */}
+        {activeTab === "buscar" && <>
 
         {/* ── Zona de upload ── */}
         {!result && (
@@ -771,7 +861,7 @@ export default function CVSearch({ addToast, darkMode: dm }) {
                 )}
               </div>
               <button
-                onClick={() => { setResult(null); setFile(null); setError(null); }}
+                onClick={() => { setResult(null); setFile(null); setError(null); sessionStorage.removeItem(SESSION_KEY); }}
                 style={{
                   background: "none", border: "1px solid #a7f3d0",
                   borderRadius: 20, padding: "5px 14px", cursor: "pointer",
@@ -844,6 +934,8 @@ export default function CVSearch({ addToast, darkMode: dm }) {
 
           </>
         )}
+        </>}
+        {/* Fin tab buscar */}
       </div>
 
       {/* Modal de detalle de oferta */}
@@ -853,6 +945,306 @@ export default function CVSearch({ addToast, darkMode: dm }) {
           dm={dm}
           onClose={() => setSelectedOffer(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Tab: Mejorar CV con IA ───────────────────────────────────────────────────
+
+function AtsScoreGauge({ score, label, dm }) {
+  const color = score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444";
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{
+        position: "relative", width: 90, height: 90, margin: "0 auto 8px",
+        borderRadius: "50%",
+        background: `conic-gradient(${color} ${score * 3.6}deg, ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"} 0deg)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <div style={{
+          width: 70, height: 70, borderRadius: "50%",
+          background: dm ? "#1e293b" : "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexDirection: "column",
+        }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>{score}</span>
+          <span style={{ fontSize: 9, color: dm ? "#64748b" : "#9ca3af", fontWeight: 600 }}>/100</span>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: dm ? "#94a3b8" : "#6b7280" }}>{label}</div>
+    </div>
+  );
+}
+
+function ImproveBulletList({ items, color, dm }) {
+  if (!items || !items.length) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((item, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <span style={{ color, fontWeight: 800, flexShrink: 0, fontSize: 14, lineHeight: "20px" }}>›</span>
+          <span style={{ fontSize: 13, color: dm ? "#cbd5e1" : "#374151", lineHeight: 1.5 }}>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ImproveSection({ title, color, icon, children, dm }) {
+  return (
+    <div style={{
+      background: dm ? "#1e293b" : "#fff",
+      border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+      borderRadius: 12, padding: "16px 18px",
+      fontFamily: typography.family,
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+        {icon} {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CopyBox({ text, dm }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{
+        background: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
+        border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
+        borderRadius: 8, padding: "12px 14px",
+        fontSize: 13, color: dm ? "#cbd5e1" : "#374151",
+        lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word",
+        maxHeight: 160, overflowY: "auto",
+      }}>
+        {text}
+      </div>
+      <button
+        onClick={handleCopy}
+        style={{
+          position: "absolute", top: 8, right: 8,
+          background: copied ? "#10b981" : (dm ? "#334155" : "#e2e8f0"),
+          color: copied ? "#fff" : (dm ? "#94a3b8" : "#64748b"),
+          border: "none", borderRadius: 6, padding: "3px 10px",
+          fontSize: 11, fontWeight: 600, cursor: "pointer",
+          fontFamily: typography.family, transition: "all 0.2s",
+        }}
+      >
+        {copied ? "✓ Copiado" : "Copiar"}
+      </button>
+    </div>
+  );
+}
+
+function ImproveTab({
+  improveFile, setImproveFile,
+  improveIsDragging, setImproveIsDragging,
+  improveLoading, improveErrorMsg, setImproveResult,
+  improveResult, improveQuota, onImprove, dm,
+}) {
+  const fileRef = useRef(null);
+  const [localError, setLocalError] = useState(null);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setImproveIsDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith(".pdf")) { setLocalError("Solo se aceptan archivos PDF."); return; }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) { setLocalError(`El archivo supera ${MAX_FILE_MB} MB.`); return; }
+    setLocalError(null);
+    setImproveFile(f);
+  }, [setImproveFile, setImproveIsDragging]);
+
+  const quotaLeft = improveQuota ? improveQuota.cv_improve_remaining : null;
+  const quotaUsed = improveQuota ? improveQuota.cv_improve_used : null;
+
+  return (
+    <div style={{ maxWidth: 680, margin: "0 auto" }}>
+      {/* Descripción */}
+      <div style={{
+        background: dm ? "rgba(124,58,237,0.08)" : "#faf5ff",
+        border: `1px solid ${dm ? "rgba(124,58,237,0.2)" : "#e9d5ff"}`,
+        borderRadius: 12, padding: "14px 18px", marginBottom: 20,
+        fontSize: 13, color: dm ? "#c4b5fd" : "#6d28d9", lineHeight: 1.6,
+      }}>
+        <strong>Cómo funciona:</strong> La IA analiza tu CV y lo puntúa según criterios ATS (Applicant Tracking Systems).
+        Recibirás sugerencias concretas de mejora, palabras clave que faltan y ejemplos de logros reescritos.<br />
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Límite: 2 análisis de mejora por día.</span>
+      </div>
+
+      {/* Upload */}
+      {!improveResult && (
+        <>
+          <UploadZone
+            file={improveFile}
+            onFile={(f) => { setLocalError(null); setImproveFile(f); }}
+            isDragging={improveIsDragging}
+            onDragEnter={() => setImproveIsDragging(true)}
+            onDragLeave={() => setImproveIsDragging(false)}
+            onDrop={handleDrop}
+            dm={dm}
+          />
+
+          {(localError || improveErrorMsg) && (
+            <div style={{
+              marginTop: 12, padding: "10px 14px", borderRadius: 10,
+              background: "#fff1f2", border: "1px solid #fecdd3",
+              fontSize: 13, color: "#be123c", fontWeight: 600,
+            }}>
+              ⚠ {localError || improveErrorMsg}
+            </div>
+          )}
+
+          {improveFile && !improveLoading && (
+            <button
+              onClick={onImprove}
+              style={{
+                width: "100%", marginTop: 16, padding: "14px 24px",
+                background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
+                color: "#fff", border: "none", borderRadius: 50, cursor: "pointer",
+                fontSize: 15, fontWeight: 700, fontFamily: typography.family,
+                boxShadow: "0 4px 14px rgba(124,58,237,0.3)",
+                transition: `all ${transition.smooth}`,
+              }}
+              onMouseEnter={e => { e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 6px 20px rgba(124,58,237,0.4)"; }}
+              onMouseLeave={e => { e.target.style.transform = "none"; e.target.style.boxShadow = "0 4px 14px rgba(124,58,237,0.3)"; }}
+            >
+              ✨ Analizar y mejorar mi CV
+            </button>
+          )}
+
+          {improveLoading && (
+            <div style={{
+              marginTop: 20, textAlign: "center", padding: "24px",
+              background: dm ? "#1e293b" : "#fff", borderRadius: 16,
+              border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%",
+                border: `3px solid ${dm ? "rgba(124,58,237,0.3)" : "#e9d5ff"}`,
+                borderTopColor: "#7c3aed",
+                animation: "cv-spin 0.8s linear infinite",
+                margin: "0 auto 14px",
+              }} />
+              <div style={{ fontSize: 14, fontWeight: 600, color: dm ? "#c4b5fd" : "#7c3aed" }}>
+                Analizando tu CV con IA…
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Resultados */}
+      {improveResult && !improveLoading && (
+        <>
+          {/* Cabecera resultado + reiniciar */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            flexWrap: "wrap", gap: 12, marginBottom: 20,
+            background: dm ? "rgba(124,58,237,0.08)" : "#faf5ff",
+            border: "1px solid #e9d5ff", borderRadius: 12, padding: "12px 18px",
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>
+              ✨ Análisis completado
+              {quotaLeft !== null && (
+                <span style={{ fontWeight: 400, color: dm ? "#a78bfa" : "#6d28d9", marginLeft: 10, fontSize: 12 }}>
+                  {quotaLeft} análisis restantes hoy
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => { setImproveResult(null); setImproveFile(null); }}
+              style={{
+                background: "none", border: "1px solid #e9d5ff", borderRadius: 20,
+                padding: "5px 14px", cursor: "pointer", fontSize: 12,
+                fontWeight: 600, color: "#7c3aed", fontFamily: typography.family,
+              }}
+            >
+              Analizar otro CV
+            </button>
+          </div>
+
+          {/* ATS scores */}
+          <ImproveSection title="Puntuación ATS" color="#7c3aed" icon="📊" dm={dm}>
+            <div style={{ display: "flex", gap: 32, justifyContent: "center", padding: "8px 0" }}>
+              <AtsScoreGauge score={improveResult.ats_score_before} label="Antes" dm={dm} />
+              <div style={{ display: "flex", alignItems: "center", fontSize: 24, color: dm ? "#64748b" : "#9ca3af" }}>→</div>
+              <AtsScoreGauge score={improveResult.ats_score_after} label="Con mejoras" dm={dm} />
+            </div>
+            <div style={{ textAlign: "center", fontSize: 12, color: dm ? "#94a3b8" : "#6b7280", marginTop: 8 }}>
+              Mejora estimada: <strong style={{ color: "#10b981" }}>+{improveResult.ats_score_after - improveResult.ats_score_before} puntos</strong>
+            </div>
+          </ImproveSection>
+
+          {/* Problemas críticos */}
+          {improveResult.critical_issues?.length > 0 && (
+            <ImproveSection title="Problemas críticos" color="#ef4444" icon="⚠" dm={dm}>
+              <ImproveBulletList items={improveResult.critical_issues} color="#ef4444" dm={dm} />
+            </ImproveSection>
+          )}
+
+          {/* Mejoras aplicadas */}
+          {improveResult.key_improvements?.length > 0 && (
+            <ImproveSection title="Mejoras recomendadas" color="#10b981" icon="✓" dm={dm}>
+              <ImproveBulletList items={improveResult.key_improvements} color="#10b981" dm={dm} />
+            </ImproveSection>
+          )}
+
+          {/* Palabras clave */}
+          {improveResult.keywords_to_add?.length > 0 && (
+            <ImproveSection title="Palabras clave a añadir" color="#2563eb" icon="🔑" dm={dm}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {improveResult.keywords_to_add.map((kw, i) => {
+                  const c = TAG_COLORS[i % TAG_COLORS.length];
+                  return (
+                    <span key={i} style={{
+                      fontSize: 12, fontWeight: 600, borderRadius: 20,
+                      padding: "3px 10px", border: `1px solid ${c.border}`,
+                      background: c.bg, color: c.color,
+                    }}>{kw}</span>
+                  );
+                })}
+              </div>
+            </ImproveSection>
+          )}
+
+          {/* Formato */}
+          {improveResult.format_suggestions?.length > 0 && (
+            <ImproveSection title="Sugerencias de formato" color="#f59e0b" icon="📐" dm={dm}>
+              <ImproveBulletList items={improveResult.format_suggestions} color="#f59e0b" dm={dm} />
+            </ImproveSection>
+          )}
+
+          {/* Resumen mejorado */}
+          {improveResult.summary_improved && (
+            <ImproveSection title="Resumen profesional optimizado" color="#7c3aed" icon="📝" dm={dm}>
+              <CopyBox text={improveResult.summary_improved} dm={dm} />
+            </ImproveSection>
+          )}
+
+          {/* Logros reescritos */}
+          {improveResult.experience_bullets?.length > 0 && (
+            <ImproveSection title="Ejemplos de logros con verbos de acción" color="#0ea5e9" icon="💡" dm={dm}>
+              <ImproveBulletList items={improveResult.experience_bullets} color="#0ea5e9" dm={dm} />
+            </ImproveSection>
+          )}
+
+          {/* Sección habilidades */}
+          {improveResult.skills_section && (
+            <ImproveSection title="Sección de habilidades sugerida" color="#10b981" icon="🛠" dm={dm}>
+              <CopyBox text={improveResult.skills_section} dm={dm} />
+            </ImproveSection>
+          )}
+        </>
       )}
     </div>
   );

@@ -283,6 +283,19 @@ export async function getLatestCVAnalysis() {
   return response.json();
 }
 
+export async function improveCV(file) {
+  const token = localStorage.getItem("token");
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_URL}/api/cv/improve`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al mejorar el CV");
+  return response.json();
+}
+
 // Company
 export async function getCompanyInfo(name) {
   const response = await fetch(`${API_URL}/api/company/${encodeURIComponent(name)}`, {
