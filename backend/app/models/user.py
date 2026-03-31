@@ -29,4 +29,5 @@ class User(Base):
     blocked_at = Column(DateTime, nullable=True)
     daily_ai_quota = Column(Integer, default=8, nullable=False, server_default="8")
     analytics_consent = Column(Boolean, nullable=True, default=None)
+    is_super_admin = Column(Boolean, default=False, nullable=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)

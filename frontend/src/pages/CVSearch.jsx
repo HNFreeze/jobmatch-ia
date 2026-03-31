@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeCV, improveCV } from "../services/api";
+import { analyzeCV, improveCVFull, downloadCVPdf, getMyImprovements, searchFromImprovement } from "../services/api";
 import CompanyLogo from "../components/CompanyLogo";
 import {
   gradients,
@@ -599,11 +599,12 @@ export default function CVSearch({ addToast, darkMode: dm }) {
 
   // ── Tab: Mejorar ──
   const [improveFile, setImproveFile] = useState(null);
-  const [improveIsDragging, setImproveIsDragging] = useState(false);
   const [improveLoading, setImproveLoading] = useState(false);
   const [improveError, setImproveError] = useState(null);
-  const [improveResult, setImproveResult] = useState(null);
-  const [improveQuota, setImproveQuota] = useState(null);
+  const [improveResult, setImproveResult] = useState(null);   // resultado de /improve-full
+  const [improveSearchLoading, setImproveSearchLoading] = useState(false);
+  const [improveSearchResult, setImproveSearchResult] = useState(null); // ofertas del CV mejorado
+  const [improveSelectedOffer, setImproveSelectedOffer] = useState(null);
 
   // Persistir resultado de búsqueda en sessionStorage
   useEffect(() => {
@@ -674,18 +675,34 @@ export default function CVSearch({ addToast, darkMode: dm }) {
     if (!improveFile) return;
     setImproveError(null);
     setImproveResult(null);
+    setImproveSearchResult(null);
     setImproveLoading(true);
     try {
-      const data = await improveCV(improveFile);
-      setImproveResult(data.improvement);
-      setImproveQuota(data.quota);
-      addToast?.("CV analizado con éxito", "success");
+      const data = await improveCVFull(improveFile);
+      setImproveResult(data);
+      addToast?.("CV mejorado con éxito", "success");
     } catch (err) {
       const msg = err?.detail || err?.message || "Error al mejorar el CV. Inténtalo de nuevo.";
       setImproveError(msg);
       addToast?.(msg, "error");
     } finally {
       setImproveLoading(false);
+    }
+  };
+
+  const handleSearchFromImprovement = async () => {
+    if (!improveResult?.improvement_id) return;
+    setImproveSearchLoading(true);
+    setImproveSearchResult(null);
+    try {
+      const data = await searchFromImprovement(improveResult.improvement_id);
+      setImproveSearchResult(data);
+      addToast?.(`${data.offers?.length || 0} ofertas encontradas`, "success");
+    } catch (err) {
+      const msg = err?.detail || err?.message || "Error al buscar ofertas.";
+      addToast?.(msg, "error");
+    } finally {
+      setImproveSearchLoading(false);
     }
   };
 
@@ -732,11 +749,12 @@ export default function CVSearch({ addToast, darkMode: dm }) {
         <div style={{
           display: "flex", gap: 4, marginBottom: 28,
           background: dm ? "rgba(255,255,255,0.05)" : "#f1f5f9",
-          borderRadius: 14, padding: 4, maxWidth: 420, margin: "0 auto 28px",
+          borderRadius: 14, padding: 4, maxWidth: 580, margin: "0 auto 28px",
         }}>
           {[
             { id: "buscar", label: "Buscar ofertas", icon: "🔍" },
-            { id: "mejorar", label: "Mejorar CV con IA", icon: "✨" },
+            { id: "mejorar", label: "Mejorar CV", icon: "✨" },
+            { id: "mis-cvs", label: "Mis CVs", icon: "📄" },
           ].map(tab => (
             <button
               key={tab.id}
@@ -764,18 +782,45 @@ export default function CVSearch({ addToast, darkMode: dm }) {
 
         {/* ══════════════ TAB: MEJORAR CV ══════════════ */}
         {activeTab === "mejorar" && (
-          <ImproveTab
-            improveFile={improveFile}
-            setImproveFile={setImproveFile}
-            improveIsDragging={improveIsDragging}
-            setImproveIsDragging={setImproveIsDragging}
-            improveLoading={improveLoading}
-            improveError={setImproveError}
-            improveErrorMsg={improveError}
-            improveResult={improveResult}
-            setImproveResult={setImproveResult}
-            improveQuota={improveQuota}
+          <ImproveTabNew
+            file={improveFile}
+            setFile={setImproveFile}
+            loading={improveLoading}
+            error={improveError}
+            setError={setImproveError}
+            result={improveResult}
+            setResult={setImproveResult}
+            searchLoading={improveSearchLoading}
+            searchResult={improveSearchResult}
+            selectedOffer={improveSelectedOffer}
+            setSelectedOffer={setImproveSelectedOffer}
             onImprove={handleImprove}
+            onSearchFromImprovement={handleSearchFromImprovement}
+            addToast={addToast}
+            dm={dm}
+          />
+        )}
+
+        {/* ══════════════ TAB: MIS CVS ══════════════ */}
+        {activeTab === "mis-cvs" && (
+          <MisCVsTab
+            addToast={addToast}
+            onSearchFromId={async (id) => {
+              // Busca desde un improvement guardado y va al tab buscar
+              setImproveSearchLoading(true);
+              setImproveSearchResult(null);
+              try {
+                const data = await searchFromImprovement(id);
+                setImproveSearchResult(data);
+                setImproveResult({ improvement_id: id });
+                setActiveTab("mejorar");
+                addToast?.(`${data.offers?.length || 0} ofertas encontradas`, "success");
+              } catch (err) {
+                addToast?.(err?.detail || "Error al buscar ofertas.", "error");
+              } finally {
+                setImproveSearchLoading(false);
+              }
+            }}
             dm={dm}
           />
         )}
@@ -1044,208 +1089,352 @@ function CopyBox({ text, dm }) {
   );
 }
 
-function ImproveTab({
-  improveFile, setImproveFile,
-  improveIsDragging, setImproveIsDragging,
-  improveLoading, improveErrorMsg, setImproveResult,
-  improveResult, improveQuota, onImprove, dm,
+const PROBLEM_ICONS = { keywords: "🔑", structure: "🏗", verbos: "💬", metrics: "📊", format: "📐" };
+const PROBLEM_LABELS = { keywords: "Palabras clave", structure: "Estructura", verbos: "Verbos", metrics: "Métricas", format: "Formato" };
+
+function ImproveTabNew({
+  file, setFile, loading, error, setError,
+  result, setResult, searchLoading, searchResult,
+  selectedOffer, setSelectedOffer,
+  onImprove, onSearchFromImprovement, addToast, dm,
 }) {
-  const fileRef = useRef(null);
-  const [localError, setLocalError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [cvExpanded, setCvExpanded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setImproveIsDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
-    if (!f.name.toLowerCase().endsWith(".pdf")) { setLocalError("Solo se aceptan archivos PDF."); return; }
-    if (f.size > MAX_FILE_MB * 1024 * 1024) { setLocalError(`El archivo supera ${MAX_FILE_MB} MB.`); return; }
-    setLocalError(null);
-    setImproveFile(f);
-  }, [setImproveFile, setImproveIsDragging]);
+    e.preventDefault(); setIsDragging(false);
+    const f = e.dataTransfer.files[0]; if (!f) return;
+    if (!f.name.toLowerCase().endsWith(".pdf")) { setError("Solo se aceptan archivos PDF."); return; }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) { setError(`El archivo supera ${MAX_FILE_MB} MB.`); return; }
+    setError(null); setFile(f);
+  }, [setFile, setError]);
 
-  const quotaLeft = improveQuota ? improveQuota.cv_improve_remaining : null;
-  const quotaUsed = improveQuota ? improveQuota.cv_improve_used : null;
+  const handleDownload = async () => {
+    if (!result?.improvement_id) return;
+    setDownloading(true);
+    try {
+      await downloadCVPdf(result.improvement_id);
+    } catch (err) {
+      addToast?.(err?.detail || "Error al descargar el PDF", "error");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const quotaLeft = result?.quota?.cv_improve_remaining;
 
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto" }}>
-      {/* Descripción */}
-      <div style={{
-        background: dm ? "rgba(124,58,237,0.08)" : "#faf5ff",
-        border: `1px solid ${dm ? "rgba(124,58,237,0.2)" : "#e9d5ff"}`,
-        borderRadius: 12, padding: "14px 18px", marginBottom: 20,
-        fontSize: 13, color: dm ? "#c4b5fd" : "#6d28d9", lineHeight: 1.6,
-      }}>
-        <strong>Cómo funciona:</strong> La IA analiza tu CV y lo puntúa según criterios ATS (Applicant Tracking Systems).
-        Recibirás sugerencias concretas de mejora, palabras clave que faltan y ejemplos de logros reescritos.<br />
-        <span style={{ fontSize: 12, opacity: 0.8 }}>Límite: 2 análisis de mejora por día.</span>
-      </div>
+    <div style={{ maxWidth: 780, margin: "0 auto" }}>
 
-      {/* Upload */}
-      {!improveResult && (
+      {/* ── PASO 1: Upload ── */}
+      {!result && !loading && (
         <>
-          <UploadZone
-            file={improveFile}
-            onFile={(f) => { setLocalError(null); setImproveFile(f); }}
-            isDragging={improveIsDragging}
-            onDragEnter={() => setImproveIsDragging(true)}
-            onDragLeave={() => setImproveIsDragging(false)}
-            onDrop={handleDrop}
-            dm={dm}
-          />
-
-          {(localError || improveErrorMsg) && (
-            <div style={{
-              marginTop: 12, padding: "10px 14px", borderRadius: 10,
-              background: "#fff1f2", border: "1px solid #fecdd3",
-              fontSize: 13, color: "#be123c", fontWeight: 600,
-            }}>
-              ⚠ {localError || improveErrorMsg}
+          <div style={{
+            background: dm ? "rgba(124,58,237,0.08)" : "#faf5ff",
+            border: `1px solid ${dm ? "rgba(124,58,237,0.2)" : "#e9d5ff"}`,
+            borderRadius: 12, padding: "14px 18px", marginBottom: 20,
+            fontSize: 13, color: dm ? "#c4b5fd" : "#6d28d9", lineHeight: 1.6,
+          }}>
+            La IA analiza tu CV, detecta problemas ATS, genera el CV mejorado completo y calcula la mejora de puntuacion.
+            <span style={{ display: "block", fontSize: 12, opacity: 0.8, marginTop: 4 }}>Limite: 2 mejoras por dia. Se guarda automaticamente para descarga y busqueda de ofertas.</span>
+          </div>
+          <UploadZone file={file} onFile={(f) => { setError(null); setFile(f); }}
+            isDragging={isDragging} onDragEnter={() => setIsDragging(true)}
+            onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} dm={dm} />
+          {error && (
+            <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "#fff1f2", border: "1px solid #fecdd3", fontSize: 13, color: "#be123c", fontWeight: 600 }}>
+              {error}
             </div>
           )}
-
-          {improveFile && !improveLoading && (
-            <button
-              onClick={onImprove}
-              style={{
-                width: "100%", marginTop: 16, padding: "14px 24px",
-                background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
-                color: "#fff", border: "none", borderRadius: 50, cursor: "pointer",
-                fontSize: 15, fontWeight: 700, fontFamily: typography.family,
-                boxShadow: "0 4px 14px rgba(124,58,237,0.3)",
-                transition: `all ${transition.smooth}`,
-              }}
-              onMouseEnter={e => { e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 6px 20px rgba(124,58,237,0.4)"; }}
-              onMouseLeave={e => { e.target.style.transform = "none"; e.target.style.boxShadow = "0 4px 14px rgba(124,58,237,0.3)"; }}
+          {file && (
+            <button onClick={onImprove} style={{
+              width: "100%", marginTop: 16, padding: "14px 24px",
+              background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
+              color: "#fff", border: "none", borderRadius: 50, cursor: "pointer",
+              fontSize: 15, fontWeight: 700, fontFamily: typography.family,
+              boxShadow: "0 4px 14px rgba(124,58,237,0.3)", transition: `all ${transition.smooth}`,
+            }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
             >
-              ✨ Analizar y mejorar mi CV
+              Analizar y mejorar CV con IA
             </button>
-          )}
-
-          {improveLoading && (
-            <div style={{
-              marginTop: 20, textAlign: "center", padding: "24px",
-              background: dm ? "#1e293b" : "#fff", borderRadius: 16,
-              border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: "50%",
-                border: `3px solid ${dm ? "rgba(124,58,237,0.3)" : "#e9d5ff"}`,
-                borderTopColor: "#7c3aed",
-                animation: "cv-spin 0.8s linear infinite",
-                margin: "0 auto 14px",
-              }} />
-              <div style={{ fontSize: 14, fontWeight: 600, color: dm ? "#c4b5fd" : "#7c3aed" }}>
-                Analizando tu CV con IA…
-              </div>
-            </div>
           )}
         </>
       )}
 
-      {/* Resultados */}
-      {improveResult && !improveLoading && (
+      {/* ── PASO 2: Analizando ── */}
+      {loading && (
+        <div style={{ textAlign: "center", padding: "40px 24px", background: dm ? "#1e293b" : "#fff", borderRadius: 16, border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}` }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: `3px solid ${dm ? "rgba(124,58,237,0.3)" : "#e9d5ff"}`, borderTopColor: "#7c3aed", animation: "cv-spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+          <div style={{ fontSize: 15, fontWeight: 700, color: dm ? "#c4b5fd" : "#7c3aed", marginBottom: 6 }}>Mejorando tu CV con IA...</div>
+          <div style={{ fontSize: 13, color: dm ? "#64748b" : "#9ca3af" }}>Esto puede tardar 15-30 segundos</div>
+        </div>
+      )}
+
+      {/* ── PASO 3: Resultados ── */}
+      {result && !loading && (
         <>
-          {/* Cabecera resultado + reiniciar */}
+          {/* Banner de estado + acciones principales */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             flexWrap: "wrap", gap: 12, marginBottom: 20,
             background: dm ? "rgba(124,58,237,0.08)" : "#faf5ff",
-            border: "1px solid #e9d5ff", borderRadius: 12, padding: "12px 18px",
+            border: "1px solid #e9d5ff", borderRadius: 14, padding: "14px 18px",
           }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed" }}>
-              ✨ Análisis completado
-              {quotaLeft !== null && (
-                <span style={{ fontWeight: 400, color: dm ? "#a78bfa" : "#6d28d9", marginLeft: 10, fontSize: 12 }}>
-                  {quotaLeft} análisis restantes hoy
-                </span>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#7c3aed" }}>CV mejorado y guardado</div>
+              {quotaLeft != null && (
+                <div style={{ fontSize: 12, color: dm ? "#a78bfa" : "#6d28d9", marginTop: 2 }}>{quotaLeft} mejoras restantes hoy</div>
               )}
             </div>
-            <button
-              onClick={() => { setImproveResult(null); setImproveFile(null); }}
-              style={{
-                background: "none", border: "1px solid #e9d5ff", borderRadius: 20,
-                padding: "5px 14px", cursor: "pointer", fontSize: 12,
-                fontWeight: 600, color: "#7c3aed", fontFamily: typography.family,
-              }}
-            >
-              Analizar otro CV
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={handleDownload} disabled={downloading} style={{
+                padding: "8px 16px", borderRadius: 20, border: "1.5px solid #7c3aed",
+                background: "#7c3aed", color: "#fff", cursor: downloading ? "wait" : "pointer",
+                fontSize: 13, fontWeight: 700, fontFamily: typography.family, opacity: downloading ? 0.7 : 1,
+              }}>
+                {downloading ? "Generando..." : "Descargar PDF"}
+              </button>
+              <button onClick={() => { setResult(null); setFile(null); setError(null); }} style={{
+                padding: "8px 16px", borderRadius: 20, border: "1.5px solid #e9d5ff",
+                background: "none", color: "#7c3aed", cursor: "pointer",
+                fontSize: 13, fontWeight: 600, fontFamily: typography.family,
+              }}>
+                Nuevo CV
+              </button>
+            </div>
           </div>
 
-          {/* ATS scores */}
-          <ImproveSection title="Puntuación ATS" color="#7c3aed" icon="📊" dm={dm}>
+          {/* ATS Scores */}
+          <ImproveSection title="Puntuacion ATS" color="#7c3aed" icon="📊" dm={dm}>
             <div style={{ display: "flex", gap: 32, justifyContent: "center", padding: "8px 0" }}>
-              <AtsScoreGauge score={improveResult.ats_score_before} label="Antes" dm={dm} />
-              <div style={{ display: "flex", alignItems: "center", fontSize: 24, color: dm ? "#64748b" : "#9ca3af" }}>→</div>
-              <AtsScoreGauge score={improveResult.ats_score_after} label="Con mejoras" dm={dm} />
+              <AtsScoreGauge score={result.ats_score_before} label="Original" dm={dm} />
+              <div style={{ display: "flex", alignItems: "center", fontSize: 28, color: dm ? "#64748b" : "#9ca3af" }}>→</div>
+              <AtsScoreGauge score={result.ats_score_after} label="Mejorado" dm={dm} />
             </div>
-            <div style={{ textAlign: "center", fontSize: 12, color: dm ? "#94a3b8" : "#6b7280", marginTop: 8 }}>
-              Mejora estimada: <strong style={{ color: "#10b981" }}>+{improveResult.ats_score_after - improveResult.ats_score_before} puntos</strong>
+            <div style={{ textAlign: "center", fontSize: 13, color: dm ? "#94a3b8" : "#6b7280", marginTop: 8 }}>
+              Mejora de <strong style={{ color: "#10b981", fontSize: 15 }}>+{result.ats_score_after - result.ats_score_before} puntos</strong>
             </div>
           </ImproveSection>
 
-          {/* Problemas críticos */}
-          {improveResult.critical_issues?.length > 0 && (
-            <ImproveSection title="Problemas críticos" color="#ef4444" icon="⚠" dm={dm}>
-              <ImproveBulletList items={improveResult.critical_issues} color="#ef4444" dm={dm} />
+          {/* Problemas detectados */}
+          {result.problems_detected?.length > 0 && (
+            <ImproveSection title="Problemas detectados en el CV original" color="#ef4444" icon="⚠" dm={dm}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {result.problems_detected.map((p, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 14 }}>{PROBLEM_ICONS[p.category] || "•"}</span>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", marginRight: 6 }}>
+                        {PROBLEM_LABELS[p.category] || p.category}
+                      </span>
+                      <span style={{ fontSize: 13, color: dm ? "#cbd5e1" : "#374151" }}>{p.description}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </ImproveSection>
           )}
 
           {/* Mejoras aplicadas */}
-          {improveResult.key_improvements?.length > 0 && (
-            <ImproveSection title="Mejoras recomendadas" color="#10b981" icon="✓" dm={dm}>
-              <ImproveBulletList items={improveResult.key_improvements} color="#10b981" dm={dm} />
+          {result.key_improvements?.length > 0 && (
+            <ImproveSection title="Mejoras aplicadas" color="#10b981" icon="✓" dm={dm}>
+              <ImproveBulletList items={result.key_improvements} color="#10b981" dm={dm} />
             </ImproveSection>
           )}
 
-          {/* Palabras clave */}
-          {improveResult.keywords_to_add?.length > 0 && (
-            <ImproveSection title="Palabras clave a añadir" color="#2563eb" icon="🔑" dm={dm}>
+          {/* Keywords añadidas */}
+          {result.keywords_to_add?.length > 0 && (
+            <ImproveSection title="Palabras clave ATS incluidas" color="#2563eb" icon="🔑" dm={dm}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {improveResult.keywords_to_add.map((kw, i) => {
+                {result.keywords_to_add.map((kw, i) => {
                   const c = TAG_COLORS[i % TAG_COLORS.length];
-                  return (
-                    <span key={i} style={{
-                      fontSize: 12, fontWeight: 600, borderRadius: 20,
-                      padding: "3px 10px", border: `1px solid ${c.border}`,
-                      background: c.bg, color: c.color,
-                    }}>{kw}</span>
-                  );
+                  return <span key={i} style={{ fontSize: 12, fontWeight: 600, borderRadius: 20, padding: "3px 10px", border: `1px solid ${c.border}`, background: c.bg, color: c.color }}>{kw}</span>;
                 })}
               </div>
             </ImproveSection>
           )}
 
-          {/* Formato */}
-          {improveResult.format_suggestions?.length > 0 && (
-            <ImproveSection title="Sugerencias de formato" color="#f59e0b" icon="📐" dm={dm}>
-              <ImproveBulletList items={improveResult.format_suggestions} color="#f59e0b" dm={dm} />
+          {/* CV mejorado - preview */}
+          {result.improved_cv_text && (
+            <ImproveSection title="CV mejorado completo" color="#0ea5e9" icon="📝" dm={dm}>
+              <div style={{ position: "relative" }}>
+                <div style={{
+                  background: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e2e8f0"}`,
+                  borderRadius: 8, padding: "14px 16px",
+                  fontSize: 12, color: dm ? "#94a3b8" : "#475569",
+                  lineHeight: 1.7, fontFamily: "monospace",
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  maxHeight: cvExpanded ? "none" : 220, overflow: "hidden",
+                }}>
+                  {result.improved_cv_text}
+                </div>
+                {!cvExpanded && (
+                  <div style={{
+                    position: "absolute", bottom: 0, left: 0, right: 0, height: 60,
+                    background: dm ? "linear-gradient(transparent, #1e293b)" : "linear-gradient(transparent, #f8fafc)",
+                  }} />
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button onClick={() => setCvExpanded(v => !v)} style={{
+                  padding: "6px 14px", borderRadius: 20, border: `1px solid ${dm ? "rgba(255,255,255,0.15)" : "#e2e8f0"}`,
+                  background: "none", color: dm ? "#94a3b8" : "#64748b", cursor: "pointer",
+                  fontSize: 12, fontWeight: 600, fontFamily: typography.family,
+                }}>{cvExpanded ? "Contraer" : "Ver completo"}</button>
+                <CopyBox text={result.improved_cv_text} dm={dm} />
+              </div>
             </ImproveSection>
           )}
 
-          {/* Resumen mejorado */}
-          {improveResult.summary_improved && (
-            <ImproveSection title="Resumen profesional optimizado" color="#7c3aed" icon="📝" dm={dm}>
-              <CopyBox text={improveResult.summary_improved} dm={dm} />
-            </ImproveSection>
+          {/* Botón buscar ofertas */}
+          {!searchResult && !searchLoading && (
+            <button onClick={onSearchFromImprovement} style={{
+              width: "100%", marginTop: 8, marginBottom: 4, padding: "14px 24px",
+              background: "linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%)",
+              color: "#fff", border: "none", borderRadius: 50, cursor: "pointer",
+              fontSize: 15, fontWeight: 700, fontFamily: typography.family,
+              boxShadow: "0 4px 14px rgba(37,99,235,0.3)", transition: `all ${transition.smooth}`,
+            }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+            >
+              Buscar ofertas con este CV mejorado
+            </button>
           )}
 
-          {/* Logros reescritos */}
-          {improveResult.experience_bullets?.length > 0 && (
-            <ImproveSection title="Ejemplos de logros con verbos de acción" color="#0ea5e9" icon="💡" dm={dm}>
-              <ImproveBulletList items={improveResult.experience_bullets} color="#0ea5e9" dm={dm} />
-            </ImproveSection>
+          {/* Loading búsqueda */}
+          {searchLoading && (
+            <div style={{ textAlign: "center", padding: "24px", background: dm ? "#1e293b" : "#fff", borderRadius: 14, border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`, marginTop: 8 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #bfdbfe", borderTopColor: "#2563eb", animation: "cv-spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+              <div style={{ fontSize: 14, color: dm ? "#93c5fd" : "#2563eb", fontWeight: 600 }}>Buscando ofertas...</div>
+            </div>
           )}
 
-          {/* Sección habilidades */}
-          {improveResult.skills_section && (
-            <ImproveSection title="Sección de habilidades sugerida" color="#10b981" icon="🛠" dm={dm}>
-              <CopyBox text={improveResult.skills_section} dm={dm} />
-            </ImproveSection>
+          {/* Resultados de búsqueda */}
+          {searchResult && !searchLoading && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#94a3b8" : "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+                {searchResult.offers?.length || 0} ofertas · ordenadas por compatibilidad
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {(searchResult.offers || []).map(offer => (
+                  <OfferCard key={offer.adzuna_id || offer.id} offer={offer} dm={dm} onSelect={setSelectedOffer} />
+                ))}
+              </div>
+              {searchResult.skills_gap && <SkillsGapPanel gap={searchResult.skills_gap} dm={dm} />}
+            </div>
           )}
+
+          {selectedOffer && <OfferModal offer={selectedOffer} dm={dm} onClose={() => setSelectedOffer(null)} />}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── Tab: Mis CVs ─────────────────────────────────────────────────────────────
+
+function MisCVsTab({ addToast, onSearchFromId, dm }) {
+  const [improvements, setImprovements] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(null);
+
+  useEffect(() => {
+    getMyImprovements()
+      .then(d => setImprovements(d.improvements || []))
+      .catch(() => setImprovements([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleDownload = async (id) => {
+    setDownloading(id);
+    try { await downloadCVPdf(id); }
+    catch (err) { addToast?.(err?.detail || "Error al descargar", "error"); }
+    finally { setDownloading(null); }
+  };
+
+  if (loading) return (
+    <div style={{ textAlign: "center", padding: 48, color: dm ? "#64748b" : "#9ca3af" }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid #e2e8f0", borderTopColor: "#7c3aed", animation: "cv-spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+      Cargando tus CVs...
+    </div>
+  );
+
+  if (!improvements?.length) return (
+    <div style={{ textAlign: "center", padding: 48, maxWidth: 420, margin: "0 auto" }}>
+      <div style={{ fontSize: 40, marginBottom: 16 }}>📄</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", marginBottom: 8 }}>Todavia no tienes CVs mejorados</div>
+      <div style={{ fontSize: 14, color: dm ? "#64748b" : "#9ca3af" }}>Ve a la pestana "Mejorar CV" y sube tu CV para empezar.</div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <div style={{ fontSize: 13, color: dm ? "#64748b" : "#9ca3af", marginBottom: 16 }}>
+        {improvements.length} CV{improvements.length !== 1 ? "s" : ""} mejorado{improvements.length !== 1 ? "s" : ""} guardado{improvements.length !== 1 ? "s" : ""}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {improvements.map(imp => (
+          <div key={imp.id} style={{
+            background: dm ? "#1e293b" : "#fff",
+            border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+            borderRadius: 14, padding: "16px 20px",
+            display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+            fontFamily: typography.family,
+          }}>
+            {/* Scores */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: imp.ats_score_before >= 60 ? "#f59e0b" : "#ef4444" }}>{imp.ats_score_before}</div>
+                <div style={{ fontSize: 9, color: dm ? "#64748b" : "#9ca3af", fontWeight: 600 }}>ANTES</div>
+              </div>
+              <div style={{ fontSize: 16, color: dm ? "#475569" : "#cbd5e1" }}>→</div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#10b981" }}>{imp.ats_score_after}</div>
+                <div style={{ fontSize: 9, color: dm ? "#64748b" : "#9ca3af", fontWeight: 600 }}>MEJORADO</div>
+              </div>
+            </div>
+
+            {/* Keywords */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: dm ? "#64748b" : "#9ca3af", marginBottom: 4 }}>
+                {new Date(imp.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })}
+              </div>
+              {imp.keywords_to_add?.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {imp.keywords_to_add.map((kw, i) => {
+                    const c = TAG_COLORS[i % TAG_COLORS.length];
+                    return <span key={i} style={{ fontSize: 11, fontWeight: 600, borderRadius: 20, padding: "2px 8px", border: `1px solid ${c.border}`, background: c.bg, color: c.color }}>{kw}</span>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Acciones */}
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button onClick={() => handleDownload(imp.id)} disabled={downloading === imp.id} style={{
+                padding: "7px 14px", borderRadius: 20, border: "1.5px solid #7c3aed",
+                background: "#7c3aed", color: "#fff", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, fontFamily: typography.family,
+                opacity: downloading === imp.id ? 0.7 : 1,
+              }}>
+                {downloading === imp.id ? "..." : "PDF"}
+              </button>
+              <button onClick={() => onSearchFromId(imp.id)} style={{
+                padding: "7px 14px", borderRadius: 20, border: "1.5px solid #2563eb",
+                background: "none", color: "#2563eb", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, fontFamily: typography.family,
+              }}>
+                Buscar ofertas
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

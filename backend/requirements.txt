@@ -10,3 +10,4 @@ bcrypt
 PyJWT
 pypdf
 python-multipart
+fpdf2

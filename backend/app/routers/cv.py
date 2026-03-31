@@ -1,30 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-Router para la funcionalidad "Buscar por CV".
+Router para el módulo completo de CV.
 Endpoints:
-  POST /api/cv/analyze  — Sube un CV, extrae perfil y busca ofertas
-  POST /api/cv/improve  — Sube un CV y devuelve sugerencias de mejora ATS
-  GET  /api/cv/latest   — Devuelve el último análisis guardado del usuario
+  POST /api/cv/analyze            — Buscar ofertas a partir del CV
+  POST /api/cv/improve            — Mejora ATS simple (legado)
+  POST /api/cv/improve-full       — Mejora ATS completa con texto mejorado y guardado en DB
+  GET  /api/cv/download-pdf/{id}  — Genera y descarga PDF del CV mejorado
+  GET  /api/cv/my-improvements    — Lista de CVs mejorados del usuario
+  POST /api/cv/search-from-improvement/{id} — Busca ofertas desde CV mejorado guardado
+  GET  /api/cv/latest             — Último análisis guardado
 """
 import hashlib
 import json
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, UploadFile, File
+from fastapi.responses import JSONResponse, Response
 
 from app.database import get_session_local
 from app.models.cv_analysis import CVAnalysis
+from app.models.cv_ats_result import CVAtsResult
+from app.models.cv_improvement import CVImprovement
 from app.routers.user import get_current_user_record
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
+from app.services.cv_pdf_service import generate_cv_pdf
 from app.services.cv_service import (
     analyze_cv_with_ai,
     build_adzuna_search_params,
     build_matching_profile,
     extract_text_from_pdf,
+    hash_cv_text,
+    improve_cv_full,
     improve_cv_with_ai,
     read_and_validate_content,
     validate_cv_upload,
@@ -246,6 +255,280 @@ async def improve_cv(
                     "cv_improve_used": quota["cv_improve_count"],
                     "cv_improve_remaining": quota["cv_improve_remaining"],
                 },
+            },
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.post("/api/cv/improve-full")
+async def improve_cv_full_endpoint(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user_record),
+):
+    """
+    Mejora completa del CV:
+    1. Analiza ATS con IA (con caché por hash)
+    2. Genera texto completo del CV mejorado
+    3. Guarda en cv_ats_results + cv_improvements
+    Devuelve análisis + texto mejorado + IDs para PDF/búsqueda
+    """
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return JSONResponse(status_code=500, content={"detail": "CLAUDE_API_KEY no configurada"})
+
+    validate_cv_upload(file)
+    content = await read_and_validate_content(file)
+
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+        # Cuota: usa la misma acción cv_improve (máx 2/día, bypass para super admin)
+        quota = consume_ai_quota(db, user, "cv_improve")
+
+        cv_text = extract_text_from_pdf(content)
+        cv_hash = hash_cv_text(cv_text)
+
+        # ── Cache: ¿ya analizamos este CV hoy? ───────────────────────────────
+        cached_ats = (
+            db.query(CVAtsResult)
+            .filter(CVAtsResult.user_id == user.id, CVAtsResult.cv_text_hash == cv_hash)
+            .order_by(CVAtsResult.created_at.desc())
+            .first()
+        )
+
+        # ── Llamada IA (o recuperar del caché) ───────────────────────────────
+        full_result, _usage = await improve_cv_full(cv_text, api_key, user_id=user.id)
+
+        # Guardar ATS result si no había caché idéntico
+        if cached_ats is None:
+            ats_record = CVAtsResult(
+                user_id=user.id,
+                cv_text_hash=cv_hash,
+                original_cv_text=cv_text[:50000],  # Limitar a 50K chars
+                ats_score_before=full_result["ats_score_before"],
+                feedback_json=json.dumps({
+                    "problems_detected": full_result["problems_detected"],
+                    "key_improvements": full_result["key_improvements"],
+                    "keywords_to_add": full_result["keywords_to_add"],
+                }, ensure_ascii=False),
+            )
+            db.add(ats_record)
+            db.flush()
+            ats_result_id = ats_record.id
+        else:
+            ats_result_id = cached_ats.id
+
+        # Guardar improvement
+        meta = {
+            "problems_detected": full_result["problems_detected"],
+            "key_improvements": full_result["key_improvements"],
+            "keywords_to_add": full_result["keywords_to_add"],
+        }
+        improvement_record = CVImprovement(
+            user_id=user.id,
+            ats_result_id=ats_result_id,
+            improved_cv_text=full_result["improved_cv_text"],
+            ats_score_before=full_result["ats_score_before"],
+            ats_score_after=full_result["ats_score_after"],
+            meta_json=json.dumps(meta, ensure_ascii=False),
+        )
+        db.add(improvement_record)
+        db.commit()
+        db.refresh(improvement_record)
+
+        return JSONResponse(
+            content={
+                "improvement_id": improvement_record.id,
+                "ats_score_before": full_result["ats_score_before"],
+                "ats_score_after": full_result["ats_score_after"],
+                "problems_detected": full_result["problems_detected"],
+                "key_improvements": full_result["key_improvements"],
+                "keywords_to_add": full_result["keywords_to_add"],
+                "improved_cv_text": full_result["improved_cv_text"],
+                "quota": {
+                    "cv_improve_used": quota.get("cv_improve_count", 0),
+                    "cv_improve_remaining": quota.get("cv_improve_remaining", 0),
+                },
+            },
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.get("/api/cv/download-pdf/{improvement_id}")
+def download_cv_pdf(
+    improvement_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    """Genera y devuelve el PDF del CV mejorado."""
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        record = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
+            .first()
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+
+        candidate_name = getattr(user, "nombre", "") or getattr(user, "alias", "") or ""
+        pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
+
+        filename = f"cv_mejorado_{improvement_id}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.get("/api/cv/my-improvements")
+def get_my_improvements(user=Depends(get_current_user_record)):
+    """Lista de CVs mejorados del usuario (más reciente primero)."""
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+        records = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.user_id == user.id)
+            .order_by(CVImprovement.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+        items = []
+        for r in records:
+            meta = {}
+            try:
+                meta = json.loads(r.meta_json or "{}")
+            except Exception:
+                pass
+            items.append({
+                "id": r.id,
+                "ats_score_before": r.ats_score_before,
+                "ats_score_after": r.ats_score_after,
+                "keywords_to_add": meta.get("keywords_to_add", [])[:5],
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+
+        return JSONResponse(
+            content={"improvements": items},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.post("/api/cv/search-from-improvement/{improvement_id}")
+async def search_from_improvement(
+    improvement_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    """Busca ofertas usando el texto del CV mejorado guardado en DB."""
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return JSONResponse(status_code=500, content={"detail": "CLAUDE_API_KEY no configurada"})
+
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+        record = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
+            .first()
+        )
+        if not record:
+            return JSONResponse(status_code=404, content={"detail": "CV mejorado no encontrado"})
+
+        # Consumir cuota (búsqueda cuenta igual que análisis de CV)
+        consume_ai_quota(db, user, "cv_analysis")
+
+        # Analizar el CV mejorado para extraer perfil estructurado
+        structured_profile, ai_usage = await analyze_cv_with_ai(
+            record.improved_cv_text, api_key, user_id=user.id
+        )
+
+        matching_profile = build_matching_profile(structured_profile)
+        search_skills, search_locations = build_adzuna_search_params(structured_profile)
+
+        offers = await fetch_offers_from_adzuna(
+            skills=search_skills,
+            locations=search_locations if search_locations else None,
+            db=db,
+        )
+
+        if not offers:
+            return JSONResponse(
+                content={"structured_profile": structured_profile, "offers": [], "skills_gap": None},
+                media_type="application/json; charset=utf-8",
+            )
+
+        profile_hash = hashlib.sha256(
+            json.dumps({"source": "cv_improved", "id": improvement_id, "profile": matching_profile},
+                       sort_keys=True).encode()
+        ).hexdigest()
+
+        try:
+            results = match_profile_with_offers(
+                matching_profile, offers, api_key, db=db,
+                profile_hash=profile_hash, user_id=user.id,
+            )
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                return JSONResponse(status_code=429, content={"detail": "Cuota Claude API agotada."})
+            return JSONResponse(status_code=502, content={"detail": f"Error IA: {err}"})
+
+        offers_by_id = {o["id"]: o for o in offers}
+        enriched = []
+        for result in results:
+            offer = offers_by_id.get(result["id"], {})
+            enriched.append({**offer, **result, "desde_cache": False})
+        try:
+            enriched = enrich_items_with_company_logos(db, enriched)
+        except Exception:
+            pass
+
+        result_order = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
+        enriched.sort(key=lambda x: (
+            result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
+            -(x.get("puntuacion") or 0),
+        ))
+
+        skills_gap = None
+        try:
+            skills_gap = generate_skills_gap(matching_profile, offers, results, api_key, user_id=user.id)
+        except Exception:
+            pass
+
+        return JSONResponse(
+            content={
+                "improvement_id": improvement_id,
+                "structured_profile": structured_profile,
+                "offers": enriched,
+                "skills_gap": skills_gap,
             },
             media_type="application/json; charset=utf-8",
         )

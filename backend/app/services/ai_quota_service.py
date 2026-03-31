@@ -55,6 +55,20 @@ def get_quota_snapshot(db, user) -> dict:
 
 
 def consume_ai_quota(db, user, action: str) -> dict:
+    # Super admins: sin límites
+    if getattr(user, "is_super_admin", False):
+        return {
+            "date": str(date.today()),
+            "daily_limit": 9999,
+            "used": 0,
+            "remaining": 9999,
+            "match_count": 0,
+            "cover_letter_count": 0,
+            "cv_analysis_count": 0,
+            "cv_improve_count": 0,
+            "cv_improve_remaining": 9999,
+        }
+
     today = date.today()
     usage = _get_or_create_usage(db, user.id, today)
     limit = user.daily_ai_quota or DEFAULT_DAILY_AI_QUOTA

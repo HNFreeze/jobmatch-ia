@@ -3,6 +3,7 @@
 Servicio para análisis de CVs.
 Extrae texto de PDFs y usa Claude para convertirlo en un perfil estructurado.
 """
+import hashlib
 import io
 import json
 import re
@@ -460,6 +461,166 @@ def build_matching_profile(structured_profile: dict) -> dict:
         "ubicaciones": preferred_locations,
         "modalidad": normalized_modalities,
         "idiomas": idiomas_list,
+    }
+
+
+def hash_cv_text(text: str) -> str:
+    """SHA-256 del texto del CV para caching."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+async def improve_cv_full(
+    text: str,
+    api_key: str,
+    user_id: Optional[int] = None,
+) -> tuple[dict, object]:
+    """
+    Llama a Claude para:
+    1. Analizar el CV (ATS score + problemas)
+    2. Generar el texto COMPLETO del CV mejorado
+    Devuelve (full_result_dict, usage).
+
+    full_result_dict contiene:
+      ats_score_before, ats_score_after, problems_detected,
+      key_improvements, keywords_to_add, improved_cv_text
+    """
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = (
+        "Eres un experto en CVs optimizados para ATS con 15 años en selección técnica española. "
+        "Tu tarea es analizar un CV y devolver ÚNICAMENTE un JSON válido con el análisis y el CV mejorado completo. "
+        "Sin texto adicional, sin bloques markdown."
+    )
+
+    user_prompt = f"""Analiza este CV y devuelve un JSON con EXACTAMENTE esta estructura:
+
+{{
+  "ats_score_before": número 0-100 (evaluación del CV original),
+  "ats_score_after": número 0-100 (estimación tras las mejoras, siempre >= before),
+  "problems_detected": [
+    {{"category": "keywords|structure|verbos|metrics|format", "description": "descripción del problema"}}
+  ],
+  "key_improvements": ["mejora aplicada 1", "mejora aplicada 2"],
+  "keywords_to_add": ["keyword1", "keyword2"],
+  "improved_cv_text": "TEXTO COMPLETO DEL CV MEJORADO usando el formato especificado abajo"
+}}
+
+Reglas para improved_cv_text (formato OBLIGATORIO con estos marcadores exactos):
+```
+NAME: [Nombre completo]
+TITLE: [Título profesional optimizado]
+
+SUMMARY
+[3-4 frases de resumen profesional con keywords ATS, verbos de impacto y métricas]
+
+EXPERIENCE
+[Empresa] | [Cargo] | [Periodo]
+• [Logro con verbo acción + métrica, ej: Reduje el tiempo de respuesta en 40%]
+• [Logro 2]
+
+[Empresa 2] | [Cargo] | [Periodo]
+• [Logro 1]
+
+EDUCATION
+[Título] | [Centro] | [Año]
+
+SKILLS
+Lenguajes: [lista]
+Frameworks: [lista]
+Cloud/DevOps: [lista si aplica]
+Bases de datos: [lista si aplica]
+Herramientas: [lista si aplica]
+
+LANGUAGES
+[Idioma]: [Nivel]
+
+CERTIFICATIONS
+[Certificación (año)]
+```
+
+Reglas de analysis:
+- ats_score_before: 0=CV catastrófico, 100=perfecto ATS. Evalúa keywords, formato, verbos, métricas, estructura
+- problems_detected: 3-6 problemas reales encontrados, categoría exacta (keywords/structure/verbos/metrics/format)
+- key_improvements: 4-6 mejoras concretas que aplicaste al reescribir el CV
+- keywords_to_add: 5-10 keywords técnicas que añadiste o que faltan y deberían estar
+
+CV a analizar y mejorar:
+{_truncate_cv_text(text, max_chars=7000)}"""
+
+    try:
+        response = client.messages.create(
+            model=CV_AI_MODEL,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except anthropic.APIStatusError as exc:
+        if exc.status_code == 429:
+            raise HTTPException(status_code=429, detail="Límite de Claude API alcanzado. Inténtalo en unos minutos.")
+        raise HTTPException(status_code=502, detail=f"Error de Claude API: {exc.message}")
+
+    raw_text = response.content[0].text if response.content else ""
+    try:
+        raw = _extract_json_from_response(raw_text)
+    except Exception:
+        raise HTTPException(status_code=502, detail="La IA no pudo procesar el CV. Inténtalo de nuevo.")
+
+    result = _sanitize_full_improvement(raw)
+
+    try:
+        from app.database import get_session_local
+        SessionLocal = get_session_local()
+        if SessionLocal:
+            db_cost = SessionLocal()
+            try:
+                record_ai_api_cost(
+                    db=db_cost,
+                    feature="cv_improve_full",
+                    model=CV_AI_MODEL,
+                    usage=response.usage,
+                    user_id=user_id,
+                )
+                db_cost.commit()
+            finally:
+                db_cost.close()
+    except Exception as e:
+        print(f"[CV_IMPROVE_FULL_COST] Error registrando coste: {e}")
+
+    return result, response.usage
+
+
+def _sanitize_full_improvement(raw: dict) -> dict:
+    """Normaliza y valida el resultado completo de mejora de CV."""
+    def safe_int(val, default: int, lo: int = 0, hi: int = 100) -> int:
+        try:
+            return max(lo, min(hi, int(val)))
+        except (TypeError, ValueError):
+            return default
+
+    def safe_list_str(val, max_items: int = 20) -> list[str]:
+        if not isinstance(val, list):
+            return []
+        return [str(x).strip() for x in val[:max_items] if str(x).strip()]
+
+    def safe_list_dicts(val, max_items: int = 10) -> list[dict]:
+        if not isinstance(val, list):
+            return []
+        return [x for x in val[:max_items] if isinstance(x, dict)]
+
+    def safe_str(val, fallback: str = "") -> str:
+        s = str(val or "").strip()
+        return s if s else fallback
+
+    score_before = safe_int(raw.get("ats_score_before"), 40)
+    score_after = max(safe_int(raw.get("ats_score_after"), score_before + 20), score_before)
+
+    return {
+        "ats_score_before": score_before,
+        "ats_score_after": score_after,
+        "problems_detected": safe_list_dicts(raw.get("problems_detected"), 8),
+        "key_improvements": safe_list_str(raw.get("key_improvements"), 8),
+        "keywords_to_add": safe_list_str(raw.get("keywords_to_add"), 15),
+        "improved_cv_text": safe_str(raw.get("improved_cv_text")),
     }
 
 
