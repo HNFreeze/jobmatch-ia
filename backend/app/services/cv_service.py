@@ -489,7 +489,9 @@ async def improve_cv_full(
     system_prompt = (
         "Eres un experto en CVs optimizados para ATS con 15 años en selección técnica española. "
         "Tu tarea es analizar un CV y devolver ÚNICAMENTE un JSON válido con el análisis y el CV mejorado completo. "
-        "Sin texto adicional, sin bloques markdown."
+        "Sin texto adicional, sin bloques markdown. "
+        "NUNCA inventas información: solo reorganizas, mejoras la redacción y optimizas para ATS. "
+        "Todo el texto del CV mejorado debe estar en español, con tildes y ñ correctamente escritas."
     )
 
     user_prompt = f"""Analiza este CV y devuelve un JSON con EXACTAMENTE esta estructura:
@@ -498,51 +500,59 @@ async def improve_cv_full(
   "ats_score_before": número 0-100 (evaluación del CV original),
   "ats_score_after": número 0-100 (estimación tras las mejoras, siempre >= before),
   "problems_detected": [
-    {{"category": "keywords|structure|verbos|metrics|format", "description": "descripción del problema"}}
+    {{"category": "keywords|structure|verbos|metrics|format", "description": "descripción del problema en español"}}
   ],
-  "key_improvements": ["mejora aplicada 1", "mejora aplicada 2"],
+  "key_improvements": ["mejora aplicada 1 en español", "mejora aplicada 2"],
   "keywords_to_add": ["keyword1", "keyword2"],
-  "improved_cv_text": "TEXTO COMPLETO DEL CV MEJORADO usando el formato especificado abajo"
+  "improved_cv_text": "TEXTO COMPLETO DEL CV MEJORADO en el formato indicado abajo"
 }}
 
-Reglas para improved_cv_text (formato OBLIGATORIO con estos marcadores exactos):
-```
-NAME: [Nombre completo]
-TITLE: [Título profesional optimizado]
+FORMATO OBLIGATORIO para improved_cv_text (usa EXACTAMENTE estos marcadores de sección):
 
-SUMMARY
-[3-4 frases de resumen profesional con keywords ATS, verbos de impacto y métricas]
+NAME: [Nombre completo del candidato tal como aparece en el CV]
+TITLE: [Título profesional optimizado para ATS en español]
 
-EXPERIENCE
+RESUMEN
+[3-4 frases de perfil profesional en español con keywords del sector, verbos de impacto y métricas reales del CV]
+
+EXPERIENCIA
 [Empresa] | [Cargo] | [Periodo]
-• [Logro con verbo acción + métrica, ej: Reduje el tiempo de respuesta en 40%]
-• [Logro 2]
+- [Logro mejorado con verbo de acción en español + métrica real, ej: Reduje el tiempo de carga en un 40%]
+- [Logro 2]
 
 [Empresa 2] | [Cargo] | [Periodo]
-• [Logro 1]
+- [Logro 1]
 
-EDUCATION
-[Título] | [Centro] | [Año]
+EDUCACIÓN
+[Título] | [Institución] | [Año]
 
-SKILLS
+HABILIDADES
 Lenguajes: [lista]
 Frameworks: [lista]
-Cloud/DevOps: [lista si aplica]
-Bases de datos: [lista si aplica]
-Herramientas: [lista si aplica]
+Bases de datos: [lista, solo si aplica]
+Cloud/DevOps: [lista, solo si aplica]
+Herramientas: [lista, solo si aplica]
 
-LANGUAGES
+IDIOMAS
 [Idioma]: [Nivel]
 
-CERTIFICATIONS
-[Certificación (año)]
-```
+[INCLUIR SOLO SI EL CV ORIGINAL CONTIENE PROYECTOS:]
+PROYECTOS
+[Nombre del proyecto] | [URL completa si existe en el CV, ej: https://github.com/usuario/repo]
+- [Descripción mejorada basada en lo que aparece en el CV]
 
-Reglas de analysis:
-- ats_score_before: 0=CV catastrófico, 100=perfecto ATS. Evalúa keywords, formato, verbos, métricas, estructura
-- problems_detected: 3-6 problemas reales encontrados, categoría exacta (keywords/structure/verbos/metrics/format)
-- key_improvements: 4-6 mejoras concretas que aplicaste al reescribir el CV
-- keywords_to_add: 5-10 keywords técnicas que añadiste o que faltan y deberían estar
+[INCLUIR SOLO SI EL CV ORIGINAL CONTIENE CERTIFICACIONES REALES:]
+CERTIFICACIONES
+[Nombre de la certificación] ([Año si aparece en el CV])
+
+REGLAS CRÍTICAS — incumplirlas invalida el resultado:
+1. NO inventar NINGUNA información: experiencias, proyectos, tecnologías, certificaciones, fechas
+2. SOLO reorganizar, mejorar redacción y optimizar para ATS usando el contenido real del CV
+3. Todo el texto en ESPAÑOL: usar tildes (á, é, í, ó, ú) y ñ correctamente
+4. Omitir completamente las secciones PROYECTOS y CERTIFICACIONES si no aparecen en el CV original
+5. Los marcadores de sección van solos en su línea, en MAYÚSCULAS, sin dos puntos al final
+6. Educación se llama EDUCACIÓN (nunca CERTIFICATIONS ni CERTIFICATIONS para estudios)
+7. ats_score_before y ats_score_after son números enteros 0-100
 
 CV a analizar y mejorar:
 {_truncate_cv_text(text, max_chars=7000)}"""
