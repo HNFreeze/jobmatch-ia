@@ -28,6 +28,7 @@ from app.models.job_offer import JobOffer        # noqa: F401
 from app.models.favorite import Favorite          # noqa: F401
 from app.models.rate_limit_bucket import RateLimitBucket  # noqa: F401
 from app.models.search_history import SearchHistory  # noqa: F401
+from app.models.cv_analysis import CVAnalysis  # noqa: F401
 
 config = context.config
 

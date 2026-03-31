@@ -1,7 +1,7 @@
 """add cv_analyses table and cv_analysis_count to ai_daily_usage
 
 Revision ID: s6t8v0x2z4b6
-Revises: q4f6h8j0k2l4
+Revises: r5g7i9k1m3o5
 Create Date: 2026-03-30 10:00:00.000000
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "s6t8v0x2z4b6"
-down_revision = "q4f6h8j0k2l4"
+down_revision = "r5g7i9k1m3o5"
 branch_labels = None
 depends_on = None
 
