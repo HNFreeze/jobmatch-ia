@@ -316,13 +316,20 @@ export async function downloadCVPdf(improvementId) {
   if (!response.ok) throw await buildApiError(response, "Error al descargar el PDF");
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `cv_mejorado_${improvementId}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Open in a new tab so any links inside the PDF don't navigate away from the app.
+  // The browser's PDF viewer offers its own download button from there.
+  const newTab = window.open(url, "_blank", "noopener");
+  if (!newTab) {
+    // Fallback if popups are blocked: trigger a normal download instead.
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cv_mejorado_${improvementId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  // Revoke after enough time for the new tab to load the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 export async function getMyImprovements() {
