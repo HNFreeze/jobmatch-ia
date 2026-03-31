@@ -14,12 +14,20 @@ _SUPER_ADMIN_EMAIL = "sergiuswor@gmail.com"
 
 
 def _ensure_super_admin(db) -> None:
-    """Garantiza que sergiuswor@gmail.com tiene is_super_admin=True."""
+    """Garantiza que sergiuswor@gmail.com tiene cuota ilimitada (is_super_admin=True)
+    pero sin acceso al panel de administración (is_admin=False)."""
     super_email = normalize_email(_SUPER_ADMIN_EMAIL)
     user = db.query(User).filter(User.email == super_email).first()
-    if user and not user.is_super_admin:
+    if not user:
+        return
+    changed = False
+    if not user.is_super_admin:
         user.is_super_admin = True
-        user.is_admin = True
+        changed = True
+    if user.is_admin:
+        user.is_admin = False
+        changed = True
+    if changed:
         db.commit()
 
 
@@ -42,10 +50,11 @@ def ensure_bootstrap_admin() -> bool:
         if not admin_email or not admin_password:
             return False
 
+        is_super = normalize_email(admin_email) == normalize_email(_SUPER_ADMIN_EMAIL)
         user = db.query(User).filter(User.email == admin_email).first()
         if user:
             changed = False
-            if not user.is_admin:
+            if not is_super and not user.is_admin:
                 user.is_admin = True
                 changed = True
             if not user.email_verified:
@@ -57,7 +66,6 @@ def ensure_bootstrap_admin() -> bool:
             return changed
 
         hashed_password = bcrypt.hashpw(admin_password.encode(), bcrypt.gensalt()).decode()
-        is_super = normalize_email(admin_email) == normalize_email(_SUPER_ADMIN_EMAIL)
         admin_user = User(
             email=admin_email,
             password_hash=hashed_password,
@@ -66,7 +74,7 @@ def ensure_bootstrap_admin() -> bool:
             apellidos=None,
             email_verified=True,
             email_verified_at=datetime.utcnow(),
-            is_admin=True,
+            is_admin=not is_super,
             is_super_admin=is_super,
             daily_ai_quota=int(os.getenv("DEFAULT_DAILY_AI_QUOTA", str(DEFAULT_DAILY_AI_QUOTA))),
         )
