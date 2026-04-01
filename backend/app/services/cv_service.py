@@ -529,16 +529,16 @@ async def improve_cv_full(
   "keywords_to_add": ["kw1", "kw2"],
   "cv_structured_json": {{
     "meta": {{"version": 1, "warnings": [], "source": "ai_generated"}},
-    "personal": {{"name": "nombre completo del CV", "title": "título profesional optimizado"}},
-    "summary": "resumen profesional 3-4 frases con keywords ATS",
+    "personal": {{"name": "COPIA EXACTA del nombre del CV sin modificar ningún carácter ni tilde", "title": "título profesional optimizado para ATS en español"}},
+    "summary": "resumen profesional 3-4 frases con keywords ATS, en español",
     "experience": [
       {{
         "id": "exp_0",
-        "company": "nombre exacto de la empresa",
-        "role": "cargo exacto",
+        "company": "nombre EXACTO de la empresa tal como aparece",
+        "role": "cargo EXACTO tal como aparece",
         "period": "periodo exacto del CV",
         "location": "ciudad/modalidad si aparece",
-        "bullets": ["logro mejorado con verbo acción + métrica real"],
+        "bullets": ["logro mejorado con verbo acción + métrica real, en español"],
         "flagged": false
       }}
     ],
@@ -563,12 +563,16 @@ async def improve_cv_full(
 }}
 
 REGLAS ABSOLUTAS — incumplirlas invalida el resultado:
-1. NO inventar NADA: empresas, cargos, fechas, tecnologías, proyectos, certificaciones
+1. NO inventar NADA: empresas, cargos, fechas, tecnologías, proyectos, certificaciones, descripciones
 2. Cada objeto en experience[] contiene SOLO los datos de ESA empresa — nunca mezcles bullets de otra
 3. projects[] y certifications[] solo si EXISTEN en el CV original; si no, déjalos como []
 4. education[] es para estudios académicos; certifications[] para certificados profesionales
 5. ats_score_before y ats_score_after son números enteros, no strings
-6. Todo el texto en español con tildes correctas
+6. Todo el texto en español con tildes correctas (á,é,í,ó,ú,ñ)
+7. personal.name: copia el nombre EXACTAMENTE como aparece en el CV, sin cambiar ningún carácter, tilde, letra ni orden
+8. education[]: incluye TODOS los estudios académicos del CV original sin omitir ninguno
+9. Usa inglés SOLO para nombres propios de tecnologías (Python, React, SQL...); títulos y texto en español
+10. skills[]: ordena las categorías de más a menos relevantes para el perfil del candidato
 
 CV original a analizar:
 {_truncate_cv_text(text, max_chars=12000)}"""

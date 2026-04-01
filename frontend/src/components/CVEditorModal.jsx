@@ -128,6 +128,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   const [dragInfo, setDragInfo] = useState(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
+  const [template, setTemplate] = useState("professional_modern");
 
   const logAction = (action) =>
     setActionLog(prev => [...prev, { ...action, ts: Date.now() }]);
@@ -259,7 +260,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
     setSaving(false);
     setDownloading(true);
     try {
-      await downloadCVPdfFromEdit(improvementId);
+      await downloadCVPdfFromEdit(improvementId, template);
     } catch (err) {
       alert(err?.message || "Error al descargar el PDF");
     } finally {
@@ -347,7 +348,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
           {/* ── Body: Vista previa ── */}
           {previewMode && (
             <div style={{ padding: "20px 24px", overflowY: "auto" }}>
-              <CVPreview cvJson={cvJson} dm={dm} />
+              <CVPreview cvJson={cvJson} dm={dm} template={template} />
             </div>
           )}
 
@@ -551,7 +552,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={onClose} style={{
                 padding: "8px 18px", borderRadius: 20,
                 border: `1.5px solid ${dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"}`,
@@ -560,6 +561,23 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
               }}>
                 Cerrar
               </button>
+              {/* Template selector */}
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 11, color: muted, fontWeight: 600, whiteSpace: "nowrap" }}>Plantilla:</span>
+                <select
+                  value={template}
+                  onChange={e => setTemplate(e.target.value)}
+                  style={{
+                    fontSize: 11, padding: "4px 8px", borderRadius: 8,
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                    background: inputBg, color: text, cursor: "pointer",
+                    fontFamily: "inherit", outline: "none",
+                  }}
+                >
+                  <option value="professional_modern">Professional Modern</option>
+                  <option value="ats_minimal">ATS Minimal</option>
+                </select>
+              </div>
               <button onClick={handleDownload} disabled={downloading || saving} style={{
                 padding: "8px 18px", borderRadius: 20,
                 border: "1.5px solid #2563eb", background: "none", color: "#2563eb",

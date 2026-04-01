@@ -16,7 +16,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, UploadFile, File
 from fastapi.responses import JSONResponse, Response
 
 from app.database import get_session_local
@@ -391,6 +391,7 @@ async def improve_cv_full_endpoint(
 @router.get("/api/cv/download-pdf/{improvement_id}")
 def download_cv_pdf(
     improvement_id: int = Path(..., ge=1),
+    template: str = Query("professional_modern"),
     user=Depends(get_current_user_record),
 ):
     """Genera y devuelve el PDF del CV mejorado."""
@@ -425,13 +426,13 @@ def download_cv_pdf(
         if edit_session:
             try:
                 edited_json = json.loads(edit_session.edited_cv_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
         elif record.cv_structured_json:
             try:
                 structured = json.loads(record.cv_structured_json)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
         else:
@@ -793,6 +794,7 @@ def save_cv_edit(
 @router.post("/api/cv/improvement/{improvement_id}/pdf")
 def generate_pdf_from_edit(
     improvement_id: int = Path(..., ge=1),
+    template: str = Query("professional_modern"),
     user=Depends(get_current_user_record),
 ):
     """
@@ -830,13 +832,13 @@ def generate_pdf_from_edit(
         if edit_session:
             try:
                 edited_json = json.loads(edit_session.edited_cv_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
         elif improvement.cv_structured_json:
             try:
                 structured = json.loads(improvement.cv_structured_json)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
         else:
