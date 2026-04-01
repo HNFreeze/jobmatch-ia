@@ -12,6 +12,7 @@
  */
 import { useState, useRef } from "react";
 import { saveCVEdit, downloadCVPdfFromEdit } from "../services/api";
+import CVPreview from "./CVPreview";
 
 const PURPLE = "#7c3aed";
 
@@ -126,6 +127,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   const [downloading, setDownloading] = useState(false);
   const [dragInfo, setDragInfo] = useState(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   const logAction = (action) =>
     setActionLog(prev => [...prev, { ...action, ts: Date.now() }]);
@@ -296,22 +298,61 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
           {/* ── Header ── */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "18px 24px 16px", borderBottom: `1px solid ${border}`,
+            padding: "14px 20px 14px", borderBottom: `1px solid ${border}`,
+            flexWrap: "wrap", gap: 10,
           }}>
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: text }}>Editar CV mejorado</div>
-              <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>
-                Arrastra las tarjetas para reordenar · Los cambios se guardan al pulsar "Guardar"
-              </div>
+            {/* Left: title */}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: text }}>CV mejorado</div>
+              {!previewMode && (
+                <div style={{ fontSize: 11, color: muted, marginTop: 1 }}>
+                  Arrastra para reordenar · Guarda los cambios antes de descargar
+                </div>
+              )}
             </div>
+
+            {/* Center: tabs */}
+            <div style={{
+              display: "flex", borderRadius: 8, overflow: "hidden",
+              border: `1.5px solid ${dm ? "rgba(255,255,255,0.12)" : "#e5e7eb"}`,
+              flexShrink: 0,
+            }}>
+              {[
+                { id: false, label: "Editar" },
+                { id: true, label: "Vista previa" },
+              ].map(({ id, label }) => (
+                <button
+                  key={String(id)}
+                  onClick={() => setPreviewMode(id)}
+                  style={{
+                    padding: "6px 16px", border: "none",
+                    background: previewMode === id ? PURPLE : "transparent",
+                    color: previewMode === id ? "#fff" : muted,
+                    cursor: "pointer", fontSize: 12, fontWeight: 700,
+                    fontFamily: "inherit", transition: "background 0.15s",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Right: close */}
             <button
               onClick={onClose}
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: muted, padding: "2px 8px", lineHeight: 1 }}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: muted, padding: "2px 6px", lineHeight: 1, flexShrink: 0 }}
             >×</button>
           </div>
 
-          {/* ── Body ── */}
-          <div style={{ padding: "24px 28px" }}>
+          {/* ── Body: Vista previa ── */}
+          {previewMode && (
+            <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+              <CVPreview cvJson={cvJson} dm={dm} />
+            </div>
+          )}
+
+          {/* ── Body: Editar ── */}
+          {!previewMode && <div style={{ padding: "24px 28px" }}>
 
             {/* DATOS PERSONALES */}
             <SectionWrap title="Datos personales" dm={dm}>
@@ -483,7 +524,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
               ))}
             </SectionWrap>
 
-          </div>
+          </div>}
 
           {/* ── Footer ── */}
           <div style={{
@@ -491,17 +532,25 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             padding: "14px 24px", borderTop: `1px solid ${border}`,
             flexWrap: "wrap", gap: 8,
           }}>
-            <button
-              onClick={() => setConfirmRestore(true)}
-              style={{
-                padding: "8px 14px", borderRadius: 20,
-                border: `1.5px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
-                background: "none", color: muted, cursor: "pointer",
-                fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-              }}
-            >
-              Restaurar sugerencia IA
-            </button>
+            {/* Restore — only visible in edit mode */}
+            {!previewMode ? (
+              <button
+                onClick={() => setConfirmRestore(true)}
+                style={{
+                  padding: "8px 14px", borderRadius: 20,
+                  border: `1.5px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                  background: "none", color: muted, cursor: "pointer",
+                  fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                }}
+              >
+                Restaurar sugerencia IA
+              </button>
+            ) : (
+              <div style={{ fontSize: 12, color: muted }}>
+                Vista previa del CV final
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={onClose} style={{
                 padding: "8px 18px", borderRadius: 20,
@@ -509,7 +558,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                 background: "none", color: text, cursor: "pointer",
                 fontSize: 13, fontWeight: 600, fontFamily: "inherit",
               }}>
-                Cancelar
+                Cerrar
               </button>
               <button onClick={handleDownload} disabled={downloading || saving} style={{
                 padding: "8px 18px", borderRadius: 20,
@@ -518,19 +567,21 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                 fontSize: 13, fontWeight: 700, fontFamily: "inherit",
                 opacity: (downloading || saving) ? 0.7 : 1,
               }}>
-                {downloading ? "Generando..." : "Descargar PDF"}
+                {downloading ? "Descargando..." : "Descargar PDF"}
               </button>
-              <button onClick={handleSave} disabled={saving} style={{
-                padding: "8px 20px", borderRadius: 20,
-                background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
-                border: "none", color: "#fff",
-                cursor: saving ? "wait" : "pointer",
-                fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-                opacity: saving ? 0.7 : 1,
-                boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
-              }}>
-                {saving ? "Guardando..." : "Guardar cambios"}
-              </button>
+              {!previewMode && (
+                <button onClick={handleSave} disabled={saving} style={{
+                  padding: "8px 20px", borderRadius: 20,
+                  background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
+                  border: "none", color: "#fff",
+                  cursor: saving ? "wait" : "pointer",
+                  fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                  opacity: saving ? 0.7 : 1,
+                  boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
+                }}>
+                  {saving ? "Guardando..." : "Guardar cambios"}
+                </button>
+              )}
             </div>
           </div>
 
