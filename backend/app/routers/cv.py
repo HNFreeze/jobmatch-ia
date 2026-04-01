@@ -14,7 +14,7 @@ import hashlib
 import json
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, UploadFile, File
 from fastapi.responses import JSONResponse, Response
@@ -45,6 +45,29 @@ from app.services.matching_service import MATCH_ENGINE_VERSION, generate_skills_
 from app.services.security_service import get_client_ip
 
 router = APIRouter()
+
+_ALLOWED_CV_TEMPLATES = {"professional_modern", "ats_minimal"}
+
+
+def _extract_selected_template(cv_json: Optional[dict]) -> Optional[str]:
+    if not isinstance(cv_json, dict):
+        return None
+    template = ((cv_json.get("meta") or {}).get("selected_template") or "").strip()
+    return template if template in _ALLOWED_CV_TEMPLATES else None
+
+
+def _resolve_cv_template(
+    requested_template: Optional[str],
+    edited_json: Optional[dict] = None,
+    structured_json: Optional[dict] = None,
+) -> str:
+    if requested_template in _ALLOWED_CV_TEMPLATES:
+        return requested_template
+    return (
+        _extract_selected_template(edited_json)
+        or _extract_selected_template(structured_json)
+        or "professional_modern"
+    )
 
 
 def _compute_cv_profile_hash(cv_analysis_id: int, matching_profile: dict) -> str:
@@ -391,7 +414,7 @@ async def improve_cv_full_endpoint(
 @router.get("/api/cv/download-pdf/{improvement_id}")
 def download_cv_pdf(
     improvement_id: int = Path(..., ge=1),
-    template: str = Query("professional_modern"),
+    template: Optional[str] = Query(None),
     user=Depends(get_current_user_record),
 ):
     """Genera y devuelve el PDF del CV mejorado."""
@@ -423,16 +446,19 @@ def download_cv_pdf(
         )
 
         pdf_bytes: bytes
+        structured: Optional[dict] = None
         if edit_session:
             try:
                 edited_json = json.loads(edit_session.edited_cv_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, template)
+                resolved_template = _resolve_cv_template(template, edited_json=edited_json)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, resolved_template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
         elif record.cv_structured_json:
             try:
                 structured = json.loads(record.cv_structured_json)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, template)
+                resolved_template = _resolve_cv_template(template, structured_json=structured)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, resolved_template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
         else:
@@ -794,7 +820,7 @@ def save_cv_edit(
 @router.post("/api/cv/improvement/{improvement_id}/pdf")
 def generate_pdf_from_edit(
     improvement_id: int = Path(..., ge=1),
-    template: str = Query("professional_modern"),
+    template: Optional[str] = Query(None),
     user=Depends(get_current_user_record),
 ):
     """
@@ -832,13 +858,15 @@ def generate_pdf_from_edit(
         if edit_session:
             try:
                 edited_json = json.loads(edit_session.edited_cv_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, template)
+                resolved_template = _resolve_cv_template(template, edited_json=edited_json)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, resolved_template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
         elif improvement.cv_structured_json:
             try:
                 structured = json.loads(improvement.cv_structured_json)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, template)
+                resolved_template = _resolve_cv_template(template, structured_json=structured)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, resolved_template)
             except Exception:
                 pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
         else:

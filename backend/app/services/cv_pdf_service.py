@@ -429,35 +429,35 @@ def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
     _CV = _build_pdf_class()
 
     pdf = _CV(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_margins(18, 18, 18)
-    w = pdf.w - 36
+    pdf.set_margins(16, 16, 16)
+    w = pdf.w - 32
 
     # ── Cabecera azul ─────────────────────────────────────────────────────────
     pdf.set_fill_color(*_PRIMARY)
-    pdf.rect(0, 0, pdf.w, 38, "F")
-    pdf.set_xy(18, 10)
+    pdf.rect(0, 0, pdf.w, 34, "F")
+    pdf.set_xy(16, 8)
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(*_WHITE)
     pdf.cell(w, 10, d["name"], ln=True)
     if d["title"]:
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(200, 220, 255)
-        pdf.cell(w, 7, d["title"], ln=True)
-    pdf.ln(12)
+        pdf.cell(w, 6, d["title"], ln=True)
+    pdf.ln(9)
 
     def _section_header(label: str) -> None:
         pdf.set_fill_color(*_LIGHT)
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(*_PRIMARY)
-        pdf.cell(w, 7, _safe_text(label), ln=True, fill=True)
+        pdf.cell(w, 6, _safe_text(label), ln=True, fill=True)
         pdf.set_draw_color(*_PRIMARY)
         pdf.set_line_width(0.5)
-        pdf.line(18, pdf.get_y(), 18 + w, pdf.get_y())
-        pdf.ln(3)
+        pdf.line(16, pdf.get_y(), 16 + w, pdf.get_y())
+        pdf.ln(2)
         pdf.set_text_color(*_DARK)
 
     def _render_bullets(bullets: list) -> None:
@@ -472,11 +472,11 @@ def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
 
     if d["summary"]:
         _section_header("PERFIL PROFESIONAL")
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(w, 5.5, _safe_text(d["summary"]))
-        pdf.ln(4)
+        pdf.multi_cell(w, 5.0, _safe_text(d["summary"]))
+        pdf.ln(3)
 
     if d["experience"]:
         _section_header("EXPERIENCIA PROFESIONAL")
@@ -597,36 +597,36 @@ def _pdf_ats_minimal(cv_json: dict, candidate_name: str = "") -> bytes:
     _CV = _build_pdf_class()
 
     pdf = _CV(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_margins(18, 18, 18)
-    w = pdf.w - 36
+    pdf.set_margins(16, 16, 16)
+    w = pdf.w - 32
 
     # ── Cabecera simple (sin colores) ─────────────────────────────────────────
-    pdf.set_xy(18, 14)
+    pdf.set_xy(16, 12)
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(*_DARK)
     pdf.cell(w, 10, d["name"], ln=True)
     if d["title"]:
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(*_GRAY)
-        pdf.cell(w, 7, d["title"], ln=True)
+        pdf.cell(w, 6, d["title"], ln=True)
     # Línea separadora bajo el encabezado
     pdf.set_draw_color(*_DARK)
     pdf.set_line_width(0.6)
-    pdf.line(18, pdf.get_y() + 2, 18 + w, pdf.get_y() + 2)
-    pdf.ln(8)
+    pdf.line(16, pdf.get_y() + 1.5, 16 + w, pdf.get_y() + 1.5)
+    pdf.ln(6)
 
     def _section_header(label: str) -> None:
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(*_DARK)
-        pdf.cell(w, 7, _safe_text(label), ln=True)
+        pdf.cell(w, 6, _safe_text(label), ln=True)
         pdf.set_draw_color(*_GRAY)
         pdf.set_line_width(0.3)
-        pdf.line(18, pdf.get_y(), 18 + w, pdf.get_y())
-        pdf.ln(3)
+        pdf.line(16, pdf.get_y(), 16 + w, pdf.get_y())
+        pdf.ln(2)
         pdf.set_text_color(*_DARK)
 
     def _render_bullets(bullets: list) -> None:
@@ -641,11 +641,11 @@ def _pdf_ats_minimal(cv_json: dict, candidate_name: str = "") -> bytes:
 
     if d["summary"]:
         _section_header("PERFIL PROFESIONAL")
-        pdf.set_x(18)
+        pdf.set_x(16)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(w, 5.5, _safe_text(d["summary"]))
-        pdf.ln(4)
+        pdf.multi_cell(w, 5.0, _safe_text(d["summary"]))
+        pdf.ln(3)
 
     if d["experience"]:
         _section_header("EXPERIENCIA PROFESIONAL")
