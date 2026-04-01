@@ -44,6 +44,58 @@ function withSelectedTemplate(cvJson, template) {
   };
 }
 
+function createItemId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createEmptySectionItem(section) {
+  switch (section) {
+    case "experience":
+      return {
+        id: createItemId("exp"),
+        company: "",
+        role: "",
+        period: "",
+        location: "",
+        bullets: [""],
+        flagged: false,
+      };
+    case "education":
+      return {
+        id: createItemId("edu"),
+        degree: "",
+        institution: "",
+        year: "",
+        flagged: false,
+      };
+    case "skills":
+      return {
+        category: "",
+        items: [],
+      };
+    case "languages":
+      return {
+        language: "",
+        level: "",
+      };
+    case "projects":
+      return {
+        id: createItemId("proj"),
+        name: "",
+        url: "",
+        bullets: [""],
+        flagged: false,
+      };
+    case "certifications":
+      return {
+        name: "",
+        year: "",
+      };
+    default:
+      return {};
+  }
+}
+
 function actionBtnStyle(color) {
   return {
     padding: "4px 10px", borderRadius: 12,
@@ -227,6 +279,23 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
       else hidden.add(section);
       return {
         ...p,
+        meta: {
+          ...(p.meta || {}),
+          hidden_sections: SECTION_KEYS.filter(key => hidden.has(key)),
+        },
+      };
+    });
+  };
+
+  const addBlock = (section) => {
+    const newItem = createEmptySectionItem(section);
+    logAction({ type: "add_block", section, id: newItem.id || null });
+    setCvJson(p => {
+      const hidden = new Set(getHiddenSections(p));
+      hidden.delete(section);
+      return {
+        ...p,
+        [section]: [...(p[section] || []), newItem],
         meta: {
           ...(p.meta || {}),
           hidden_sections: SECTION_KEYS.filter(key => hidden.has(key)),
@@ -507,6 +576,9 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                   </div>
                 </DragCard>
               ))}
+              <button onClick={() => addBlock("experience")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar experiencia
+              </button>
             </SectionWrap>
 
             {/* EDUCACIÓN */}
@@ -529,6 +601,9 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                   </div>
                 </DragCard>
               ))}
+              <button onClick={() => addBlock("education")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar estudio
+              </button>
             </SectionWrap>
 
             {/* HABILIDADES */}
@@ -558,8 +633,14 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                       placeholder="Habilidades separadas por coma"
                     />
                   </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                    <button onClick={() => deleteBlock("skills", idx)} style={actionBtnStyle("#ef4444")}>Eliminar</button>
+                  </div>
                 </div>
               ))}
+              <button onClick={() => addBlock("skills")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar categoria
+              </button>
             </SectionWrap>
 
             {/* IDIOMAS */}
@@ -586,8 +667,12 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                     style={{ ...inputStyle, flex: 1 }}
                     placeholder="Nivel (ej. Nativo, C1, Intermedio)"
                   />
+                  <button onClick={() => deleteBlock("languages", idx)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 16, padding: "3px 4px", lineHeight: 1 }}>x</button>
                 </div>
               ))}
+              <button onClick={() => addBlock("languages")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar idioma
+              </button>
             </SectionWrap>
 
             {/* PROYECTOS */}
@@ -624,6 +709,9 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                   </div>
                 </DragCard>
               ))}
+              <button onClick={() => addBlock("projects")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar proyecto
+              </button>
             </SectionWrap>
 
             {/* CERTIFICACIONES */}
@@ -650,8 +738,12 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                     style={{ ...inputStyle, width: 80, flexShrink: 0 }}
                     placeholder="Año"
                   />
+                  <button onClick={() => deleteBlock("certifications", idx)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 16, padding: "3px 4px", lineHeight: 1 }}>x</button>
                 </div>
               ))}
+              <button onClick={() => addBlock("certifications")} style={{ fontSize: 11, fontWeight: 700, color: PURPLE, background: "none", border: `1px dashed ${dm ? "rgba(124,58,237,0.4)" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}>
+                + Agregar certificacion
+              </button>
             </SectionWrap>
 
           </div>}
