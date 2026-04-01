@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeCV, improveCVFull, downloadCVPdf, getMyImprovements, searchFromImprovement } from "../services/api";
+import { analyzeCV, improveCVFull, downloadCVPdf, getMyImprovements, searchFromImprovement, getCVEdit } from "../services/api";
 import CompanyLogo from "../components/CompanyLogo";
+import CVEditorModal from "../components/CVEditorModal";
 import {
   gradients,
   typography,
@@ -1101,6 +1102,7 @@ function ImproveTabNew({
   const [isDragging, setIsDragging] = useState(false);
   const [cvExpanded, setCvExpanded] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setIsDragging(false);
@@ -1197,6 +1199,15 @@ function ImproveTabNew({
               }}>
                 {downloading ? "Generando..." : "Descargar PDF"}
               </button>
+              {result?.cv_structured_json && (
+                <button onClick={() => setEditorOpen(true)} style={{
+                  padding: "8px 16px", borderRadius: 20, border: "1.5px solid #7c3aed",
+                  background: "none", color: "#7c3aed", cursor: "pointer",
+                  fontSize: 13, fontWeight: 700, fontFamily: typography.family,
+                }}>
+                  Editar CV
+                </button>
+              )}
               <button onClick={() => { setResult(null); setFile(null); setError(null); }} style={{
                 padding: "8px 16px", borderRadius: 20, border: "1.5px solid #e9d5ff",
                 background: "none", color: "#7c3aed", cursor: "pointer",
@@ -1206,6 +1217,16 @@ function ImproveTabNew({
               </button>
             </div>
           </div>
+
+          {editorOpen && result?.cv_structured_json && (
+            <CVEditorModal
+              improvementId={result.improvement_id}
+              initialJson={result.cv_structured_json}
+              dm={dm}
+              onClose={() => setEditorOpen(false)}
+              onSaved={(editedJson) => setResult(r => ({ ...r, cv_structured_json: editedJson }))}
+            />
+          )}
 
           {/* ATS Scores */}
           <ImproveSection title="Puntuacion ATS" color="#7c3aed" icon="📊" dm={dm}>
@@ -1342,6 +1363,8 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
   const [improvements, setImprovements] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);
+  const [editorState, setEditorState] = useState({ open: false, id: null, json: null });
+  const [editLoading, setEditLoading] = useState(null);
 
   useEffect(() => {
     getMyImprovements()
@@ -1355,6 +1378,22 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
     try { await downloadCVPdf(id); }
     catch (err) { addToast?.(err?.detail || "Error al descargar", "error"); }
     finally { setDownloading(null); }
+  };
+
+  const handleOpenEditor = async (id) => {
+    setEditLoading(id);
+    try {
+      const data = await getCVEdit(id);
+      if (data.source === "legacy" || !data.cv_json) {
+        addToast?.("Este CV no tiene edición disponible. Regenera el CV para poder editarlo.", "error");
+        return;
+      }
+      setEditorState({ open: true, id, json: data.cv_json });
+    } catch (err) {
+      addToast?.(err?.message || "Error al cargar el CV", "error");
+    } finally {
+      setEditLoading(null);
+    }
   };
 
   if (loading) return (
@@ -1424,6 +1463,14 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
               }}>
                 {downloading === imp.id ? "..." : "PDF"}
               </button>
+              <button onClick={() => handleOpenEditor(imp.id)} disabled={editLoading === imp.id} style={{
+                padding: "7px 14px", borderRadius: 20, border: "1.5px solid #7c3aed",
+                background: "none", color: "#7c3aed", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, fontFamily: typography.family,
+                opacity: editLoading === imp.id ? 0.7 : 1,
+              }}>
+                {editLoading === imp.id ? "..." : "Editar"}
+              </button>
               <button onClick={() => onSearchFromId(imp.id)} style={{
                 padding: "7px 14px", borderRadius: 20, border: "1.5px solid #2563eb",
                 background: "none", color: "#2563eb", cursor: "pointer",
@@ -1435,6 +1482,16 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
           </div>
         ))}
       </div>
+
+      {editorState.open && editorState.json && (
+        <CVEditorModal
+          improvementId={editorState.id}
+          initialJson={editorState.json}
+          dm={dm}
+          onClose={() => setEditorState({ open: false, id: null, json: null })}
+          onSaved={(editedJson) => setEditorState(s => ({ ...s, json: editedJson }))}
+        />
+      )}
     </div>
   );
 }

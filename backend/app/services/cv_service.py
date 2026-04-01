@@ -92,13 +92,30 @@ def extract_text_from_pdf(content: bytes) -> str:
     return full_text
 
 
-def _truncate_cv_text(text: str, max_chars: int = 9000) -> str:
-    """Trunca el texto del CV para no exceder el contexto del modelo."""
+def _truncate_cv_text(text: str, max_chars: int = 12000) -> str:
+    """Trunca el texto del CV intentando no cortar en medio de una sección.
+
+    Busca el último salto de sección antes del límite para no dejar
+    una experiencia/educación partida a la mitad.
+    """
     if len(text) <= max_chars:
         return text
-    head = text[: max_chars * 2 // 3].rstrip()
-    tail = text[-(max_chars // 3) :].lstrip()
-    return f"{head}\n...\n{tail}"
+
+    # Intentar cortar en un límite de sección (línea en blanco antes de bloque clave)
+    _SECTION_STARTS = (
+        "\nEXPERIENCIA", "\nEDUCACIÓN", "\nEDUCACION",
+        "\nHABILIDADES", "\nIDIOMAS", "\nPROYECTOS",
+        "\nCERTIFICACIONES", "\nRESUMEN",
+        # inglés (por si el CV original las usa)
+        "\nEXPERIENCE", "\nEDUCATION", "\nSKILLS", "\nLANGUAGES",
+    )
+    candidate_cut = max_chars
+    for marker in _SECTION_STARTS:
+        pos = text.rfind(marker, 0, max_chars)
+        if pos > max_chars // 2 and pos > candidate_cut - 1000:
+            candidate_cut = pos
+
+    return text[:candidate_cut].rstrip()
 
 
 def _extract_json_from_response(raw: str) -> dict:
@@ -473,94 +490,93 @@ async def improve_cv_full(
     text: str,
     api_key: str,
     user_id: Optional[int] = None,
+    edit_context: str = "",
 ) -> tuple[dict, object]:
     """
     Llama a Claude para:
     1. Analizar el CV (ATS score + problemas)
-    2. Generar el texto COMPLETO del CV mejorado
-    Devuelve (full_result_dict, usage).
+    2. Generar el CV mejorado como JSON estructurado canónico
 
-    full_result_dict contiene:
-      ats_score_before, ats_score_after, problems_detected,
-      key_improvements, keywords_to_add, improved_cv_text
+    Devuelve (full_result_dict, usage).
+    full_result_dict contiene: ats_score_before, ats_score_after,
+      problems_detected, key_improvements, keywords_to_add,
+      cv_structured_json (dict), improved_cv_text (str derivado del JSON)
     """
     client = anthropic.Anthropic(api_key=api_key)
 
     system_prompt = (
         "Eres un experto en CVs optimizados para ATS con 15 años en selección técnica española. "
-        "Tu tarea es analizar un CV y devolver ÚNICAMENTE un JSON válido con el análisis y el CV mejorado completo. "
+        "Tu tarea es analizar un CV y devolver ÚNICAMENTE un JSON válido con el análisis y el CV mejorado. "
         "Sin texto adicional, sin bloques markdown. "
         "NUNCA inventas información: solo reorganizas, mejoras la redacción y optimizas para ATS. "
-        "Todo el texto del CV mejorado debe estar en español, con tildes y ñ correctamente escritas."
+        "Todo el texto debe estar en español correcto, con tildes (á,é,í,ó,ú) y ñ. "
+        "Cada experiencia laboral es un objeto JSON independiente: NUNCA mezcles empresa, cargo, "
+        "fechas o bullets de una experiencia con otra."
     )
+
+    if edit_context:
+        system_prompt += f"\n\nCORRECCIONES PREVIAS DEL USUARIO (aplicar misma lógica):\n{edit_context}"
 
     user_prompt = f"""Analiza este CV y devuelve un JSON con EXACTAMENTE esta estructura:
 
 {{
-  "ats_score_before": número 0-100 (evaluación del CV original),
-  "ats_score_after": número 0-100 (estimación tras las mejoras, siempre >= before),
+  "ats_score_before": número entero 0-100,
+  "ats_score_after": número entero 0-100 (siempre >= before),
   "problems_detected": [
-    {{"category": "keywords|structure|verbos|metrics|format", "description": "descripción del problema en español"}}
+    {{"category": "keywords|structure|verbos|metrics|format", "description": "descripción en español"}}
   ],
-  "key_improvements": ["mejora aplicada 1 en español", "mejora aplicada 2"],
-  "keywords_to_add": ["keyword1", "keyword2"],
-  "improved_cv_text": "TEXTO COMPLETO DEL CV MEJORADO en el formato indicado abajo"
+  "key_improvements": ["mejora 1", "mejora 2"],
+  "keywords_to_add": ["kw1", "kw2"],
+  "cv_structured_json": {{
+    "meta": {{"version": 1, "warnings": [], "source": "ai_generated"}},
+    "personal": {{"name": "nombre completo del CV", "title": "título profesional optimizado"}},
+    "summary": "resumen profesional 3-4 frases con keywords ATS",
+    "experience": [
+      {{
+        "id": "exp_0",
+        "company": "nombre exacto de la empresa",
+        "role": "cargo exacto",
+        "period": "periodo exacto del CV",
+        "location": "ciudad/modalidad si aparece",
+        "bullets": ["logro mejorado con verbo acción + métrica real"],
+        "flagged": false
+      }}
+    ],
+    "education": [
+      {{
+        "id": "edu_0",
+        "degree": "título académico exacto",
+        "institution": "institución exacta",
+        "year": "año si aparece",
+        "flagged": false
+      }}
+    ],
+    "skills": [
+      {{"category": "Lenguajes", "items": ["Python", "Java"]}}
+    ],
+    "languages": [
+      {{"language": "Español", "level": "Nativo"}}
+    ],
+    "projects": [],
+    "certifications": []
+  }}
 }}
 
-FORMATO OBLIGATORIO para improved_cv_text (usa EXACTAMENTE estos marcadores de sección):
+REGLAS ABSOLUTAS — incumplirlas invalida el resultado:
+1. NO inventar NADA: empresas, cargos, fechas, tecnologías, proyectos, certificaciones
+2. Cada objeto en experience[] contiene SOLO los datos de ESA empresa — nunca mezcles bullets de otra
+3. projects[] y certifications[] solo si EXISTEN en el CV original; si no, déjalos como []
+4. education[] es para estudios académicos; certifications[] para certificados profesionales
+5. ats_score_before y ats_score_after son números enteros, no strings
+6. Todo el texto en español con tildes correctas
 
-NAME: [Nombre completo del candidato tal como aparece en el CV]
-TITLE: [Título profesional optimizado para ATS en español]
-
-RESUMEN
-[3-4 frases de perfil profesional en español con keywords del sector, verbos de impacto y métricas reales del CV]
-
-EXPERIENCIA
-[Empresa] | [Cargo] | [Periodo]
-- [Logro mejorado con verbo de acción en español + métrica real, ej: Reduje el tiempo de carga en un 40%]
-- [Logro 2]
-
-[Empresa 2] | [Cargo] | [Periodo]
-- [Logro 1]
-
-EDUCACIÓN
-[Título] | [Institución] | [Año]
-
-HABILIDADES
-Lenguajes: [lista]
-Frameworks: [lista]
-Bases de datos: [lista, solo si aplica]
-Cloud/DevOps: [lista, solo si aplica]
-Herramientas: [lista, solo si aplica]
-
-IDIOMAS
-[Idioma]: [Nivel]
-
-[INCLUIR SOLO SI EL CV ORIGINAL CONTIENE PROYECTOS:]
-PROYECTOS
-[Nombre del proyecto] | [URL completa si existe en el CV, ej: https://github.com/usuario/repo]
-- [Descripción mejorada basada en lo que aparece en el CV]
-
-[INCLUIR SOLO SI EL CV ORIGINAL CONTIENE CERTIFICACIONES REALES:]
-CERTIFICACIONES
-[Nombre de la certificación] ([Año si aparece en el CV])
-
-REGLAS CRÍTICAS — incumplirlas invalida el resultado:
-1. NO inventar NINGUNA información: experiencias, proyectos, tecnologías, certificaciones, fechas
-2. SOLO reorganizar, mejorar redacción y optimizar para ATS usando el contenido real del CV
-3. Todo el texto en ESPAÑOL: usar tildes (á, é, í, ó, ú) y ñ correctamente
-4. Omitir completamente las secciones PROYECTOS y CERTIFICACIONES si no aparecen en el CV original
-5. Los marcadores de sección van solos en su línea, en MAYÚSCULAS, sin dos puntos al final
-6. Educación se llama EDUCACIÓN (nunca CERTIFICATIONS ni CERTIFICATIONS para estudios)
-7. ats_score_before y ats_score_after son números enteros 0-100
-
-CV a analizar y mejorar:
-{_truncate_cv_text(text, max_chars=7000)}"""
+CV original a analizar:
+{_truncate_cv_text(text, max_chars=12000)}"""
 
     try:
         response = client.messages.create(
             model=CV_AI_MODEL,
-            max_tokens=4000,
+            max_tokens=6000,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -575,7 +591,7 @@ CV a analizar y mejorar:
     except Exception:
         raise HTTPException(status_code=502, detail="La IA no pudo procesar el CV. Inténtalo de nuevo.")
 
-    result = _sanitize_full_improvement(raw)
+    result = _sanitize_full_improvement(raw, original_cv_text=text)
 
     try:
         from app.database import get_session_local
@@ -599,7 +615,7 @@ CV a analizar y mejorar:
     return result, response.usage
 
 
-def _sanitize_full_improvement(raw: dict) -> dict:
+def _sanitize_full_improvement(raw: dict, original_cv_text: str = "") -> dict:
     """Normaliza y valida el resultado completo de mejora de CV."""
     def safe_int(val, default: int, lo: int = 0, hi: int = 100) -> int:
         try:
@@ -617,12 +633,19 @@ def _sanitize_full_improvement(raw: dict) -> dict:
             return []
         return [x for x in val[:max_items] if isinstance(x, dict)]
 
-    def safe_str(val, fallback: str = "") -> str:
-        s = str(val or "").strip()
-        return s if s else fallback
-
     score_before = safe_int(raw.get("ats_score_before"), 40)
     score_after = max(safe_int(raw.get("ats_score_after"), score_before + 20), score_before)
+
+    # Obtener y normalizar el JSON estructurado del CV
+    raw_cv_json = raw.get("cv_structured_json") or {}
+    if not isinstance(raw_cv_json, dict):
+        raw_cv_json = {}
+
+    cv_structured = normalize_cv_structured(raw_cv_json)
+    cv_structured = validate_cv_structured(cv_structured, original_cv_text)
+
+    # Derivar improved_cv_text desde JSON para retrocompatibilidad
+    improved_cv_text = derive_improved_cv_text_from_json(cv_structured)
 
     return {
         "ats_score_before": score_before,
@@ -630,8 +653,302 @@ def _sanitize_full_improvement(raw: dict) -> dict:
         "problems_detected": safe_list_dicts(raw.get("problems_detected"), 8),
         "key_improvements": safe_list_str(raw.get("key_improvements"), 8),
         "keywords_to_add": safe_list_str(raw.get("keywords_to_add"), 15),
-        "improved_cv_text": safe_str(raw.get("improved_cv_text")),
+        "cv_structured_json": cv_structured,
+        "improved_cv_text": improved_cv_text,
     }
+
+
+def normalize_cv_structured(cv_json: dict) -> dict:
+    """Normaliza el JSON canónico del CV: garantiza arrays, strings vacíos, IDs estables.
+
+    No añade ni inventa contenido. Solo limpia y completa la estructura.
+    """
+    def s(val, fallback: str = "") -> str:
+        return str(val or "").strip() or fallback
+
+    def ensure_list(val) -> list:
+        return val if isinstance(val, list) else []
+
+    personal = cv_json.get("personal") or {}
+    skills_raw = ensure_list(cv_json.get("skills"))
+    langs_raw = ensure_list(cv_json.get("languages"))
+
+    experience = []
+    for i, exp in enumerate(ensure_list(cv_json.get("experience"))):
+        if not isinstance(exp, dict):
+            continue
+        bullets = [b for b in ensure_list(exp.get("bullets")) if str(b or "").strip()]
+        experience.append({
+            "id": exp.get("id") or f"exp_{i}",
+            "company": s(exp.get("company")),
+            "role": s(exp.get("role")),
+            "period": s(exp.get("period")),
+            "location": s(exp.get("location")),
+            "bullets": bullets,
+            "flagged": bool(exp.get("flagged", False)),
+        })
+
+    education = []
+    for i, edu in enumerate(ensure_list(cv_json.get("education"))):
+        if not isinstance(edu, dict):
+            continue
+        education.append({
+            "id": edu.get("id") or f"edu_{i}",
+            "degree": s(edu.get("degree")),
+            "institution": s(edu.get("institution")),
+            "year": s(edu.get("year")),
+            "flagged": bool(edu.get("flagged", False)),
+        })
+
+    projects = []
+    for i, proj in enumerate(ensure_list(cv_json.get("projects"))):
+        if not isinstance(proj, dict):
+            continue
+        bullets = [b for b in ensure_list(proj.get("bullets")) if str(b or "").strip()]
+        projects.append({
+            "id": proj.get("id") or f"proj_{i}",
+            "name": s(proj.get("name")),
+            "url": s(proj.get("url")),
+            "bullets": bullets,
+            "flagged": bool(proj.get("flagged", False)),
+        })
+
+    certifications = []
+    for i, cert in enumerate(ensure_list(cv_json.get("certifications"))):
+        if not isinstance(cert, dict):
+            continue
+        certifications.append({
+            "id": cert.get("id") or f"cert_{i}",
+            "name": s(cert.get("name")),
+            "year": s(cert.get("year")),
+            "flagged": bool(cert.get("flagged", False)),
+        })
+
+    skills = []
+    for sg in skills_raw:
+        if isinstance(sg, dict):
+            items = [str(it).strip() for it in ensure_list(sg.get("items")) if str(it or "").strip()]
+            if items:
+                skills.append({"category": s(sg.get("category"), "Otros"), "items": items})
+        elif isinstance(sg, str) and sg.strip():
+            skills.append({"category": "Habilidades", "items": [sg.strip()]})
+
+    languages = []
+    for lang in langs_raw:
+        if isinstance(lang, dict):
+            languages.append({"language": s(lang.get("language")), "level": s(lang.get("level"))})
+
+    meta_raw = cv_json.get("meta") or {}
+    meta = {
+        "version": int(meta_raw.get("version") or 1),
+        "warnings": ensure_list(meta_raw.get("warnings")),
+        "source": str(meta_raw.get("source") or "ai_generated"),
+    }
+
+    # Reasignar IDs consecutivos para garantizar unicidad
+    for i, exp in enumerate(experience):
+        exp["id"] = f"exp_{i}"
+    for i, edu in enumerate(education):
+        edu["id"] = f"edu_{i}"
+    for i, proj in enumerate(projects):
+        proj["id"] = f"proj_{i}"
+    for i, cert in enumerate(certifications):
+        cert["id"] = f"cert_{i}"
+
+    return {
+        "meta": meta,
+        "personal": {"name": s(personal.get("name")), "title": s(personal.get("title"))},
+        "summary": s(cv_json.get("summary")),
+        "experience": experience,
+        "education": education,
+        "skills": skills,
+        "languages": languages,
+        "projects": projects,
+        "certifications": certifications,
+    }
+
+
+def validate_cv_structured(cv_json: dict, original_cv_text: str = "") -> dict:
+    """Valida el JSON canónico y marca bloques sospechosos con flagged=True.
+
+    Nunca lanza excepción ni inventa correcciones. Solo señala riesgo.
+    """
+    import re
+    warnings: list[str] = list(cv_json.get("meta", {}).get("warnings") or [])
+
+    # Set de nombres de empresa en minúsculas para detectar contaminación cruzada
+    company_names = {
+        exp["company"].lower()
+        for exp in cv_json.get("experience", [])
+        if exp.get("company")
+    }
+
+    for exp in cv_json.get("experience", []):
+        exp_id = exp.get("id", "?")
+        company_lower = exp.get("company", "").lower()
+        bullets = exp.get("bullets", [])
+
+        # Regla 1: demasiados bullets → posible mezcla
+        if len(bullets) > 12:
+            exp["flagged"] = True
+            warnings.append(f"{exp_id}: {len(bullets)} bullets (posible mezcla de experiencias)")
+
+        # Regla 2: company o role vacíos → bloque incompleto
+        if not exp.get("company", "").strip() or not exp.get("role", "").strip():
+            exp["flagged"] = True
+            warnings.append(f"{exp_id}: company o role vacíos")
+
+        # Regla 3: bullet menciona otra empresa (contaminación cruzada)
+        for bullet in bullets:
+            b_lower = bullet.lower()
+            for other_company in company_names:
+                if other_company and other_company != company_lower:
+                    # Buscar como palabra completa (3+ chars para evitar falsos positivos)
+                    if len(other_company) >= 4 and re.search(
+                        r"\b" + re.escape(other_company) + r"\b", b_lower
+                    ):
+                        exp["flagged"] = True
+                        warnings.append(
+                            f"{exp_id}: bullet menciona '{other_company}' (otra empresa del CV)"
+                        )
+                        break
+
+    # Regla 4: education con degree e institution vacíos
+    for edu in cv_json.get("education", []):
+        if not edu.get("degree", "").strip() and not edu.get("institution", "").strip():
+            edu["flagged"] = True
+            warnings.append(f"{edu.get('id','?')}: educación sin título ni institución")
+
+    # Regla 5: conteo de experiencias muy diferente al original (si tenemos texto)
+    if original_cv_text:
+        # Estimación simple: líneas que parecen "Empresa | Cargo" en el original
+        orig_exp_approx = len(re.findall(
+            r"(?:^|\n)[A-ZÁÉÍÓÚÑ][^\n]{2,40}\s*[\|·]\s*[A-ZÁÉÍÓÚÑ]",
+            original_cv_text, re.MULTILINE
+        ))
+        generated_count = len(cv_json.get("experience", []))
+        if orig_exp_approx > 0 and abs(generated_count - orig_exp_approx) > 2:
+            warnings.append(
+                f"Conteo de experiencias: {generated_count} generadas vs ~{orig_exp_approx} detectadas en original"
+            )
+
+    cv_json["meta"]["warnings"] = warnings
+    return cv_json
+
+
+def derive_improved_cv_text_from_json(cv_json: dict) -> str:
+    """Deriva el texto legacy improved_cv_text desde el JSON canónico.
+
+    Se usa para mantener compatibilidad con search_from_improvement
+    que llama a analyze_cv_with_ai(record.improved_cv_text).
+    """
+    lines: list[str] = []
+    personal = cv_json.get("personal") or {}
+    lines.append(f"NAME: {personal.get('name', '')}")
+    lines.append(f"TITLE: {personal.get('title', '')}")
+
+    if cv_json.get("summary"):
+        lines.append("")
+        lines.append("RESUMEN")
+        lines.append(cv_json["summary"])
+
+    experiences = cv_json.get("experience") or []
+    if experiences:
+        lines.append("")
+        lines.append("EXPERIENCIA")
+        for exp in experiences:
+            loc = f" | {exp['location']}" if exp.get("location") else ""
+            lines.append(f"{exp.get('company','')} | {exp.get('role','')} | {exp.get('period','')}{loc}")
+            for b in exp.get("bullets") or []:
+                lines.append(f"- {b}")
+            lines.append("")
+
+    education = cv_json.get("education") or []
+    if education:
+        lines.append("EDUCACIÓN")
+        for edu in education:
+            lines.append(f"{edu.get('degree','')} | {edu.get('institution','')} | {edu.get('year','')}")
+        lines.append("")
+
+    skills = cv_json.get("skills") or []
+    if skills:
+        lines.append("HABILIDADES")
+        for sg in skills:
+            items_str = ", ".join(sg.get("items") or [])
+            lines.append(f"{sg.get('category','')}: {items_str}")
+        lines.append("")
+
+    languages = cv_json.get("languages") or []
+    if languages:
+        lines.append("IDIOMAS")
+        for lang in languages:
+            lines.append(f"{lang.get('language','')}: {lang.get('level','')}")
+        lines.append("")
+
+    projects = cv_json.get("projects") or []
+    if projects:
+        lines.append("PROYECTOS")
+        for proj in projects:
+            url_part = f" | {proj['url']}" if proj.get("url") else ""
+            lines.append(f"{proj.get('name','')}{url_part}")
+            for b in proj.get("bullets") or []:
+                lines.append(f"- {b}")
+            lines.append("")
+
+    certifications = cv_json.get("certifications") or []
+    if certifications:
+        lines.append("CERTIFICACIONES")
+        for cert in certifications:
+            year_part = f" ({cert['year']})" if cert.get("year") else ""
+            lines.append(f"{cert.get('name','')}{year_part}")
+
+    return "\n".join(lines)
+
+
+def build_edit_context_for_prompt(action_log_json_str: str) -> str:
+    """Construye un resumen de correcciones previas del usuario para el prompt.
+
+    Extrae patrones de move_block, edit_field y mark_incorrect.
+    Devuelve string de máx ~500 chars, o "" si no hay nada relevante.
+    """
+    import json as _json
+    try:
+        actions = _json.loads(action_log_json_str or "[]")
+    except Exception:
+        return ""
+
+    if not isinstance(actions, list) or len(actions) < 2:
+        return ""
+
+    moved_blocks: list[str] = []
+    edited_companies: list[str] = []
+    marked_incorrect: list[str] = []
+
+    for act in actions:
+        if not isinstance(act, dict):
+            continue
+        t = act.get("type", "")
+        if t == "move_block":
+            moved_blocks.append(
+                f"{act.get('block_id','?')}: {act.get('from_section','?')} → {act.get('to_section','?')}"
+            )
+        elif t == "edit_field" and act.get("field") == "company":
+            edited_companies.append(
+                f"'{act.get('old_value','?')}' → '{act.get('new_value','?')}'"
+            )
+        elif t == "mark_incorrect":
+            marked_incorrect.append(str(act.get("block_id", "?")))
+
+    parts: list[str] = []
+    if moved_blocks:
+        parts.append("Bloques reubicados: " + "; ".join(moved_blocks[:5]))
+    if edited_companies:
+        parts.append("Empresas corregidas: " + "; ".join(edited_companies[:3]))
+    if marked_incorrect:
+        parts.append("Marcados como incorrectos: " + ", ".join(marked_incorrect[:4]))
+
+    result = " | ".join(parts)
+    return result[:500] if result else ""
 
 
 def build_adzuna_search_params(structured_profile: dict) -> tuple[list[str], list[str]]:
