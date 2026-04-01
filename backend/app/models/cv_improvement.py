@@ -13,7 +13,8 @@ class CVImprovement(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     ats_result_id = Column(Integer, ForeignKey("cv_ats_results.id"), nullable=True, index=True)
-    improved_cv_text = Column(Text, nullable=False)   # Texto completo del CV mejorado
+    improved_cv_text = Column(Text, nullable=False)      # Texto legacy (derivado del JSON)
+    cv_structured_json = Column(Text, nullable=True)      # JSON canónico del CV mejorado
     ats_score_before = Column(Integer, nullable=False)
     ats_score_after = Column(Integer, nullable=False)
     meta_json = Column(Text, nullable=True)  # JSON: keywords_added, improvements list, etc.

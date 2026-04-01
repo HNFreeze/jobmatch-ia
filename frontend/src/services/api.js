@@ -445,3 +445,42 @@ export async function clearAdminCache() {
   if (!response.ok) throw await buildApiError(response, "Error al limpiar el caché");
   return response.json();
 }
+
+// CV Edit sessions
+export async function getCVEdit(improvementId) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar la sesión de edición del CV");
+  return response.json();
+}
+
+export async function saveCVEdit(improvementId, editedCvJson, actionLog) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ edited_cv_json: editedCvJson, action_log: actionLog }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al guardar los cambios del CV");
+  return response.json();
+}
+
+export async function downloadCVPdfFromEdit(improvementId) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/pdf`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al generar el PDF del CV");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const newTab = window.open(url, "_blank", "noopener");
+  if (!newTab) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cv_mejorado_${improvementId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}

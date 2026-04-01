@@ -13,23 +13,26 @@ Endpoints:
 import hashlib
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request, UploadFile, File
 from fastapi.responses import JSONResponse, Response
 
 from app.database import get_session_local
 from app.models.cv_analysis import CVAnalysis
 from app.models.cv_ats_result import CVAtsResult
+from app.models.cv_edit_session import CVEditSession
 from app.models.cv_improvement import CVImprovement
 from app.routers.user import get_current_user_record
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
-from app.services.cv_pdf_service import generate_cv_pdf
+from app.services.cv_pdf_service import generate_cv_pdf, generate_cv_pdf_from_json
 from app.services.cv_service import (
     analyze_cv_with_ai,
     build_adzuna_search_params,
+    build_edit_context_for_prompt,
     build_matching_profile,
     extract_text_from_pdf,
     hash_cv_text,
@@ -294,6 +297,21 @@ async def improve_cv_full_endpoint(
         cv_text = extract_text_from_pdf(content)
         cv_hash = hash_cv_text(cv_text)
 
+        # ── Contexto de correcciones previas del usuario (<90 días) ──────────
+        cutoff = datetime.utcnow() - timedelta(days=90)
+        recent_edit = (
+            db.query(CVEditSession)
+            .filter(
+                CVEditSession.user_id == user.id,
+                CVEditSession.updated_at >= cutoff,
+            )
+            .order_by(CVEditSession.updated_at.desc())
+            .first()
+        )
+        edit_context = ""
+        if recent_edit:
+            edit_context = build_edit_context_for_prompt(recent_edit.action_log_json)
+
         # ── Cache: ¿ya analizamos este CV hoy? ───────────────────────────────
         cached_ats = (
             db.query(CVAtsResult)
@@ -302,15 +320,17 @@ async def improve_cv_full_endpoint(
             .first()
         )
 
-        # ── Llamada IA (o recuperar del caché) ───────────────────────────────
-        full_result, _usage = await improve_cv_full(cv_text, api_key, user_id=user.id)
+        # ── Llamada IA ───────────────────────────────────────────────────────
+        full_result, _usage = await improve_cv_full(
+            cv_text, api_key, user_id=user.id, edit_context=edit_context
+        )
 
         # Guardar ATS result si no había caché idéntico
         if cached_ats is None:
             ats_record = CVAtsResult(
                 user_id=user.id,
                 cv_text_hash=cv_hash,
-                original_cv_text=cv_text[:50000],  # Limitar a 50K chars
+                original_cv_text=cv_text[:50000],
                 ats_score_before=full_result["ats_score_before"],
                 feedback_json=json.dumps({
                     "problems_detected": full_result["problems_detected"],
@@ -324,16 +344,20 @@ async def improve_cv_full_endpoint(
         else:
             ats_result_id = cached_ats.id
 
-        # Guardar improvement
+        # Guardar improvement (incluye cv_structured_json si lo generó la IA)
         meta = {
             "problems_detected": full_result["problems_detected"],
             "key_improvements": full_result["key_improvements"],
             "keywords_to_add": full_result["keywords_to_add"],
         }
+        cv_structured = full_result.get("cv_structured_json")
         improvement_record = CVImprovement(
             user_id=user.id,
             ats_result_id=ats_result_id,
             improved_cv_text=full_result["improved_cv_text"],
+            cv_structured_json=(
+                json.dumps(cv_structured, ensure_ascii=False) if cv_structured else None
+            ),
             ats_score_before=full_result["ats_score_before"],
             ats_score_after=full_result["ats_score_after"],
             meta_json=json.dumps(meta, ensure_ascii=False),
@@ -351,6 +375,7 @@ async def improve_cv_full_endpoint(
                 "key_improvements": full_result["key_improvements"],
                 "keywords_to_add": full_result["keywords_to_add"],
                 "improved_cv_text": full_result["improved_cv_text"],
+                "cv_structured_json": cv_structured,
                 "quota": {
                     "cv_improve_used": quota.get("cv_improve_count", 0),
                     "cv_improve_remaining": quota.get("cv_improve_remaining", 0),
@@ -384,7 +409,33 @@ def download_cv_pdf(
             raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
 
         candidate_name = getattr(user, "nombre", "") or getattr(user, "alias", "") or ""
-        pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
+
+        # Fallback: edit_session → cv_structured_json → improved_cv_text (legacy)
+        edit_session = (
+            db.query(CVEditSession)
+            .filter(
+                CVEditSession.improvement_id == improvement_id,
+                CVEditSession.user_id == user.id,
+            )
+            .order_by(CVEditSession.updated_at.desc())
+            .first()
+        )
+
+        pdf_bytes: bytes
+        if edit_session:
+            try:
+                edited_json = json.loads(edit_session.edited_cv_json)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name)
+            except Exception:
+                pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
+        elif record.cv_structured_json:
+            try:
+                structured = json.loads(record.cv_structured_json)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name)
+            except Exception:
+                pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
+        else:
+            pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
 
         filename = f"cv_mejorado_{improvement_id}.pdf"
         return Response(
@@ -579,6 +630,223 @@ def get_latest_cv_analysis(user=Depends(get_current_user_record)):
                 }
             },
             media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+# ── Edición interactiva del CV mejorado ───────────────────────────────────────
+
+@router.get("/api/cv/improvement/{improvement_id}/edit")
+def get_cv_edit(
+    improvement_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    """
+    Devuelve el JSON editable del CV mejorado.
+    Prioridad: edit_session → cv_structured_json → source=legacy (sin JSON).
+    """
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        improvement = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
+            .first()
+        )
+        if not improvement:
+            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+
+        # ¿Hay sesión de edición guardada?
+        edit_session = (
+            db.query(CVEditSession)
+            .filter(
+                CVEditSession.improvement_id == improvement_id,
+                CVEditSession.user_id == user.id,
+            )
+            .order_by(CVEditSession.updated_at.desc())
+            .first()
+        )
+
+        if edit_session:
+            try:
+                edited_json = json.loads(edit_session.edited_cv_json)
+                action_log = json.loads(edit_session.action_log_json or "[]")
+                return JSONResponse(
+                    content={
+                        "source": "edit_session",
+                        "session_id": edit_session.id,
+                        "cv_json": edited_json,
+                        "action_log": action_log,
+                        "updated_at": edit_session.updated_at.isoformat(),
+                    },
+                    media_type="application/json; charset=utf-8",
+                )
+            except Exception:
+                pass
+
+        # ¿Tiene JSON estructurado de la IA?
+        if improvement.cv_structured_json:
+            try:
+                cv_json = json.loads(improvement.cv_structured_json)
+                return JSONResponse(
+                    content={
+                        "source": "ai_generated",
+                        "session_id": None,
+                        "cv_json": cv_json,
+                        "action_log": [],
+                        "updated_at": improvement.created_at.isoformat() if improvement.created_at else None,
+                    },
+                    media_type="application/json; charset=utf-8",
+                )
+            except Exception:
+                pass
+
+        # Registro legacy sin JSON estructurado
+        return JSONResponse(
+            content={"source": "legacy", "cv_json": None, "action_log": []},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.put("/api/cv/improvement/{improvement_id}/edit")
+def save_cv_edit(
+    improvement_id: int = Path(..., ge=1),
+    body: Dict[str, Any] = Body(...),
+    user=Depends(get_current_user_record),
+):
+    """
+    Upsert de la sesión de edición del CV (crea o actualiza).
+    Body: { "edited_cv_json": {...}, "action_log": [...] }
+    """
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        improvement = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
+            .first()
+        )
+        if not improvement:
+            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+
+        edited_cv_json = body.get("edited_cv_json")
+        action_log = body.get("action_log", [])
+
+        if not edited_cv_json or not isinstance(edited_cv_json, dict):
+            raise HTTPException(status_code=422, detail="edited_cv_json debe ser un objeto JSON")
+
+        edited_cv_str = json.dumps(edited_cv_json, ensure_ascii=False)
+        action_log_str = json.dumps(action_log if isinstance(action_log, list) else [], ensure_ascii=False)
+
+        # Upsert: busca la sesión más reciente para este usuario+improvement
+        existing = (
+            db.query(CVEditSession)
+            .filter(
+                CVEditSession.improvement_id == improvement_id,
+                CVEditSession.user_id == user.id,
+            )
+            .order_by(CVEditSession.updated_at.desc())
+            .first()
+        )
+
+        now = datetime.utcnow()
+        if existing:
+            existing.edited_cv_json = edited_cv_str
+            existing.action_log_json = action_log_str
+            existing.updated_at = now
+            session_id = existing.id
+        else:
+            new_session = CVEditSession(
+                user_id=user.id,
+                improvement_id=improvement_id,
+                edited_cv_json=edited_cv_str,
+                action_log_json=action_log_str,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(new_session)
+            db.flush()
+            session_id = new_session.id
+
+        db.commit()
+
+        return JSONResponse(
+            content={"session_id": session_id, "saved": True},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.post("/api/cv/improvement/{improvement_id}/pdf")
+def generate_pdf_from_edit(
+    improvement_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    """
+    Genera PDF desde la sesión de edición (o cv_structured_json si no hay sesión).
+    Para uso del botón "Descargar PDF" del editor modal.
+    """
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        improvement = (
+            db.query(CVImprovement)
+            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
+            .first()
+        )
+        if not improvement:
+            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+
+        candidate_name = getattr(user, "nombre", "") or getattr(user, "alias", "") or ""
+
+        # Prioridad: edit_session → cv_structured_json → improved_cv_text
+        edit_session = (
+            db.query(CVEditSession)
+            .filter(
+                CVEditSession.improvement_id == improvement_id,
+                CVEditSession.user_id == user.id,
+            )
+            .order_by(CVEditSession.updated_at.desc())
+            .first()
+        )
+
+        pdf_bytes: bytes
+        if edit_session:
+            try:
+                edited_json = json.loads(edit_session.edited_cv_json)
+                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name)
+            except Exception:
+                pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
+        elif improvement.cv_structured_json:
+            try:
+                structured = json.loads(improvement.cv_structured_json)
+                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name)
+            except Exception:
+                pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
+        else:
+            pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
+
+        filename = f"cv_mejorado_{improvement_id}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     finally:
         if db:
