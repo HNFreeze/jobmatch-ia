@@ -365,32 +365,49 @@ def generate_cv_pdf(improved_cv_text: str, candidate_name: str = "") -> bytes:
     return buf.getvalue()
 
 
-def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
-    """
-    Genera un PDF profesional directamente desde el JSON canónico del CV.
-    No hace parsing de strings — itera los dicts del schema directamente,
-    eliminando el riesgo de mezcla de experiencias.
+def _prep_cv_data(cv_json: dict, candidate_name: str = "") -> dict:
+    """Prepara y filtra las secciones del CV, eliminando entradas sin contenido útil.
 
-    cv_json sigue el schema canónico:
-      {
-        "personal": {"name": "...", "title": "..."},
-        "summary": "...",
-        "experience": [{"company": "...", "role": "...", "period": "...", "location": "", "bullets": [...], "flagged": false}],
-        "education": [{"degree": "...", "institution": "...", "year": "..."}],
-        "skills": [{"category": "...", "items": [...]}],
-        "languages": [{"language": "...", "level": "..."}],
-        "projects": [{"name": "...", "url": "", "bullets": [...]}],
-        "certifications": [{"name": "...", "year": ""}]
-      }
+    Garantiza que las comprobaciones if section: reflejen si hay algo que renderizar.
     """
+    personal = cv_json.get("personal") or {}
+    return {
+        "name":  _safe_text(personal.get("name") or candidate_name or "Candidato"),
+        "title": _safe_text(personal.get("title") or ""),
+        "summary": (cv_json.get("summary") or "").strip(),
+        "experience": [
+            e for e in (cv_json.get("experience") or [])
+            if (e.get("company") or "").strip() or (e.get("role") or "").strip()
+        ],
+        "education": [
+            e for e in (cv_json.get("education") or [])
+            if (e.get("degree") or "").strip() or (e.get("institution") or "").strip()
+        ],
+        "skills": [
+            sg for sg in (cv_json.get("skills") or [])
+            if any(str(i or "").strip() for i in (sg.get("items") or []))
+        ],
+        "languages": [
+            l for l in (cv_json.get("languages") or [])
+            if (l.get("language") or "").strip()
+        ],
+        "projects": [
+            p for p in (cv_json.get("projects") or [])
+            if (p.get("name") or "").strip()
+        ],
+        "certifications": [
+            c for c in (cv_json.get("certifications") or [])
+            if (c.get("name") or "").strip()
+        ],
+    }
+
+
+def _build_pdf_class():
+    """Devuelve una subclase de FPDF con header/footer estándar."""
     try:
         from fpdf import FPDF
     except ImportError:
         raise RuntimeError("fpdf2 no está instalado. Añade 'fpdf2' a requirements.txt.")
-
-    personal = cv_json.get("personal") or {}
-    display_name = _safe_text(personal.get("name") or candidate_name or "Candidato")
-    display_title = _safe_text(personal.get("title") or "")
 
     class _CV(FPDF):
         def header(self):
@@ -402,28 +419,32 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             self.set_text_color(*_GRAY)
             self.cell(0, 5, f"Página {self.page_no()}", align="C")
 
+    return _CV
+
+
+def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
+    """Plantilla 'Professional Modern': cabecera azul, secciones con fondo claro."""
+    d = _prep_cv_data(cv_json, candidate_name)
+    _CV = _build_pdf_class()
+
     pdf = _CV(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.add_page()
     pdf.set_margins(18, 18, 18)
+    w = pdf.w - 36
 
-    w = pdf.w - 36  # ancho útil
-
-    # ── Cabecera ───────────────────────────────────────────────────────────────
+    # ── Cabecera azul ─────────────────────────────────────────────────────────
     pdf.set_fill_color(*_PRIMARY)
     pdf.rect(0, 0, pdf.w, 38, "F")
-
     pdf.set_xy(18, 10)
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(*_WHITE)
-    pdf.cell(w, 10, display_name, ln=True)
-
-    if display_title:
+    pdf.cell(w, 10, d["name"], ln=True)
+    if d["title"]:
         pdf.set_x(18)
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(200, 220, 255)
-        pdf.cell(w, 7, display_title, ln=True)
-
+        pdf.cell(w, 7, d["title"], ln=True)
     pdf.ln(12)
 
     def _section_header(label: str) -> None:
@@ -448,31 +469,21 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             pdf.set_text_color(*_DARK)
             pdf.multi_cell(w - 5, 5.5, f"- {text}")
 
-    # ── PERFIL PROFESIONAL ─────────────────────────────────────────────────────
-    summary = (cv_json.get("summary") or "").strip()
-    if summary:
+    if d["summary"]:
         _section_header("PERFIL PROFESIONAL")
         pdf.set_x(18)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(w, 5.5, _safe_text(summary))
+        pdf.multi_cell(w, 5.5, _safe_text(d["summary"]))
         pdf.ln(4)
 
-    # ── EXPERIENCIA PROFESIONAL ────────────────────────────────────────────────
-    experience = cv_json.get("experience") or []
-    if experience:
+    if d["experience"]:
         _section_header("EXPERIENCIA PROFESIONAL")
-        for exp in experience:
+        for exp in d["experience"]:
             company  = _safe_text((exp.get("company") or "").strip())
             role     = _safe_text((exp.get("role") or "").strip())
             period   = _safe_text((exp.get("period") or "").strip())
             location = _safe_text((exp.get("location") or "").strip())
-            bullets  = exp.get("bullets") or []
-
-            if not company and not role:
-                continue
-
-            # Empresa (negrita) + periodo (gris) en la misma línea
             pdf.set_x(18)
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(*_DARK)
@@ -482,31 +493,21 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             pdf.set_text_color(*_GRAY)
             period_loc = " · ".join(p for p in [period, location] if p)
             pdf.cell(0, 6, period_loc, ln=True)
-
-            # Cargo
             if role:
                 pdf.set_x(18)
                 pdf.set_font("Helvetica", "I", 9.5)
                 pdf.set_text_color(*_DARK)
                 pdf.cell(0, 5.5, role, ln=True)
-
-            _render_bullets(bullets)
+            _render_bullets(exp.get("bullets") or [])
             pdf.ln(2)
-
         pdf.ln(2)
 
-    # ── EDUCACIÓN ─────────────────────────────────────────────────────────────
-    education = cv_json.get("education") or []
-    if education:
+    if d["education"]:
         _section_header("EDUCACIÓN")
-        for edu in education:
+        for edu in d["education"]:
             degree      = _safe_text((edu.get("degree") or "").strip())
             institution = _safe_text((edu.get("institution") or "").strip())
             year        = _safe_text((edu.get("year") or "").strip())
-
-            if not degree and not institution:
-                continue
-
             pdf.set_x(18)
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.set_text_color(*_DARK)
@@ -514,23 +515,16 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             pdf.cell(dw, 6, degree)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(*_GRAY)
-            rest = " · ".join(p for p in [institution, year] if p)
-            pdf.cell(0, 6, rest, ln=True)
+            pdf.cell(0, 6, " · ".join(p for p in [institution, year] if p), ln=True)
             pdf.set_text_color(*_DARK)
             pdf.ln(1)
-
         pdf.ln(3)
 
-    # ── HABILIDADES TÉCNICAS ───────────────────────────────────────────────────
-    skills = cv_json.get("skills") or []
-    if skills:
+    if d["skills"]:
         _section_header("HABILIDADES TÉCNICAS")
-        for skill_group in skills:
-            category = _safe_text((skill_group.get("category") or "").strip())
-            items    = skill_group.get("items") or []
-            if not items:
-                continue
-            values = _safe_text(", ".join(str(i).strip() for i in items if i))
+        for sg in d["skills"]:
+            category = _safe_text((sg.get("category") or "").strip())
+            values   = _safe_text(", ".join(str(i).strip() for i in (sg.get("items") or []) if i))
             pdf.set_x(18)
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.set_text_color(*_PRIMARY)
@@ -541,18 +535,13 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*_DARK)
             pdf.multi_cell(w - cw2, 5.5, values)
-
         pdf.ln(3)
 
-    # ── IDIOMAS ───────────────────────────────────────────────────────────────
-    languages = cv_json.get("languages") or []
-    if languages:
+    if d["languages"]:
         _section_header("IDIOMAS")
-        for lang_entry in languages:
+        for lang_entry in d["languages"]:
             lang  = _safe_text((lang_entry.get("language") or "").strip())
             level = _safe_text((lang_entry.get("level") or "").strip())
-            if not lang:
-                continue
             pdf.set_x(18)
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.set_text_color(*_DARK)
@@ -562,58 +551,228 @@ def generate_cv_pdf_from_json(cv_json: dict, candidate_name: str = "") -> bytes:
             pdf.set_text_color(*_GRAY)
             pdf.cell(0, 5.5, level, ln=True)
             pdf.set_text_color(*_DARK)
-
         pdf.ln(3)
 
-    # ── PROYECTOS ─────────────────────────────────────────────────────────────
-    projects = cv_json.get("projects") or []
-    if projects:
+    if d["projects"]:
         _section_header("PROYECTOS")
-        for proj in projects:
+        for proj in d["projects"]:
             name    = _safe_text((proj.get("name") or "").strip())
             url     = (proj.get("url") or "").strip()
-            bullets = proj.get("bullets") or []
-
-            if not name:
-                continue
-
             pdf.set_x(18)
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(*_DARK)
             pdf.cell(0, 6, name, ln=True)
-
             if url:
-                url_display = _safe_text(
-                    url.replace("https://", "").replace("http://", "").rstrip("/")
-                )
+                url_display = _safe_text(url.replace("https://", "").replace("http://", "").rstrip("/"))
                 pdf.set_x(20)
                 pdf.set_font("Helvetica", "I", 8.5)
                 pdf.set_text_color(*_LINK)
                 pdf.cell(0, 4.5, url_display, ln=True, link=url)
                 pdf.set_text_color(*_DARK)
-
-            _render_bullets(bullets)
+            _render_bullets(proj.get("bullets") or [])
             pdf.ln(2)
-
         pdf.ln(2)
 
-    # ── CERTIFICACIONES ───────────────────────────────────────────────────────
-    certifications = cv_json.get("certifications") or []
-    if certifications:
+    if d["certifications"]:
         _section_header("CERTIFICACIONES")
-        for cert in certifications:
-            name = _safe_text((cert.get("name") or "").strip())
-            year = _safe_text((cert.get("year") or "").strip())
-            if not name:
-                continue
+        for cert in d["certifications"]:
+            name  = _safe_text((cert.get("name") or "").strip())
+            year  = _safe_text((cert.get("year") or "").strip())
             label = f"{name} ({year})" if year else name
             pdf.set_x(18)
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*_DARK)
             pdf.cell(0, 5.5, label, ln=True)
-
         pdf.ln(3)
 
     buf = io.BytesIO()
     pdf.output(buf)
     return buf.getvalue()
+
+
+def _pdf_ats_minimal(cv_json: dict, candidate_name: str = "") -> bytes:
+    """Plantilla 'ATS Minimal': limpia, sin adornos, máxima compatibilidad ATS."""
+    d = _prep_cv_data(cv_json, candidate_name)
+    _CV = _build_pdf_class()
+
+    pdf = _CV(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.add_page()
+    pdf.set_margins(18, 18, 18)
+    w = pdf.w - 36
+
+    # ── Cabecera simple (sin colores) ─────────────────────────────────────────
+    pdf.set_xy(18, 14)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(*_DARK)
+    pdf.cell(w, 10, d["name"], ln=True)
+    if d["title"]:
+        pdf.set_x(18)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.set_text_color(*_GRAY)
+        pdf.cell(w, 7, d["title"], ln=True)
+    # Línea separadora bajo el encabezado
+    pdf.set_draw_color(*_DARK)
+    pdf.set_line_width(0.6)
+    pdf.line(18, pdf.get_y() + 2, 18 + w, pdf.get_y() + 2)
+    pdf.ln(8)
+
+    def _section_header(label: str) -> None:
+        pdf.set_x(18)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(*_DARK)
+        pdf.cell(w, 7, _safe_text(label), ln=True)
+        pdf.set_draw_color(*_GRAY)
+        pdf.set_line_width(0.3)
+        pdf.line(18, pdf.get_y(), 18 + w, pdf.get_y())
+        pdf.ln(3)
+        pdf.set_text_color(*_DARK)
+
+    def _render_bullets(bullets: list) -> None:
+        for b in bullets:
+            text = _safe_text(str(b).strip())
+            if not text:
+                continue
+            pdf.set_x(23)
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*_DARK)
+            pdf.multi_cell(w - 5, 5.5, f"- {text}")
+
+    if d["summary"]:
+        _section_header("PERFIL PROFESIONAL")
+        pdf.set_x(18)
+        pdf.set_font("Helvetica", "", 9.5)
+        pdf.set_text_color(*_DARK)
+        pdf.multi_cell(w, 5.5, _safe_text(d["summary"]))
+        pdf.ln(4)
+
+    if d["experience"]:
+        _section_header("EXPERIENCIA PROFESIONAL")
+        for exp in d["experience"]:
+            company  = _safe_text((exp.get("company") or "").strip())
+            role     = _safe_text((exp.get("role") or "").strip())
+            period   = _safe_text((exp.get("period") or "").strip())
+            location = _safe_text((exp.get("location") or "").strip())
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(*_DARK)
+            cw = min(pdf.get_string_width(company + "  "), w * 0.65)
+            pdf.cell(cw, 6, company)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(*_GRAY)
+            period_loc = " · ".join(p for p in [period, location] if p)
+            pdf.cell(0, 6, period_loc, ln=True)
+            if role:
+                pdf.set_x(18)
+                pdf.set_font("Helvetica", "I", 9.5)
+                pdf.set_text_color(*_DARK)
+                pdf.cell(0, 5.5, role, ln=True)
+            _render_bullets(exp.get("bullets") or [])
+            pdf.ln(2)
+        pdf.ln(2)
+
+    if d["education"]:
+        _section_header("EDUCACIÓN")
+        for edu in d["education"]:
+            degree      = _safe_text((edu.get("degree") or "").strip())
+            institution = _safe_text((edu.get("institution") or "").strip())
+            year        = _safe_text((edu.get("year") or "").strip())
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(*_DARK)
+            dw = min(pdf.get_string_width(degree + "  "), w * 0.65)
+            pdf.cell(dw, 6, degree)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(*_GRAY)
+            pdf.cell(0, 6, " · ".join(p for p in [institution, year] if p), ln=True)
+            pdf.set_text_color(*_DARK)
+            pdf.ln(1)
+        pdf.ln(3)
+
+    if d["skills"]:
+        _section_header("HABILIDADES TÉCNICAS")
+        for sg in d["skills"]:
+            category = _safe_text((sg.get("category") or "").strip())
+            values   = _safe_text(", ".join(str(i).strip() for i in (sg.get("items") or []) if i))
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(*_DARK)
+            cat_label = f"{category}:" if category else ""
+            cw2 = min(pdf.get_string_width(cat_label + "  "), w * 0.35) if cat_label else 0
+            if cat_label:
+                pdf.cell(cw2, 5.5, cat_label)
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*_DARK)
+            pdf.multi_cell(w - cw2, 5.5, values)
+        pdf.ln(3)
+
+    if d["languages"]:
+        _section_header("IDIOMAS")
+        for lang_entry in d["languages"]:
+            lang  = _safe_text((lang_entry.get("language") or "").strip())
+            level = _safe_text((lang_entry.get("level") or "").strip())
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(*_DARK)
+            lw = min(pdf.get_string_width(lang + ":  "), w * 0.35)
+            pdf.cell(lw, 5.5, f"{lang}:")
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*_GRAY)
+            pdf.cell(0, 5.5, level, ln=True)
+            pdf.set_text_color(*_DARK)
+        pdf.ln(3)
+
+    if d["projects"]:
+        _section_header("PROYECTOS")
+        for proj in d["projects"]:
+            name    = _safe_text((proj.get("name") or "").strip())
+            url     = (proj.get("url") or "").strip()
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(*_DARK)
+            pdf.cell(0, 6, name, ln=True)
+            if url:
+                url_display = _safe_text(url.replace("https://", "").replace("http://", "").rstrip("/"))
+                pdf.set_x(20)
+                pdf.set_font("Helvetica", "I", 8.5)
+                pdf.set_text_color(*_DARK)
+                pdf.cell(0, 4.5, url_display, ln=True, link=url)
+            _render_bullets(proj.get("bullets") or [])
+            pdf.ln(2)
+        pdf.ln(2)
+
+    if d["certifications"]:
+        _section_header("CERTIFICACIONES")
+        for cert in d["certifications"]:
+            name  = _safe_text((cert.get("name") or "").strip())
+            year  = _safe_text((cert.get("year") or "").strip())
+            label = f"{name} ({year})" if year else name
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*_DARK)
+            pdf.cell(0, 5.5, label, ln=True)
+        pdf.ln(3)
+
+    buf = io.BytesIO()
+    pdf.output(buf)
+    return buf.getvalue()
+
+
+def generate_cv_pdf_from_json(
+    cv_json: dict,
+    candidate_name: str = "",
+    template: str = "professional_modern",
+) -> bytes:
+    """
+    Genera un PDF directamente desde el JSON canónico del CV.
+
+    template:
+      "professional_modern" (por defecto) — cabecera azul, secciones con fondo
+      "ats_minimal"                       — diseño limpio sin adornos, máx. ATS
+
+    No hace parsing de strings — elimina el riesgo de mezcla de experiencias.
+    Las secciones vacías (entradas sin nombre/empresa) no se renderizan.
+    """
+    if template == "ats_minimal":
+        return _pdf_ats_minimal(cv_json, candidate_name)
+    return _pdf_professional_modern(cv_json, candidate_name)

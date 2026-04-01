@@ -309,8 +309,8 @@ export async function improveCVFull(file) {
   return response.json();
 }
 
-export async function downloadCVPdf(improvementId) {
-  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}`, {
+export async function downloadCVPdf(improvementId, template = "professional_modern") {
+  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}?template=${encodeURIComponent(template)}`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al descargar el PDF");
@@ -460,8 +460,8 @@ export async function saveCVEdit(improvementId, editedCvJson, actionLog) {
   return response.json();
 }
 
-export async function downloadCVPdfFromEdit(improvementId) {
-  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/pdf`, {
+export async function downloadCVPdfFromEdit(improvementId, template = "professional_modern") {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/pdf?template=${encodeURIComponent(template)}`, {
     method: "POST",
     headers: authHeaders(),
   });
