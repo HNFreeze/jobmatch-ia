@@ -371,31 +371,32 @@ def _prep_cv_data(cv_json: dict, candidate_name: str = "") -> dict:
     Garantiza que las comprobaciones if section: reflejen si hay algo que renderizar.
     """
     personal = cv_json.get("personal") or {}
+    hidden_sections = set((cv_json.get("meta") or {}).get("hidden_sections") or [])
     return {
         "name":  _safe_text(personal.get("name") or candidate_name or "Candidato"),
         "title": _safe_text(personal.get("title") or ""),
-        "summary": (cv_json.get("summary") or "").strip(),
-        "experience": [
+        "summary": "" if "summary" in hidden_sections else (cv_json.get("summary") or "").strip(),
+        "experience": [] if "experience" in hidden_sections else [
             e for e in (cv_json.get("experience") or [])
             if (e.get("company") or "").strip() or (e.get("role") or "").strip()
         ],
-        "education": [
+        "education": [] if "education" in hidden_sections else [
             e for e in (cv_json.get("education") or [])
             if (e.get("degree") or "").strip() or (e.get("institution") or "").strip()
         ],
-        "skills": [
+        "skills": [] if "skills" in hidden_sections else [
             sg for sg in (cv_json.get("skills") or [])
             if any(str(i or "").strip() for i in (sg.get("items") or []))
         ],
-        "languages": [
+        "languages": [] if "languages" in hidden_sections else [
             l for l in (cv_json.get("languages") or [])
             if (l.get("language") or "").strip()
         ],
-        "projects": [
+        "projects": [] if "projects" in hidden_sections else [
             p for p in (cv_json.get("projects") or [])
             if (p.get("name") or "").strip()
         ],
-        "certifications": [
+        "certifications": [] if "certifications" in hidden_sections else [
             c for c in (cv_json.get("certifications") or [])
             if (c.get("name") or "").strip()
         ],

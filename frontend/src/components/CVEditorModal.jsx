@@ -15,9 +15,23 @@ import { saveCVEdit, downloadCVPdfFromEdit } from "../services/api";
 import CVPreview from "./CVPreview";
 
 const PURPLE = "#7c3aed";
+const SECTION_KEYS = [
+  "summary",
+  "experience",
+  "education",
+  "skills",
+  "languages",
+  "projects",
+  "certifications",
+];
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+function getHiddenSections(cvJson) {
+  const sections = cvJson?.meta?.hidden_sections;
+  return Array.isArray(sections) ? sections.filter(Boolean) : [];
 }
 
 function actionBtnStyle(color) {
@@ -30,20 +44,56 @@ function actionBtnStyle(color) {
 
 // ── Sub-components (defined outside to avoid remount on every render) ──────────
 
-function SectionWrap({ title, children, dm }) {
+function SectionWrap({ title, children, dm, visible = true, onToggleVisibility, helperText }) {
+  const textColor = dm ? "#f1f5f9" : "#111827";
+  const muted = dm ? "#64748b" : "#9ca3af";
+
   return (
     <div style={{ marginBottom: 28 }}>
       <div style={{
         display: "flex", alignItems: "center",
+        justifyContent: "space-between",
         padding: "10px 0 8px",
         borderBottom: `1.5px solid ${dm ? "rgba(124,58,237,0.3)" : "#e9d5ff"}`,
         marginBottom: 12,
+        gap: 12,
+        flexWrap: "wrap",
       }}>
         <span style={{
           fontSize: 11, fontWeight: 800, letterSpacing: 1.2,
           color: PURPLE, textTransform: "uppercase",
         }}>{title}</span>
+        {onToggleVisibility && (
+          <label style={{
+            display: "flex", alignItems: "center", gap: 8,
+            fontSize: 11, color: visible ? textColor : muted,
+            fontWeight: 700, cursor: "pointer",
+          }}>
+            <input
+              type="checkbox"
+              checked={visible}
+              onChange={e => onToggleVisibility(e.target.checked)}
+              style={{ accentColor: PURPLE, cursor: "pointer" }}
+            />
+            Incluir en PDF y vista previa
+          </label>
+        )}
       </div>
+      {!visible && (
+        <div style={{
+          fontSize: 12,
+          color: muted,
+          marginBottom: 10,
+          fontStyle: "italic",
+        }}>
+          Este apartado está oculto en el PDF final. Puedes seguir editándolo aquí.
+        </div>
+      )}
+      {helperText && (
+        <div style={{ fontSize: 11, color: muted, marginBottom: 10 }}>
+          {helperText}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -154,6 +204,24 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
 
   const updateSummary = (value) =>
     setCvJson(p => ({ ...p, summary: value }));
+
+  const isSectionVisible = (section) => !getHiddenSections(cvJson).includes(section);
+
+  const toggleSectionVisibility = (section, visible) => {
+    logAction({ type: "toggle_section_visibility", section, visible });
+    setCvJson(p => {
+      const hidden = new Set(getHiddenSections(p));
+      if (visible) hidden.delete(section);
+      else hidden.add(section);
+      return {
+        ...p,
+        meta: {
+          ...(p.meta || {}),
+          hidden_sections: SECTION_KEYS.filter(key => hidden.has(key)),
+        },
+      };
+    });
+  };
 
   const updateArrayItem = (section, idx, field, value) =>
     setCvJson(p => {
@@ -364,12 +432,24 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* RESUMEN */}
-            <SectionWrap title="Resumen profesional" dm={dm}>
+            <SectionWrap
+              title="Resumen profesional"
+              dm={dm}
+              visible={isSectionVisible("summary")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("summary", visible)}
+              helperText={!cvJson.summary?.trim() ? "Si no quieres mostrar este bloque, puedes dejarlo vacío o desactivarlo." : undefined}
+            >
               <Field value={cvJson.summary} onChange={updateSummary} multiline rows={4} dm={dm} />
             </SectionWrap>
 
             {/* EXPERIENCIA */}
-            <SectionWrap title="Experiencia profesional" dm={dm}>
+            <SectionWrap
+              title="Experiencia profesional"
+              dm={dm}
+              visible={isSectionVisible("experience")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("experience", visible)}
+              helperText={!(cvJson.experience || []).length ? "No hay entradas cargadas. Si no quieres esta sección, déjala desactivada." : undefined}
+            >
               {(cvJson.experience || []).map((exp, idx) => (
                 <DragCard key={exp.id || idx} section="experience" idx={idx} flagged={exp.flagged} {...dragProps}>
                   {exp.flagged && (
@@ -411,7 +491,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* EDUCACIÓN */}
-            <SectionWrap title="Educación" dm={dm}>
+            <SectionWrap
+              title="Educación"
+              dm={dm}
+              visible={isSectionVisible("education")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("education", visible)}
+              helperText={!(cvJson.education || []).length ? "No hay estudios cargados. Puedes ocultar este apartado si no lo necesitas." : undefined}
+            >
               {(cvJson.education || []).map((edu, idx) => (
                 <DragCard key={edu.id || idx} section="education" idx={idx} flagged={edu.flagged} {...dragProps}>
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr", gap: 8 }}>
@@ -427,7 +513,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* HABILIDADES */}
-            <SectionWrap title="Habilidades técnicas" dm={dm}>
+            <SectionWrap
+              title="Habilidades técnicas"
+              dm={dm}
+              visible={isSectionVisible("skills")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("skills", visible)}
+              helperText={!(cvJson.skills || []).length ? "No hay categorías de habilidades. Puedes dejar la sección oculta." : undefined}
+            >
               {(cvJson.skills || []).map((sg, idx) => (
                 <div key={idx} style={{ background: surface, border: `1px solid ${border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 8 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -452,7 +544,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* IDIOMAS */}
-            <SectionWrap title="Idiomas" dm={dm}>
+            <SectionWrap
+              title="Idiomas"
+              dm={dm}
+              visible={isSectionVisible("languages")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("languages", visible)}
+              helperText={!(cvJson.languages || []).length ? "Si no quieres mostrar idiomas, puedes mantener este apartado oculto." : undefined}
+            >
               {(cvJson.languages || []).map((lang, idx) => (
                 <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   <input
@@ -474,7 +572,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* PROYECTOS */}
-            <SectionWrap title="Proyectos" dm={dm}>
+            <SectionWrap
+              title="Proyectos"
+              dm={dm}
+              visible={isSectionVisible("projects")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("projects", visible)}
+              helperText={!(cvJson.projects || []).length ? "No hay proyectos cargados. Puedes ocultar la sección para que no aparezca en el PDF." : undefined}
+            >
               {(cvJson.projects || []).map((proj, idx) => (
                 <DragCard key={proj.id || idx} section="projects" idx={idx} flagged={proj.flagged} {...dragProps}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -504,7 +608,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
             </SectionWrap>
 
             {/* CERTIFICACIONES */}
-            <SectionWrap title="Certificaciones" dm={dm}>
+            <SectionWrap
+              title="Certificaciones"
+              dm={dm}
+              visible={isSectionVisible("certifications")}
+              onToggleVisibility={(visible) => toggleSectionVisibility("certifications", visible)}
+              helperText={!(cvJson.certifications || []).length ? "Si no tienes certificaciones, deja este apartado desactivado y no se incluirá." : undefined}
+            >
               {(cvJson.certifications || []).map((cert, idx) => (
                 <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   <input

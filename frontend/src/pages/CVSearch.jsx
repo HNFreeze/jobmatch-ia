@@ -1212,13 +1212,13 @@ function ImproveTabNew({
                   }}>
                     Editar y descargar CV
                   </button>
-                  {/* Secondary: quick direct download */}
+                  {/* Secondary: direct download without opening the editor */}
                   <button onClick={handleDownload} disabled={downloading} style={{
                     padding: "8px 14px", borderRadius: 20, border: "1.5px solid #7c3aed",
                     background: "none", color: "#7c3aed", cursor: downloading ? "wait" : "pointer",
                     fontSize: 13, fontWeight: 600, fontFamily: typography.family, opacity: downloading ? 0.7 : 1,
                   }}>
-                    {downloading ? "Descargando..." : "PDF rápido"}
+                    {downloading ? "Descargando..." : "Descargar PDF directo"}
                   </button>
                 </>
               ) : (
@@ -1483,7 +1483,7 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
                 fontSize: 12, fontWeight: 700, fontFamily: typography.family,
                 opacity: downloading === imp.id ? 0.7 : 1,
               }}>
-                {downloading === imp.id ? "..." : "PDF"}
+                {downloading === imp.id ? "..." : "Descargar PDF"}
               </button>
               <button onClick={() => handleOpenEditor(imp.id)} disabled={editLoading === imp.id} style={{
                 padding: "7px 14px", borderRadius: 20, border: "1.5px solid #7c3aed",
