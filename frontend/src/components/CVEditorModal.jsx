@@ -34,6 +34,16 @@ function getHiddenSections(cvJson) {
   return Array.isArray(sections) ? sections.filter(Boolean) : [];
 }
 
+function withSelectedTemplate(cvJson, template) {
+  return {
+    ...cvJson,
+    meta: {
+      ...(cvJson?.meta || {}),
+      selected_template: template || "professional_modern",
+    },
+  };
+}
+
 function actionBtnStyle(color) {
   return {
     padding: "4px 10px", borderRadius: 12,
@@ -178,7 +188,9 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   const [dragInfo, setDragInfo] = useState(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
-  const [template, setTemplate] = useState("professional_modern");
+  const [template, setTemplate] = useState(
+    initialJson?.meta?.selected_template || "professional_modern"
+  );
 
   const logAction = (action) =>
     setActionLog(prev => [...prev, { ...action, ts: Date.now() }]);
@@ -311,9 +323,11 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   // ── Actions ─────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
+    const payload = withSelectedTemplate(cvJson, template);
     try {
-      await saveCVEdit(improvementId, cvJson, actionLog);
-      onSaved?.(cvJson);
+      await saveCVEdit(improvementId, payload, actionLog);
+      setCvJson(payload);
+      onSaved?.(payload);
       onClose();
     } catch (err) {
       alert(err?.message || "Error al guardar los cambios");
@@ -323,8 +337,13 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   };
 
   const handleDownload = async () => {
+    const payload = withSelectedTemplate(cvJson, template);
     setSaving(true);
-    try { await saveCVEdit(improvementId, cvJson, actionLog); } catch { /* continuar */ }
+    try {
+      await saveCVEdit(improvementId, payload, actionLog);
+      setCvJson(payload);
+      onSaved?.(payload);
+    } catch { /* continuar */ }
     setSaving(false);
     setDownloading(true);
     try {
@@ -337,7 +356,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   };
 
   const handleRestore = () => {
-    setCvJson(deepClone(originalJson.current));
+    setCvJson(withSelectedTemplate(deepClone(originalJson.current), template));
     setActionLog([{ type: "restore_all", ts: Date.now() }]);
     setConfirmRestore(false);
   };

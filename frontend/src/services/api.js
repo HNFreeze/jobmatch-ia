@@ -309,8 +309,9 @@ export async function improveCVFull(file) {
   return response.json();
 }
 
-export async function downloadCVPdf(improvementId, template = "professional_modern") {
-  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}?template=${encodeURIComponent(template)}`, {
+export async function downloadCVPdf(improvementId, template = null) {
+  const templateQuery = template ? `?template=${encodeURIComponent(template)}` : "";
+  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}${templateQuery}`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al descargar el PDF");
