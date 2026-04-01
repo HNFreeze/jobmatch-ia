@@ -1104,6 +1104,14 @@ function ImproveTabNew({
   const [downloading, setDownloading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
 
+  // Auto-open the editor when a new CV is generated (if structured JSON is available).
+  // Using improvement_id as dependency so it only fires on a new generation, not on every save.
+  useEffect(() => {
+    if (result?.cv_structured_json && result?.improvement_id) {
+      setEditorOpen(true);
+    }
+  }, [result?.improvement_id]);
+
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setIsDragging(false);
     const f = e.dataTransfer.files[0]; if (!f) return;
@@ -1192,20 +1200,34 @@ function ImproveTabNew({
               )}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={handleDownload} disabled={downloading} style={{
-                padding: "8px 16px", borderRadius: 20, border: "1.5px solid #7c3aed",
-                background: "#7c3aed", color: "#fff", cursor: downloading ? "wait" : "pointer",
-                fontSize: 13, fontWeight: 700, fontFamily: typography.family, opacity: downloading ? 0.7 : 1,
-              }}>
-                {downloading ? "Generando..." : "Descargar PDF"}
-              </button>
-              {result?.cv_structured_json && (
-                <button onClick={() => setEditorOpen(true)} style={{
+              {result?.cv_structured_json ? (
+                <>
+                  {/* Primary: open editor (which has preview + download inside) */}
+                  <button onClick={() => setEditorOpen(true)} style={{
+                    padding: "8px 18px", borderRadius: 20, border: "none",
+                    background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
+                    color: "#fff", cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, fontFamily: typography.family,
+                    boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
+                  }}>
+                    Editar y descargar CV
+                  </button>
+                  {/* Secondary: quick direct download */}
+                  <button onClick={handleDownload} disabled={downloading} style={{
+                    padding: "8px 14px", borderRadius: 20, border: "1.5px solid #7c3aed",
+                    background: "none", color: "#7c3aed", cursor: downloading ? "wait" : "pointer",
+                    fontSize: 13, fontWeight: 600, fontFamily: typography.family, opacity: downloading ? 0.7 : 1,
+                  }}>
+                    {downloading ? "Descargando..." : "PDF rápido"}
+                  </button>
+                </>
+              ) : (
+                <button onClick={handleDownload} disabled={downloading} style={{
                   padding: "8px 16px", borderRadius: 20, border: "1.5px solid #7c3aed",
-                  background: "none", color: "#7c3aed", cursor: "pointer",
-                  fontSize: 13, fontWeight: 700, fontFamily: typography.family,
+                  background: "#7c3aed", color: "#fff", cursor: downloading ? "wait" : "pointer",
+                  fontSize: 13, fontWeight: 700, fontFamily: typography.family, opacity: downloading ? 0.7 : 1,
                 }}>
-                  Editar CV
+                  {downloading ? "Descargando..." : "Descargar PDF"}
                 </button>
               )}
               <button onClick={() => { setResult(null); setFile(null); setError(null); }} style={{
