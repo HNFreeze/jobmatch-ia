@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from app.database import Base
 
 
@@ -21,4 +21,16 @@ class JobOffer(Base):
     analysis_hash     = Column(String(64), index=True)
     offer_signals_json = Column(Text)
     signals_updated_at = Column(DateTime)
+    source_name       = Column(String(100), index=True)
+    source_type       = Column(String(50), index=True)
+    source_job_id     = Column(String(200), index=True)
+    source_confidence = Column(Float, default=0.58)
+    source_metadata_json = Column(Text)
+    raw_payload_json  = Column(Text)
+    canonical_url     = Column(String(2000))
+    canonical_company = Column(String(300), index=True)
+    first_seen_at     = Column(DateTime, default=datetime.utcnow)
+    last_seen_at      = Column(DateTime, default=datetime.utcnow, index=True)
+    last_verified_at  = Column(DateTime)
+    is_active         = Column(Boolean, default=True, nullable=False, index=True)
     created_at        = Column(DateTime, default=datetime.utcnow)

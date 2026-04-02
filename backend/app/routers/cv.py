@@ -26,10 +26,10 @@ from app.models.cv_edit_session import CVEditSession
 from app.models.cv_improvement import CVImprovement
 from app.models.cv_offer_variant import CVOfferVariant
 from app.routers.user import get_current_user_record
-from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
 from app.services.cv_pdf_service import generate_cv_pdf, generate_cv_pdf_from_json
+from app.services.job_search_service import fetch_offers_for_search
 from app.services.cv_service import (
     analyze_cv_with_ai,
     build_adzuna_search_params,
@@ -318,7 +318,7 @@ async def analyze_cv(
         search_skills, search_locations = build_adzuna_search_params(structured_profile)
 
         # 5. Obtener ofertas de Adzuna
-        offers = await fetch_offers_from_adzuna(
+        offers = await fetch_offers_for_search(
             skills=search_skills,
             locations=search_locations if search_locations else None,
             db=db,
@@ -381,6 +381,7 @@ async def analyze_cv(
                 -(x.get("puntuacion") or 0),
                 len(x.get("blockers") or []),
                 -len(x.get("skills_match") or []),
+                -(float(x.get("source_confidence") or 0)),
             )
         )
 
@@ -901,7 +902,7 @@ async def search_from_improvement(
         matching_profile = build_matching_profile(structured_profile)
         search_skills, search_locations = build_adzuna_search_params(structured_profile)
 
-        offers = await fetch_offers_from_adzuna(
+        offers = await fetch_offers_for_search(
             skills=search_skills,
             locations=search_locations if search_locations else None,
             db=db,
@@ -943,6 +944,7 @@ async def search_from_improvement(
         enriched.sort(key=lambda x: (
             result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
             -(x.get("puntuacion") or 0),
+            -(float(x.get("source_confidence") or 0)),
         ))
 
         skills_gap = None

@@ -7,6 +7,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
+from app.services.job_index_service import normalize_offer_record
 
 LOG_FILE = os.path.join(tempfile.gettempdir(), "adzuna_debug.log")
 
@@ -251,16 +252,30 @@ def _map_adzuna_to_internal_format(adzuna_results: list) -> list:
             .strip()
         )
 
-        mapped.append({
-            "id": idx,
-            "adzuna_id": str(job.get("id", "")),
-            "titulo": job.get("title", "Sin titulo"),
-            "empresa": job.get("company", {}).get("display_name", "Empresa desconocida") if isinstance(job.get("company"), dict) else job.get("company", "Empresa desconocida"),
-            "ubicacion": job.get("location", {}).get("display_name", "Ubicacion desconocida") if isinstance(job.get("location"), dict) else job.get("location", "Ubicacion desconocida"),
-            "descripcion": description,
-            "salario": salario or "Salario no especificado",
-            "fecha_publicacion": job.get("created", ""),
-            "redirect_url": job.get("redirect_url", ""),
-        })
+        mapped_offer = normalize_offer_record(
+            "adzuna",
+            "aggregator",
+            {
+                "id": job.get("id"),
+                "titulo": job.get("title", "Sin titulo"),
+                "empresa": job.get("company", {}).get("display_name", "Empresa desconocida") if isinstance(job.get("company"), dict) else job.get("company", "Empresa desconocida"),
+                "ubicacion": job.get("location", {}).get("display_name", "Ubicacion desconocida") if isinstance(job.get("location"), dict) else job.get("location", "Ubicacion desconocida"),
+                "descripcion": description,
+                "salario": salario or "Salario no especificado",
+                "fecha_publicacion": job.get("created", ""),
+                "redirect_url": job.get("redirect_url", ""),
+                "source_metadata": {
+                    "category": (job.get("category") or {}).get("label") if isinstance(job.get("category"), dict) else job.get("category"),
+                    "contract_time": (job.get("contract_time") or {}).get("label") if isinstance(job.get("contract_time"), dict) else job.get("contract_time"),
+                    "salary_min": job.get("salary_min"),
+                    "salary_max": job.get("salary_max"),
+                },
+            },
+            company_fallback="Empresa desconocida",
+            source_job_id=str(job.get("id", "")),
+            canonical_url=job.get("redirect_url", ""),
+        )
+        mapped_offer["id"] = idx
+        mapped.append(mapped_offer)
 
     return mapped
