@@ -692,7 +692,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                     value={ingestionDraft.skills}
                     onChange={(event) => setIngestionDraft((prev) => ({ ...prev, skills: event.target.value }))}
                     placeholder="python, react, java"
-                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%", minWidth: 0, boxSizing: "border-box" }}
                   />
                 </label>
 
@@ -702,7 +702,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                     value={ingestionDraft.locations}
                     onChange={(event) => setIngestionDraft((prev) => ({ ...prev, locations: event.target.value }))}
                     placeholder="Madrid, Barcelona, Toda España"
-                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%", minWidth: 0, boxSizing: "border-box" }}
                   />
                 </label>
 
@@ -712,7 +712,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                     value={ingestionDraft.sources}
                     onChange={(event) => setIngestionDraft((prev) => ({ ...prev, sources: event.target.value }))}
                     placeholder="public_sources, adzuna"
-                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%", minWidth: 0, boxSizing: "border-box" }}
                   />
                 </label>
               </div>
@@ -1277,7 +1277,7 @@ const S = {
   },
   ingestionForm: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))",
     gap: 12,
     marginBottom: 14,
   },
@@ -1285,6 +1285,7 @@ const S = {
     display: "flex",
     flexDirection: "column",
     gap: 6,
+    minWidth: 0,
   },
   ingestionRunsWrap: {
     display: "grid",
@@ -1428,6 +1429,7 @@ const S = {
   card: {
     borderRadius: 18,
     padding: "18px 18px 16px",
+    minWidth: 0,
   },
   usageSummary: {
     display: "flex",
