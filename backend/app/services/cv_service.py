@@ -619,6 +619,143 @@ CV original a analizar:
     return result, response.usage
 
 
+async def optimize_cv_json_for_offer(
+    cv_json: dict,
+    offer_snapshot: dict,
+    api_key: str,
+    user_id: Optional[int] = None,
+) -> tuple[dict, object]:
+    """Optimiza un CV estructurado para una oferta concreta sin inventar informacion."""
+    client = anthropic.Anthropic(api_key=api_key)
+    source_cv = normalize_cv_structured(cv_json or {})
+    source_cv = validate_cv_structured(
+        source_cv,
+        original_cv_text=derive_improved_cv_text_from_json(source_cv),
+    )
+    existing_meta = dict(source_cv.get("meta") or {})
+    clean_offer = offer_snapshot if isinstance(offer_snapshot, dict) else {}
+
+    system_prompt = (
+        "Eres un experto en CVs ATS para tecnologia en Espana. "
+        "Tu trabajo es adaptar un CV estructurado a una oferta concreta sin inventar experiencia, skills, empresas, fechas ni certificaciones. "
+        "Solo puedes reordenar, resumir, mejorar la redaccion, priorizar informacion existente y ocultar secciones poco utiles. "
+        "Devuelves unicamente JSON valido, sin markdown."
+    )
+
+    user_prompt = f"""Devuelve EXACTAMENTE un JSON con esta estructura:
+
+{{
+  "focus_summary": "resumen breve en espanol de la estrategia aplicada",
+  "changes_applied": ["cambio 1", "cambio 2"],
+  "cv_structured_json": {{
+    "meta": {{
+      "version": 1,
+      "warnings": [],
+      "source": "ai_offer_optimized",
+      "fit_one_page": true,
+      "hidden_sections": ["certifications"]
+    }},
+    "personal": {{"name": "nombre exacto", "title": "titulo profesional en espanol"}},
+    "summary": "resumen profesional optimizado para la oferta",
+    "experience": [
+      {{
+        "id": "exp_0",
+        "company": "empresa exacta",
+        "role": "cargo exacto",
+        "period": "periodo exacto",
+        "location": "ubicacion",
+        "bullets": ["logro relevante reescrito sin inventar datos"],
+        "flagged": false
+      }}
+    ],
+    "education": [{{"id": "edu_0", "degree": "titulo", "institution": "centro", "year": "2024", "flagged": false}}],
+    "skills": [{{"category": "Backend", "items": ["Python", "FastAPI"]}}],
+    "languages": [{{"language": "Ingles", "level": "C1"}}],
+    "projects": [],
+    "certifications": []
+  }}
+}}
+
+REGLAS:
+1. No inventes nada. Si un dato no esta en el CV original, no lo anadas.
+2. Manten el nombre exacto del candidato.
+3. Puedes reordenar secciones, resumir bullets largos y priorizar lo mas relevante para la oferta.
+4. Si una seccion aporta poco a la oferta y esta vacia o es secundaria, puedes incluirla en meta.hidden_sections.
+5. Puedes activar fit_one_page solo si ayuda a concentrar el CV, pero no elimines informacion real.
+6. Todo en espanol correcto.
+7. changes_applied debe describir ajustes reales, no promesas.
+
+OFERTA OBJETIVO:
+{json.dumps(clean_offer, ensure_ascii=False, indent=2)}
+
+CV ESTRUCTURADO ACTUAL:
+{json.dumps(source_cv, ensure_ascii=False, indent=2)}
+"""
+
+    try:
+        response = client.messages.create(
+            model=CV_AI_MODEL,
+            max_tokens=5000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except anthropic.APIStatusError as exc:
+        if exc.status_code == 429:
+            raise HTTPException(status_code=429, detail="Limite de Claude API alcanzado. Intentalo en unos minutos.")
+        raise HTTPException(status_code=502, detail=f"Error de Claude API: {exc.message}")
+
+    raw_text = response.content[0].text if response.content else ""
+    try:
+        raw = _extract_json_from_response(raw_text)
+    except Exception:
+        raise HTTPException(status_code=502, detail="La IA no pudo optimizar esta variante del CV.")
+
+    raw_cv_json = raw.get("cv_structured_json") or {}
+    if not isinstance(raw_cv_json, dict):
+        raise HTTPException(status_code=502, detail="La IA devolvio una estructura de CV invalida.")
+
+    optimized_cv = normalize_cv_structured(raw_cv_json)
+    optimized_cv = validate_cv_structured(
+        optimized_cv,
+        original_cv_text=derive_improved_cv_text_from_json(source_cv),
+    )
+    optimized_meta = dict(optimized_cv.get("meta") or {})
+    merged_meta = {
+        **existing_meta,
+        **optimized_meta,
+        "source": "ai_offer_optimized",
+    }
+    if clean_offer:
+        merged_meta["target_offer"] = clean_offer
+    optimized_cv["meta"] = merged_meta
+
+    try:
+        from app.database import get_session_local
+        SessionLocal = get_session_local()
+        if SessionLocal:
+            db_cost = SessionLocal()
+            try:
+                record_ai_api_cost(
+                    db=db_cost,
+                    feature="cv_optimize_offer",
+                    model=CV_AI_MODEL,
+                    usage=response.usage,
+                    user_id=user_id,
+                )
+                db_cost.commit()
+            finally:
+                db_cost.close()
+    except Exception as e:
+        print(f"[CV_OPTIMIZE_OFFER_COST] Error registrando coste: {e}")
+
+    return {
+        "focus_summary": str(raw.get("focus_summary") or "").strip(),
+        "changes_applied": [str(item).strip() for item in (raw.get("changes_applied") or []) if str(item).strip()][:8],
+        "cv_structured_json": optimized_cv,
+        "improved_cv_text": derive_improved_cv_text_from_json(optimized_cv),
+    }, response.usage
+
+
 def _sanitize_full_improvement(raw: dict, original_cv_text: str = "") -> dict:
     """Normaliza y valida el resultado completo de mejora de CV."""
     def safe_int(val, default: int, lo: int = 0, hi: int = 100) -> int:
@@ -748,6 +885,20 @@ def normalize_cv_structured(cv_json: dict) -> dict:
         "warnings": ensure_list(meta_raw.get("warnings")),
         "source": str(meta_raw.get("source") or "ai_generated"),
     }
+    selected_template = str(meta_raw.get("selected_template") or "").strip()
+    if selected_template:
+        meta["selected_template"] = selected_template
+    if meta_raw.get("fit_one_page") is not None:
+        meta["fit_one_page"] = bool(meta_raw.get("fit_one_page"))
+    hidden_sections = [str(section).strip() for section in ensure_list(meta_raw.get("hidden_sections")) if str(section).strip()]
+    if hidden_sections:
+        meta["hidden_sections"] = hidden_sections
+    variant_name = str(meta_raw.get("variant_name") or "").strip()
+    if variant_name:
+        meta["variant_name"] = variant_name
+    target_offer = meta_raw.get("target_offer")
+    if isinstance(target_offer, dict) and target_offer:
+        meta["target_offer"] = target_offer
 
     # Reasignar IDs consecutivos para garantizar unicidad
     for i, exp in enumerate(experience):

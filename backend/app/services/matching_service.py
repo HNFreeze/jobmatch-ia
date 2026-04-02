@@ -704,6 +704,80 @@ def _compose_decision_reason(result: str, strengths: list[str], gaps: list[str],
     return f"{label}: informacion limitada o encaje parcial."
 
 
+def _has_visible_salary(offer: dict) -> bool:
+    salary = str(offer.get("salario") or "").strip()
+    if not salary:
+        return False
+    return _normalize_text(salary) not in {"salario no especificado", "no especificado"}
+
+
+def _compute_offer_quality_score(offer: dict) -> tuple[float, list[str]]:
+    score = 0.0
+    notes: list[str] = []
+
+    source_type = _normalize_text(offer.get("source_type"))
+    if source_type == "official_api":
+        score += 7.5
+        notes.append("fuente oficial")
+    elif source_type == "public_ats":
+        score += 5.5
+        notes.append("fuente directa")
+    elif source_type == "career_page":
+        score += 4.0
+        notes.append("web de empresa")
+
+    freshness_state = _normalize_text(offer.get("freshness_state"))
+    freshness_bonus = {
+        "verified_recently": 6.0,
+        "verification_due": 3.0,
+        "verification_pending": 0.5,
+        "stale_verification": -3.5,
+        "stale_listing": -5.5,
+        "inactive": -14.0,
+    }.get(freshness_state, 0.0)
+    score += freshness_bonus
+    if freshness_state == "verified_recently":
+        notes.append("verificada recientemente")
+    elif freshness_state == "stale_listing":
+        notes.append("listado antiguo")
+    elif freshness_state == "inactive":
+        notes.append("inactiva")
+
+    try:
+        confidence = float(offer.get("source_confidence") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    score += max(0.0, confidence) * 12.0
+    if confidence >= 0.85:
+        notes.append("alta confianza")
+
+    if offer.get("verified_recently"):
+        score += 1.5
+    if _has_visible_salary(offer):
+        score += 2.0
+        notes.append("salario visible")
+    if offer.get("url") or offer.get("redirect_url") or offer.get("canonical_url"):
+        score += 1.0
+
+    return round(score, 2), _dedupe_keep_order(notes)[:3]
+
+
+def _compute_ranking_score(
+    match_score: int,
+    required_skill_coverage: float,
+    blocker_count: int,
+    offer: dict,
+) -> tuple[float, float, list[str]]:
+    quality_score, quality_notes = _compute_offer_quality_score(offer)
+    ranking_score = (
+        float(match_score) * 1.25
+        + float(required_skill_coverage or 0) * 18.0
+        - float(blocker_count or 0) * 7.5
+        + quality_score
+    )
+    return round(ranking_score, 2), quality_score, quality_notes
+
+
 def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
     _, profile_stack_norm = _normalize_profile_stack(profile)
     profile_years = _parse_years(profile.get("experience"))
@@ -769,12 +843,23 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
     gaps = _dedupe_keep_order(gaps)[:4]
     blockers = _dedupe_keep_order(blockers)[:3]
     decision_reason = _compose_decision_reason(result, strengths, gaps, blockers)
+    required_skill_coverage = len(matched_skills) / max(len(signals.get("required_skills") or []), 1) if (signals.get("required_skills") or []) else 0
+    blocker_count = len(blockers)
+    ranking_score, quality_score, quality_notes = _compute_ranking_score(
+        score,
+        required_skill_coverage,
+        blocker_count,
+        offer,
+    )
 
     return {
         "id": offer["id"],
         "resultado": result,
         "puntuacion": score,
         "match_score": score,
+        "ranking_score": ranking_score,
+        "quality_score": quality_score,
+        "quality_notes": quality_notes,
         "motivo": decision_reason,
         "decision_reason": decision_reason,
         "skills_match": matched_skills[:5],
@@ -789,8 +874,8 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
             "work_mode": signals.get("work_mode"),
             "required_years_min": signals.get("required_years_min"),
         },
-        "_required_skill_coverage": len(matched_skills) / max(len(signals.get("required_skills") or []), 1) if (signals.get("required_skills") or []) else 0,
-        "_blocker_count": len(blockers),
+        "_required_skill_coverage": required_skill_coverage,
+        "_blocker_count": blocker_count,
     }
 
 
@@ -800,9 +885,11 @@ def _sort_by_fit(results: list[dict]) -> list[dict]:
         results,
         key=lambda item: (
             order.get(item.get("resultado", "NO_ENCAJA"), 2),
+            -(item.get("ranking_score") or 0),
             -(item.get("puntuacion") or 0),
             item.get("_blocker_count", 0),
             -(item.get("_required_skill_coverage") or 0),
+            -(item.get("quality_score") or 0),
         ),
     )
 

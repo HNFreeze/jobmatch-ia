@@ -211,6 +211,51 @@ def test_download_pdf_uses_variant_template_and_fit_one_page(monkeypatch):
     assert captured["cv_json"]["meta"]["variant_name"] == "Platform Engineer · Umbrella"
 
 
+def test_optimize_variant_for_offer_updates_variant(monkeypatch):
+    client, SessionLocal, router = _build_client(monkeypatch)
+    create_response = client.post(
+        "/api/cv/improvement/1/variants",
+        json={"offer": {"adzuna_id": "adz-opt", "titulo": "Backend Python", "empresa": "Acme"}},
+    )
+    variant_id = create_response.json()["variant"]["id"]
+
+    monkeypatch.setenv("CLAUDE_API_KEY", "test-key")
+    monkeypatch.setattr(router, "consume_ai_quota", lambda db, user, action: {"cv_improve_remaining": 1, "used": 1})
+
+    async def fake_optimize(cv_json, offer_snapshot, api_key, user_id=None):
+        next_json = json.loads(json.dumps(cv_json))
+        next_json["summary"] = "Resumen optimizado para Backend Python."
+        next_json.setdefault("meta", {})["fit_one_page"] = True
+        return (
+            {
+                "focus_summary": "He priorizado Python y APIs.",
+                "changes_applied": ["Resumen orientado a Python", "Version mas compacta"],
+                "cv_structured_json": next_json,
+            },
+            SimpleNamespace(input_tokens=100, output_tokens=50),
+        )
+
+    monkeypatch.setattr(router, "optimize_cv_json_for_offer", fake_optimize)
+
+    response = client.post(f"/api/cv/improvement/1/optimize-for-offer?variant_id={variant_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["optimized"] is True
+    assert payload["cv_json"]["summary"] == "Resumen optimizado para Backend Python."
+    assert payload["changes_applied"][0] == "Resumen orientado a Python"
+
+    with SessionLocal() as db:
+        from app.models.cv_offer_variant import CVOfferVariant
+
+        variant = db.query(CVOfferVariant).filter(CVOfferVariant.id == variant_id).one()
+        stored_json = json.loads(variant.edited_cv_json)
+        stored_log = json.loads(variant.action_log_json)
+        assert stored_json["summary"] == "Resumen optimizado para Backend Python."
+        assert stored_json["meta"]["fit_one_page"] is True
+        assert stored_log[-1]["type"] == "offer_optimize_ai"
+
+
 def test_my_improvements_include_variant_summaries(monkeypatch):
     client, _SessionLocal, _router = _build_client(monkeypatch)
     client.post(

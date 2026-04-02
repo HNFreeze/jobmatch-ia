@@ -11,6 +11,14 @@ import {
 } from "../constants/theme";
 import CompanyLogo from "../components/CompanyLogo";
 import OfferTrustSignals from "../components/OfferTrustSignals";
+import {
+  getOfferQualityCounts,
+  hasVisibleSalary,
+  isAggregatorOffer,
+  isDirectSourceOffer,
+  isVerifiedOffer,
+  isJuniorFriendlyOffer,
+} from "../utils/jobTrust";
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -118,6 +126,19 @@ function detectContract(offer) {
   if (/freelance|autónom|autónom|self.employ/.test(text)) return "freelance";
   if (/temporal|prácticas|becario|intern|sustitución/.test(text)) return "temporal";
   return "indefinido";
+}
+
+function detectWorkMode(offer) {
+  const mode = String(offer?.signals_summary?.work_mode || "").toLowerCase();
+  if (mode === "remote") return "remoto";
+  if (mode === "hybrid") return "hibrido";
+  if (mode === "onsite") return "presencial";
+
+  const text = `${offer?.titulo || ""} ${offer?.descripcion || ""} ${offer?.ubicacion || ""}`.toLowerCase();
+  if (/remote|remoto|teletrabajo/.test(text)) return "remoto";
+  if (/hybrid|hibrid|híbrido|hibrido|mixto/.test(text)) return "hibrido";
+  if (/presencial|onsite/.test(text)) return "presencial";
+  return "no_indicado";
 }
 
 function extractTechTags(offer, userStack) {
@@ -305,8 +326,10 @@ function sortByRelevance(offers) {
     const aOrder = order[normalizeResultValue(a.resultado)] ?? 2;
     const bOrder = order[normalizeResultValue(b.resultado)] ?? 2;
     if (aOrder !== bOrder) return aOrder - bOrder;
+    if ((b.ranking_score || 0) !== (a.ranking_score || 0)) return (b.ranking_score || 0) - (a.ranking_score || 0);
     if ((b.puntuacion || 0) !== (a.puntuacion || 0)) return (b.puntuacion || 0) - (a.puntuacion || 0);
     if ((getBlockers(a).length) !== (getBlockers(b).length)) return getBlockers(a).length - getBlockers(b).length;
+    if ((b.source_confidence || 0) !== (a.source_confidence || 0)) return (b.source_confidence || 0) - (a.source_confidence || 0);
     return (b.skills_match?.length || 0) - (a.skills_match?.length || 0);
   });
 }
@@ -658,6 +681,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   const [salaryMin,           setSalaryMin]           = useState("");
   const [salaryMax,           setSalaryMax]           = useState("");
   const [contractFilter,      setContractFilter]      = useState("todos");
+  const [workModeFilter,      setWorkModeFilter]      = useState("todos");
+  const [onlyVerified,        setOnlyVerified]        = useState(false);
+  const [onlyDirectSources,   setOnlyDirectSources]   = useState(false);
+  const [hideAggregators,     setHideAggregators]     = useState(false);
+  const [onlySalaryVisible,   setOnlySalaryVisible]   = useState(false);
+  const [onlyJuniorFriendly,  setOnlyJuniorFriendly]  = useState(false);
   const [sortBy,              setSortBy]              = useState("relevancia");
   const [showMobileFilters,   setShowMobileFilters]   = useState(false);
   const [isMobile,            setIsMobile]            = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
@@ -941,6 +970,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     setSalaryMin("");
     setSalaryMax("");
     setContractFilter("todos");
+    setWorkModeFilter("todos");
+    setOnlyVerified(false);
+    setOnlyDirectSources(false);
+    setHideAggregators(false);
+    setOnlySalaryVisible(false);
+    setOnlyJuniorFriendly(false);
     setSortBy("relevancia");
   }
 
@@ -1069,12 +1104,32 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     if (contractFilter !== "todos") {
       filtered = filtered.filter(offer => detectContract(offer) === contractFilter);
     }
+    if (workModeFilter !== "todos") {
+      filtered = filtered.filter(offer => detectWorkMode(offer) === workModeFilter);
+    }
+    if (onlyVerified) {
+      filtered = filtered.filter(isVerifiedOffer);
+    }
+    if (onlyDirectSources) {
+      filtered = filtered.filter(isDirectSourceOffer);
+    }
+    if (hideAggregators) {
+      filtered = filtered.filter(offer => !isAggregatorOffer(offer));
+    }
+    if (onlySalaryVisible) {
+      filtered = filtered.filter(hasVisibleSalary);
+    }
+    if (onlyJuniorFriendly) {
+      filtered = filtered.filter(isJuniorFriendlyOffer);
+    }
     if (sortBy === "fecha") {
       filtered.sort((a, b) => new Date(b.fecha_publicacion || 0) - new Date(a.fecha_publicacion || 0));
     } else if (sortBy === "salario") {
       filtered.sort((a, b) => (parseSalaryValue(b.salario) || 0) - (parseSalaryValue(a.salario) || 0));
     } else if (sortBy === "puntuacion") {
       filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0));
+    } else if (sortBy === "confianza") {
+      filtered.sort((a, b) => (b.source_confidence || 0) - (a.source_confidence || 0));
     }
 
     const compareOffers = compareSelection
@@ -1086,6 +1141,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     const dm = darkMode;
     const userStack = profile?.stack || [];
     const coach = getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap });
+    const qualityCounts = getOfferQualityCounts(visible);
 
     return (
       <div className="profile-results-page" style={{ ...S.resultsPage, ...(dm ? S.dmPage : {}) }}>
@@ -1136,7 +1192,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
 
               {/* Contract (as Modalidad) */}
               <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🏠 Modalidad</label>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📄 Contrato</label>
                 <select
                   value={contractFilter}
                   onChange={e => setContractFilter(e.target.value)}
@@ -1146,6 +1202,19 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                   <option value="indefinido">Indefinido</option>
                   <option value="temporal">Temporal / Prácticas</option>
                   <option value="freelance">Freelance</option>
+                </select>
+              </div>
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🏡 Modo de trabajo</label>
+                <select
+                  value={workModeFilter}
+                  onChange={e => setWorkModeFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
+                >
+                  <option value="todos">Cualquiera</option>
+                  <option value="remoto">Remoto</option>
+                  <option value="hibrido">Hibrido</option>
+                  <option value="presencial">Presencial</option>
                 </select>
               </div>
 
@@ -1159,6 +1228,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                 >
                   <option value="relevancia">Relevancia</option>
                   <option value="puntuacion">Puntuación</option>
+                  <option value="confianza">Confianza de la fuente</option>
                   <option value="fecha">Más recientes</option>
                   <option value="salario">Mayor salario</option>
                 </select>
@@ -1182,6 +1252,40 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     onChange={e => setSalaryMax(e.target.value)}
                     style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), flex: 1 }}
                   />
+                </div>
+              </div>
+
+              <div style={S.filterGroup}>
+                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>✨ Calidad de la oferta</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {[
+                    { checked: onlyVerified, onChange: setOnlyVerified, label: "Solo verificadas recientemente" },
+                    { checked: onlyDirectSources, onChange: setOnlyDirectSources, label: "Solo fuentes directas u oficiales" },
+                    { checked: hideAggregators, onChange: setHideAggregators, label: "Ocultar agregadas" },
+                    { checked: onlySalaryVisible, onChange: setOnlySalaryVisible, label: "Con salario visible" },
+                    { checked: onlyJuniorFriendly, onChange: setOnlyJuniorFriendly, label: "Junior o primer empleo" },
+                  ].map((item) => (
+                    <label
+                      key={item.label}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 12,
+                        color: dm ? "#cbd5e1" : "#374151",
+                        fontFamily: typography.family,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={(e) => item.onChange(e.target.checked)}
+                        style={{ accentColor: TEAL, cursor: "pointer" }}
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -1222,6 +1326,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                   setSalaryMin("");
                   setSalaryMax("");
                   setContractFilter("todos");
+                  setWorkModeFilter("todos");
+                  setOnlyVerified(false);
+                  setOnlyDirectSources(false);
+                  setHideAggregators(false);
+                  setOnlySalaryVisible(false);
+                  setOnlyJuniorFriendly(false);
                   setSortBy("relevancia");
                 }}
               >
@@ -1273,6 +1383,39 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     <div className="summary-number-anim" style={{ fontSize: 28, fontWeight: 800, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1, marginTop: 4, fontFamily: typography.family }}>
                       {m.value}
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              marginBottom: 18,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+            }}>
+              {[
+                { label: "Verificadas", value: qualityCounts.verified, tone: dm ? "rgba(16,185,129,0.15)" : "#ecfdf5", color: dm ? "#6ee7b7" : "#15803d", border: dm ? "rgba(16,185,129,0.22)" : "#bbf7d0" },
+                { label: "Directas", value: qualityCounts.direct, tone: dm ? "rgba(37,99,235,0.15)" : "#eff6ff", color: dm ? "#93c5fd" : "#1d4ed8", border: dm ? "rgba(37,99,235,0.22)" : "#bfdbfe" },
+                { label: "Oficiales", value: qualityCounts.official, tone: dm ? "rgba(14,165,233,0.15)" : "#ecfeff", color: dm ? "#67e8f9" : "#0f766e", border: dm ? "rgba(103,232,249,0.22)" : "#a5f3fc" },
+                { label: "Con salario", value: qualityCounts.salaryVisible, tone: dm ? "rgba(245,158,11,0.15)" : "#fffbeb", color: dm ? "#fbbf24" : "#b45309", border: dm ? "rgba(245,158,11,0.22)" : "#fde68a" },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 14,
+                    backgroundColor: item.tone,
+                    color: item.color,
+                    border: `1px solid ${item.border}`,
+                    minWidth: 120,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: typography.family }}>
+                    {item.label}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800, lineHeight: 1, fontFamily: typography.family }}>
+                    {item.value}
                   </div>
                 </div>
               ))}
@@ -1345,6 +1488,74 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                   Filtros
                   <span style={{ fontSize: 10 }}>{showMobileFilters ? "▲" : "▼"}</span>
                 </button>
+              </div>
+            )}
+
+            {isMobile && showMobileFilters && (
+              <div style={{
+                marginBottom: 16,
+                padding: "14px 14px 12px",
+                borderRadius: 14,
+                backgroundColor: dm ? "#1e293b" : "#fff",
+                border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+                display: "grid",
+                gap: 12,
+              }}>
+                <input
+                  type="text"
+                  placeholder="Palabra clave"
+                  value={keywordFilter}
+                  onChange={(e) => setKeywordFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
+                />
+                <input
+                  type="text"
+                  placeholder="Ubicacion"
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
+                />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <select value={contractFilter} onChange={(e) => setContractFilter(e.target.value)} style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}>
+                    <option value="todos">Contrato</option>
+                    <option value="indefinido">Indefinido</option>
+                    <option value="temporal">Temporal / practicas</option>
+                    <option value="freelance">Freelance</option>
+                  </select>
+                  <select value={workModeFilter} onChange={(e) => setWorkModeFilter(e.target.value)} style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}>
+                    <option value="todos">Modo de trabajo</option>
+                    <option value="remoto">Remoto</option>
+                    <option value="hibrido">Hibrido</option>
+                    <option value="presencial">Presencial</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {[
+                    { active: onlyVerified, toggle: setOnlyVerified, label: "Verificadas" },
+                    { active: onlyDirectSources, toggle: setOnlyDirectSources, label: "Directas" },
+                    { active: hideAggregators, toggle: setHideAggregators, label: "Sin agregadas" },
+                    { active: onlySalaryVisible, toggle: setOnlySalaryVisible, label: "Con salario" },
+                    { active: onlyJuniorFriendly, toggle: setOnlyJuniorFriendly, label: "Junior" },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => item.toggle(!item.active)}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 999,
+                        border: `1px solid ${item.active ? "transparent" : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db")}`,
+                        backgroundColor: item.active ? TEAL : (dm ? "rgba(255,255,255,0.04)" : "#f8fafc"),
+                        color: item.active ? "#fff" : (dm ? "#cbd5e1" : "#374151"),
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontFamily: typography.family,
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

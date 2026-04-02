@@ -11,7 +11,7 @@
  * - Descargar PDF → guarda primero y luego POST /api/cv/improvement/{id}/pdf
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { saveCVEdit, downloadCVPdfFromEdit } from "../services/api";
+import { saveCVEdit, downloadCVPdfFromEdit, optimizeCVVariantForOffer } from "../services/api";
 import CVPreview from "./CVPreview";
 import {
   SECTION_KEYS,
@@ -224,6 +224,7 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
   const [actionLog, setActionLog] = useState([]);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [dragInfo, setDragInfo] = useState(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
@@ -238,6 +239,18 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
   const savePromiseRef = useRef(null);
   const lastSavedPayloadRef = useRef("");
   const lastSavedActionLogRef = useRef("");
+
+  const syncSavedSnapshot = (nextPayload, nextActionLog) => {
+    const nextPayloadSignature = JSON.stringify(nextPayload);
+    const nextActionLogSignature = JSON.stringify(nextActionLog);
+    lastSavedPayloadRef.current = nextPayloadSignature;
+    lastSavedActionLogRef.current = nextActionLogSignature;
+    setCvJson(nextPayload);
+    setActionLog(nextActionLog);
+    setLastSavedAt(new Date());
+    setSaveState("saved");
+    setSaveError(null);
+  };
 
   const logAction = (action) =>
     setActionLog(prev => [...prev, { ...action, ts: Date.now() }]);
@@ -299,12 +312,8 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
 
     const request = saveCVEdit(improvementId, payload, actionLog, variantId)
       .then(() => {
-        lastSavedPayloadRef.current = payloadSignature;
-        lastSavedActionLogRef.current = actionLogSignature;
         if (mountedRef.current) {
-          setCvJson(payload);
-          setLastSavedAt(new Date());
-          setSaveState("saved");
+          syncSavedSnapshot(payload, actionLog);
           if (!silent) {
             onSaved?.(payload, {
               variantId,
@@ -544,6 +553,32 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
     setCvJson(result.cvJson);
   };
 
+  const handleOptimizeForOffer = async () => {
+    if (!variantId || !targetOffer) return;
+    try {
+      await persistChanges({ silent: true });
+    } catch {
+      return;
+    }
+
+    setOptimizing(true);
+    try {
+      const data = await optimizeCVVariantForOffer(improvementId, variantId);
+      const nextCvJson = data?.cv_json || payload;
+      const nextActionLog = Array.isArray(data?.action_log) ? data.action_log : actionLog;
+      syncSavedSnapshot(nextCvJson, nextActionLog);
+      onSaved?.(nextCvJson, {
+        variantId,
+        variantName: nextCvJson?.meta?.variant_name || variant?.name || null,
+        variant,
+      });
+    } catch (err) {
+      alert(err?.message || err?.detail || "Error al optimizar el CV para esta oferta");
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   const handleRestore = () => {
     setCvJson(withExportSettings(deepClone(originalJson.current), template, fitOnePage));
     setActionLog([{ type: "restore_all", ts: Date.now() }]);
@@ -693,6 +728,31 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
                 {targetOffer?.titulo && (
                   <div style={{ fontSize: 12, color: muted, marginTop: 4 }}>
                     Oferta objetivo: {targetOffer.titulo}{targetOffer.empresa ? ` · ${targetOffer.empresa}` : ""}
+                  </div>
+                )}
+                {targetOffer?.titulo && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+                    <button
+                      onClick={handleOptimizeForOffer}
+                      disabled={optimizing || saving || saveState === "saving"}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 999,
+                        border: "1.5px solid #2563eb",
+                        background: "none",
+                        color: "#2563eb",
+                        cursor: (optimizing || saving || saveState === "saving") ? "wait" : "pointer",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        opacity: (optimizing || saving || saveState === "saving") ? 0.7 : 1,
+                      }}
+                    >
+                      {optimizing ? "Optimizando..." : "Optimizar con IA para esta oferta"}
+                    </button>
+                    <span style={{ fontSize: 11, color: muted }}>
+                      Reordena y resume el CV en funcion de la oferta sin inventar datos.
+                    </span>
                   </div>
                 )}
               </SectionWrap>
@@ -955,6 +1015,22 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, varia
                 >
                   Ocultar vacios
                 </button>
+                {variantId && targetOffer?.titulo && (
+                  <button
+                    onClick={handleOptimizeForOffer}
+                    disabled={optimizing || saving || saveState === "saving"}
+                    style={{
+                      padding: "8px 14px", borderRadius: 20,
+                      border: "1.5px solid #2563eb",
+                      background: "none", color: "#2563eb",
+                      cursor: (optimizing || saving || saveState === "saving") ? "wait" : "pointer",
+                      fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+                      opacity: (optimizing || saving || saveState === "saving") ? 0.7 : 1,
+                    }}
+                  >
+                    {optimizing ? "Optimizando..." : "Optimizar para oferta"}
+                  </button>
+                )}
                 <button
                   onClick={() => setConfirmRestore(true)}
                   style={{

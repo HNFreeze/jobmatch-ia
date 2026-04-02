@@ -540,6 +540,15 @@ export async function createCVVariant(improvementId, payload) {
   return response.json();
 }
 
+export async function optimizeCVVariantForOffer(improvementId, variantId) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/optimize-for-offer?variant_id=${variantId}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al optimizar el CV para esta oferta");
+  return response.json();
+}
+
 export async function deleteCVVariant(improvementId, variantId) {
   const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/variants/${variantId}`, {
     method: "DELETE",
