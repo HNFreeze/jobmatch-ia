@@ -28,6 +28,7 @@ from app.services.job_ingestion_service import (
     prepare_ingestion_payload,
     run_ingestion_task,
 )
+from app.services.official_sources_service import get_public_source_configuration_status
 
 router = APIRouter()
 ADMIN_DELETE_CONFIRMATION_CODE = os.getenv("ADMIN_DELETE_CONFIRMATION_CODE", "715345")
@@ -915,6 +916,11 @@ def get_job_index_health(_: User = Depends(require_admin_user)):
         })
     finally:
         db.close()
+
+
+@router.get("/api/admin/job-sources/status")
+def get_job_sources_status(_: User = Depends(require_admin_user)):
+    return JSONResponse(content=get_public_source_configuration_status())
 
 
 @router.post("/api/admin/job-ingestion/run")
