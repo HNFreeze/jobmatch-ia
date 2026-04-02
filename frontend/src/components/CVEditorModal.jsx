@@ -10,38 +10,21 @@
  * - Guardar → PUT /api/cv/improvement/{id}/edit
  * - Descargar PDF → guarda primero y luego POST /api/cv/improvement/{id}/pdf
  */
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { saveCVEdit, downloadCVPdfFromEdit } from "../services/api";
 import CVPreview from "./CVPreview";
+import {
+  SECTION_KEYS,
+  autoHideEmptySections,
+  estimateCvPageFit,
+  getHiddenSections,
+  withExportSettings,
+} from "../utils/cvExport";
 
 const PURPLE = "#7c3aed";
-const SECTION_KEYS = [
-  "summary",
-  "experience",
-  "education",
-  "skills",
-  "languages",
-  "projects",
-  "certifications",
-];
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
-}
-
-function getHiddenSections(cvJson) {
-  const sections = cvJson?.meta?.hidden_sections;
-  return Array.isArray(sections) ? sections.filter(Boolean) : [];
-}
-
-function withSelectedTemplate(cvJson, template) {
-  return {
-    ...cvJson,
-    meta: {
-      ...(cvJson?.meta || {}),
-      selected_template: template || "professional_modern",
-    },
-  };
 }
 
 function createItemId(prefix) {
@@ -231,8 +214,12 @@ function DragCard({ section, idx, flagged, dragInfo, onDragStart, onDragOver, on
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
-  const [cvJson, setCvJson] = useState(() => deepClone(initialJson));
+function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved, variantId = null, variant = null }) {
+  const initialTemplate = initialJson?.meta?.selected_template || "professional_modern";
+  const initialFitOnePage = Boolean(initialJson?.meta?.fit_one_page);
+  const [cvJson, setCvJson] = useState(() =>
+    withExportSettings(deepClone(initialJson), initialTemplate, initialFitOnePage)
+  );
   const originalJson = useRef(deepClone(initialJson));
   const [actionLog, setActionLog] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -240,9 +227,17 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
   const [dragInfo, setDragInfo] = useState(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
-  const [template, setTemplate] = useState(
-    initialJson?.meta?.selected_template || "professional_modern"
-  );
+  const [template, setTemplate] = useState(initialTemplate);
+  const [fitOnePage, setFitOnePage] = useState(initialFitOnePage);
+  const [saveState, setSaveState] = useState("saved");
+  const [saveError, setSaveError] = useState(null);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const saveTimerRef = useRef(null);
+  const mountedRef = useRef(true);
+  const initializedRef = useRef(false);
+  const savePromiseRef = useRef(null);
+  const lastSavedPayloadRef = useRef("");
+  const lastSavedActionLogRef = useRef("");
 
   const logAction = (action) =>
     setActionLog(prev => [...prev, { ...action, ts: Date.now() }]);
@@ -261,6 +256,135 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
     borderRadius: 6, padding: "5px 9px", fontSize: 13, color: text,
     fontFamily: "inherit", width: "100%", boxSizing: "border-box", outline: "none",
   };
+
+  const payload = useMemo(
+    () => withExportSettings(cvJson, template, fitOnePage),
+    [cvJson, template, fitOnePage]
+  );
+  const payloadSignature = useMemo(() => JSON.stringify(payload), [payload]);
+  const actionLogSignature = useMemo(() => JSON.stringify(actionLog), [actionLog]);
+  const hasUnsavedChanges =
+    payloadSignature !== lastSavedPayloadRef.current ||
+    actionLogSignature !== lastSavedActionLogRef.current;
+  const pageFit = useMemo(
+    () => estimateCvPageFit(payload, template, fitOnePage),
+    [payload, template, fitOnePage]
+  );
+  const variantName = payload?.meta?.variant_name || variant?.name || "";
+  const targetOffer = variant?.offer_snapshot || payload?.meta?.target_offer || null;
+  const saveStatusMeta = useMemo(() => {
+    if (saveState === "saving") return { label: "Guardando...", color: "#2563eb" };
+    if (saveState === "error") return { label: saveError || "Error al guardar", color: "#ef4444" };
+    if (saveState === "dirty") return { label: "Cambios sin guardar", color: "#f59e0b" };
+    if (lastSavedAt) {
+      return {
+        label: `Guardado a las ${lastSavedAt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`,
+        color: "#10b981",
+      };
+    }
+    return { label: "Todo guardado", color: "#10b981" };
+  }, [lastSavedAt, saveError, saveState]);
+
+  const persistChanges = async ({ silent = false } = {}) => {
+    if (!hasUnsavedChanges) {
+      return payload;
+    }
+    if (savePromiseRef.current) {
+      return savePromiseRef.current;
+    }
+
+    if (!silent) setSaving(true);
+    setSaveState("saving");
+    setSaveError(null);
+
+    const request = saveCVEdit(improvementId, payload, actionLog, variantId)
+      .then(() => {
+        lastSavedPayloadRef.current = payloadSignature;
+        lastSavedActionLogRef.current = actionLogSignature;
+        if (mountedRef.current) {
+          setCvJson(payload);
+          setLastSavedAt(new Date());
+          setSaveState("saved");
+          if (!silent) {
+            onSaved?.(payload, {
+              variantId,
+              variantName: payload?.meta?.variant_name || variant?.name || null,
+              variant,
+            });
+          }
+        }
+        return payload;
+      })
+      .catch((err) => {
+        if (mountedRef.current) {
+          setSaveState("error");
+          setSaveError(err?.message || "Error al guardar");
+        }
+        if (!silent) {
+          alert(err?.message || "Error al guardar los cambios");
+        }
+        throw err;
+      })
+      .finally(() => {
+        savePromiseRef.current = null;
+        if (mountedRef.current && !silent) {
+          setSaving(false);
+        }
+      });
+
+    savePromiseRef.current = request;
+    return request;
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initializedRef.current) {
+      lastSavedPayloadRef.current = payloadSignature;
+      lastSavedActionLogRef.current = actionLogSignature;
+      initializedRef.current = true;
+      return undefined;
+    }
+
+    if (!hasUnsavedChanges) {
+      return undefined;
+    }
+
+    setSaveState((current) => (current === "saving" ? current : "dirty"));
+    setSaveError(null);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      void persistChanges({ silent: true });
+    }, 1200);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [actionLogSignature, hasUnsavedChanges, payloadSignature]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      return undefined;
+    }
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // ── State updaters ──────────────────────────────────────────────────────────
   const updatePersonal = (field, value) =>
@@ -391,32 +515,21 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
 
   // ── Actions ─────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    setSaving(true);
-    const payload = withSelectedTemplate(cvJson, template);
     try {
-      await saveCVEdit(improvementId, payload, actionLog);
-      setCvJson(payload);
-      onSaved?.(payload);
+      await persistChanges();
       onClose();
-    } catch (err) {
-      alert(err?.message || "Error al guardar los cambios");
-    } finally {
-      setSaving(false);
-    }
+    } catch { /* ya gestionado */ }
   };
 
   const handleDownload = async () => {
-    const payload = withSelectedTemplate(cvJson, template);
-    setSaving(true);
     try {
-      await saveCVEdit(improvementId, payload, actionLog);
-      setCvJson(payload);
-      onSaved?.(payload);
-    } catch { /* continuar */ }
-    setSaving(false);
+      await persistChanges();
+    } catch {
+      return;
+    }
     setDownloading(true);
     try {
-      await downloadCVPdfFromEdit(improvementId, template);
+      await downloadCVPdfFromEdit(improvementId, template, fitOnePage, variantId);
     } catch (err) {
       alert(err?.message || "Error al descargar el PDF");
     } finally {
@@ -424,9 +537,17 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
     }
   };
 
+  const handleAutoHideEmpty = () => {
+    const result = autoHideEmptySections(cvJson);
+    if (!result.hiddenSections.length) return;
+    logAction({ type: "auto_hide_empty_sections", sections: result.hiddenSections });
+    setCvJson(result.cvJson);
+  };
+
   const handleRestore = () => {
-    setCvJson(withSelectedTemplate(deepClone(originalJson.current), template));
+    setCvJson(withExportSettings(deepClone(originalJson.current), template, fitOnePage));
     setActionLog([{ type: "restore_all", ts: Date.now() }]);
+    setSaveError(null);
     setConfirmRestore(false);
   };
 
@@ -460,7 +581,22 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
           }}>
             {/* Left: title */}
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: text }}>CV mejorado</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: text }}>
+                {variantId ? "Variante de CV" : "CV mejorado"}
+              </div>
+              <div style={{ fontSize: 11, color: saveStatusMeta.color, marginTop: 2, fontWeight: 700 }}>
+                {saveStatusMeta.label}
+              </div>
+              {variantName && (
+                <div style={{ fontSize: 11, color: text, marginTop: 6, fontWeight: 700 }}>
+                  {variantName}
+                </div>
+              )}
+              {targetOffer?.titulo && (
+                <div style={{ fontSize: 11, color: muted, marginTop: 2 }}>
+                  {targetOffer.titulo}{targetOffer.empresa ? ` · ${targetOffer.empresa}` : ""}
+                </div>
+              )}
               {!previewMode && (
                 <div style={{ fontSize: 11, color: muted, marginTop: 1 }}>
                   Arrastra para reordenar · Guarda los cambios antes de descargar
@@ -504,12 +640,63 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
           {/* ── Body: Vista previa ── */}
           {previewMode && (
             <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+              <div style={{
+                marginBottom: 14,
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: `1px solid ${pageFit.tone === "success" ? "#86efac" : pageFit.tone === "warning" ? "#fcd34d" : "#fca5a5"}`,
+                background: pageFit.tone === "success"
+                  ? (dm ? "rgba(34,197,94,0.12)" : "#f0fdf4")
+                  : pageFit.tone === "warning"
+                    ? (dm ? "rgba(245,158,11,0.12)" : "#fffbeb")
+                    : (dm ? "rgba(239,68,68,0.12)" : "#fef2f2"),
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: text, marginBottom: 4 }}>
+                  {pageFit.label}
+                </div>
+                {pageFit.drivers.length > 0 && (
+                  <div style={{ fontSize: 11, color: muted, marginBottom: pageFit.suggestions.length ? 6 : 0 }}>
+                    {pageFit.drivers.join(" · ")}
+                  </div>
+                )}
+                {pageFit.suggestions.length > 0 && (
+                  <div style={{ fontSize: 11, color: muted }}>
+                    {pageFit.suggestions.join(" · ")}
+                  </div>
+                )}
+              </div>
               <CVPreview cvJson={cvJson} dm={dm} template={template} />
             </div>
           )}
 
           {/* ── Body: Editar ── */}
           {!previewMode && <div style={{ padding: "24px 28px" }}>
+
+            {variantId && (
+              <SectionWrap
+                title="Variante"
+                dm={dm}
+                helperText="Esta versión se guarda separada del CV base para una oferta concreta."
+              >
+                <Field
+                  label="Nombre interno"
+                  value={payload?.meta?.variant_name || ""}
+                  onChange={(value) => setCvJson((previous) => ({
+                    ...previous,
+                    meta: {
+                      ...(previous.meta || {}),
+                      variant_name: value,
+                    },
+                  }))}
+                  dm={dm}
+                />
+                {targetOffer?.titulo && (
+                  <div style={{ fontSize: 12, color: muted, marginTop: 4 }}>
+                    Oferta objetivo: {targetOffer.titulo}{targetOffer.empresa ? ` · ${targetOffer.empresa}` : ""}
+                  </div>
+                )}
+              </SectionWrap>
+            )}
 
             {/* DATOS PERSONALES */}
             <SectionWrap title="Datos personales" dm={dm}>
@@ -756,17 +943,30 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
           }}>
             {/* Restore — only visible in edit mode */}
             {!previewMode ? (
-              <button
-                onClick={() => setConfirmRestore(true)}
-                style={{
-                  padding: "8px 14px", borderRadius: 20,
-                  border: `1.5px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
-                  background: "none", color: muted, cursor: "pointer",
-                  fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-                }}
-              >
-                Restaurar sugerencia IA
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  onClick={handleAutoHideEmpty}
+                  style={{
+                    padding: "8px 14px", borderRadius: 20,
+                    border: `1.5px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                    background: "none", color: muted, cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                  }}
+                >
+                  Ocultar vacios
+                </button>
+                <button
+                  onClick={() => setConfirmRestore(true)}
+                  style={{
+                    padding: "8px 14px", borderRadius: 20,
+                    border: `1.5px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                    background: "none", color: muted, cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                  }}
+                >
+                  Restaurar sugerencia IA
+                </button>
+              </div>
             ) : (
               <div style={{ fontSize: 12, color: muted }}>
                 Vista previa del CV final
@@ -799,28 +999,45 @@ function CVEditorModal({ improvementId, initialJson, dm, onClose, onSaved }) {
                   <option value="ats_minimal">ATS Minimal</option>
                 </select>
               </div>
-              <button onClick={handleDownload} disabled={downloading || saving} style={{
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: muted, fontWeight: 600, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={fitOnePage}
+                  onChange={e => setFitOnePage(e.target.checked)}
+                  style={{ accentColor: PURPLE, cursor: "pointer" }}
+                />
+                Intentar 1 pagina
+              </label>
+              <div style={{ fontSize: 11, color: pageFit.tone === "success" ? "#10b981" : pageFit.tone === "warning" ? "#f59e0b" : "#ef4444", fontWeight: 700 }}>
+                {pageFit.label}
+              </div>
+              <button onClick={handleDownload} disabled={downloading || saving || saveState === "saving"} style={{
                 padding: "8px 18px", borderRadius: 20,
                 border: "1.5px solid #2563eb", background: "none", color: "#2563eb",
-                cursor: (downloading || saving) ? "wait" : "pointer",
+                cursor: (downloading || saving || saveState === "saving") ? "wait" : "pointer",
                 fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-                opacity: (downloading || saving) ? 0.7 : 1,
+                opacity: (downloading || saving || saveState === "saving") ? 0.7 : 1,
               }}>
-                {downloading ? "Descargando..." : "Descargar PDF"}
+                {downloading ? "Descargando..." : "Guardar y descargar PDF"}
               </button>
               {!previewMode && (
-                <button onClick={handleSave} disabled={saving} style={{
+                <button onClick={handleSave} disabled={saving || saveState === "saving"} style={{
                   padding: "8px 20px", borderRadius: 20,
                   background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
                   border: "none", color: "#fff",
-                  cursor: saving ? "wait" : "pointer",
+                  cursor: (saving || saveState === "saving") ? "wait" : "pointer",
                   fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-                  opacity: saving ? 0.7 : 1,
+                  opacity: (saving || saveState === "saving") ? 0.7 : 1,
                   boxShadow: "0 2px 8px rgba(124,58,237,0.3)",
                 }}>
-                  {saving ? "Guardando..." : "Guardar cambios"}
+                  {(saving || saveState === "saving") ? "Guardando..." : "Guardar y cerrar"}
                 </button>
               )}
+              <div style={{ fontSize: 11, color: muted, maxWidth: 220 }}>
+                {fitOnePage
+                  ? "Se exportara con una version mas compacta del PDF."
+                  : "La plantilla y este ajuste se guardan para futuras descargas."}
+              </div>
             </div>
           </div>
 

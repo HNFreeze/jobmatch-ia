@@ -9,6 +9,11 @@ from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
 from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.search_history import SearchHistory
+from app.models.cv_analysis import CVAnalysis
+from app.models.cv_ats_result import CVAtsResult
+from app.models.cv_improvement import CVImprovement
+from app.models.cv_edit_session import CVEditSession
+from app.models.cv_offer_variant import CVOfferVariant
 
 __all__ = [
     "SearchCache",
@@ -22,4 +27,9 @@ __all__ = [
     "Favorite",
     "RateLimitBucket",
     "SearchHistory",
+    "CVAnalysis",
+    "CVAtsResult",
+    "CVImprovement",
+    "CVEditSession",
+    "CVOfferVariant",
 ]

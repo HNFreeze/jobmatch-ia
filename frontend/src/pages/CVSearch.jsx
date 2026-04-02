@@ -1,5 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeCV, improveCVFull, downloadCVPdf, getMyImprovements, searchFromImprovement, getCVEdit } from "../services/api";
+import {
+  analyzeCV,
+  improveCVFull,
+  downloadCVPdf,
+  getMyImprovements,
+  searchFromImprovement,
+  getCVEdit,
+  createCVVariant,
+  deleteCVVariant,
+} from "../services/api";
 import CompanyLogo from "../components/CompanyLogo";
 import CVEditorModal from "../components/CVEditorModal";
 import {
@@ -183,7 +192,7 @@ function OfferCard({ offer, dm, onSelect }) {
 
 // ─── Componente: modal de detalle de oferta ──────────────────────────────────
 
-function OfferModal({ offer, dm, onClose }) {
+function OfferModal({ offer, dm, onClose, onCreateVariant = null, creatingVariant = false }) {
   const style = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
@@ -286,6 +295,23 @@ function OfferModal({ offer, dm, onClose }) {
         )}
 
         {/* CTA */}
+        {onCreateVariant && (
+          <button
+            onClick={() => onCreateVariant(offer)}
+            disabled={creatingVariant}
+            style={{
+              display: "block", width: "100%", textAlign: "center", marginTop: 20, marginBottom: offer.url ? 10 : 0,
+              background: "none", color: "#7c3aed",
+              border: "1.5px solid #7c3aed",
+              padding: "12px 24px", borderRadius: 50, fontWeight: 700,
+              fontSize: 14, cursor: creatingVariant ? "wait" : "pointer",
+              opacity: creatingVariant ? 0.7 : 1,
+              fontFamily: typography.family,
+            }}
+          >
+            {creatingVariant ? "Creando variante..." : "Crear variante de CV para esta oferta"}
+          </button>
+        )}
         {offer.url && (
           <a
             href={offer.url}
@@ -1102,13 +1128,14 @@ function ImproveTabNew({
   const [isDragging, setIsDragging] = useState(false);
   const [cvExpanded, setCvExpanded] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorState, setEditorState] = useState({ open: false, json: null, variantId: null, variant: null });
+  const [creatingVariantId, setCreatingVariantId] = useState(null);
 
   // Auto-open the editor when a new CV is generated (if structured JSON is available).
   // Using improvement_id as dependency so it only fires on a new generation, not on every save.
   useEffect(() => {
     if (result?.cv_structured_json && result?.improvement_id) {
-      setEditorOpen(true);
+      setEditorState({ open: true, json: result.cv_structured_json, variantId: null, variant: null });
     }
   }, [result?.improvement_id]);
 
@@ -1129,6 +1156,33 @@ function ImproveTabNew({
       addToast?.(err?.detail || "Error al descargar el PDF", "error");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleCreateVariant = async (offer) => {
+    if (!result?.improvement_id) return;
+    const variantKey = offer?.adzuna_id || offer?.id || "variant";
+    setCreatingVariantId(variantKey);
+    try {
+      const data = await createCVVariant(result.improvement_id, { offer });
+      if (!data?.cv_json || !data?.variant?.id) {
+        throw new Error("No se pudo preparar la variante");
+      }
+      setEditorState({
+        open: true,
+        json: data.cv_json,
+        variantId: data.variant.id,
+        variant: data.variant,
+      });
+      setSelectedOffer(null);
+      addToast?.(
+        data.created ? "Variante creada para esta oferta" : "Abriendo la variante existente para esta oferta",
+        "success"
+      );
+    } catch (err) {
+      addToast?.(err?.detail || err?.message || "Error al crear la variante del CV", "error");
+    } finally {
+      setCreatingVariantId(null);
     }
   };
 
@@ -1203,7 +1257,7 @@ function ImproveTabNew({
               {result?.cv_structured_json ? (
                 <>
                   {/* Primary: open editor (which has preview + download inside) */}
-                  <button onClick={() => setEditorOpen(true)} style={{
+                  <button onClick={() => setEditorState({ open: true, json: result.cv_structured_json, variantId: null, variant: null })} style={{
                     padding: "8px 18px", borderRadius: 20, border: "none",
                     background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
                     color: "#fff", cursor: "pointer",
@@ -1240,13 +1294,26 @@ function ImproveTabNew({
             </div>
           </div>
 
-          {editorOpen && result?.cv_structured_json && (
+          {editorState.open && editorState.json && (
             <CVEditorModal
               improvementId={result.improvement_id}
-              initialJson={result.cv_structured_json}
+              initialJson={editorState.json}
               dm={dm}
-              onClose={() => setEditorOpen(false)}
-              onSaved={(editedJson) => setResult(r => ({ ...r, cv_structured_json: editedJson }))}
+              variantId={editorState.variantId}
+              variant={editorState.variant}
+              onClose={() => setEditorState({ open: false, json: null, variantId: null, variant: null })}
+              onSaved={(editedJson, meta) => {
+                if (!meta?.variantId) {
+                  setResult((current) => ({ ...current, cv_structured_json: editedJson }));
+                  setEditorState((current) => ({ ...current, json: editedJson }));
+                  return;
+                }
+                setEditorState((current) => ({
+                  ...current,
+                  json: editedJson,
+                  variant: current.variant ? { ...current.variant, name: meta.variantName || current.variant.name } : current.variant,
+                }));
+              }}
             />
           )}
 
@@ -1372,7 +1439,15 @@ function ImproveTabNew({
             </div>
           )}
 
-          {selectedOffer && <OfferModal offer={selectedOffer} dm={dm} onClose={() => setSelectedOffer(null)} />}
+          {selectedOffer && (
+            <OfferModal
+              offer={selectedOffer}
+              dm={dm}
+              onClose={() => setSelectedOffer(null)}
+              onCreateVariant={handleCreateVariant}
+              creatingVariant={creatingVariantId === (selectedOffer?.adzuna_id || selectedOffer?.id || "variant")}
+            />
+          )}
         </>
       )}
     </div>
@@ -1385,7 +1460,7 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
   const [improvements, setImprovements] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);
-  const [editorState, setEditorState] = useState({ open: false, id: null, json: null });
+  const [editorState, setEditorState] = useState({ open: false, id: null, json: null, variantId: null, variant: null });
   const [editLoading, setEditLoading] = useState(null);
 
   useEffect(() => {
@@ -1395,26 +1470,51 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleDownload = async (id) => {
-    setDownloading(id);
-    try { await downloadCVPdf(id); }
+  const handleDownload = async (id, variantId = null) => {
+    setDownloading(variantId != null ? `variant-${variantId}` : id);
+    try { await downloadCVPdf(id, null, null, variantId); }
     catch (err) { addToast?.(err?.detail || "Error al descargar", "error"); }
     finally { setDownloading(null); }
   };
 
-  const handleOpenEditor = async (id) => {
-    setEditLoading(id);
+  const handleOpenEditor = async (id, variant = null) => {
+    const loadingKey = variant?.id != null ? `variant-${variant.id}` : id;
+    setEditLoading(loadingKey);
     try {
-      const data = await getCVEdit(id);
+      const data = await getCVEdit(id, variant?.id ?? null);
       if (data.source === "legacy" || !data.cv_json) {
         addToast?.("Este CV no tiene edición disponible. Regenera el CV para poder editarlo.", "error");
         return;
       }
-      setEditorState({ open: true, id, json: data.cv_json });
+      setEditorState({
+        open: true,
+        id,
+        json: data.cv_json,
+        variantId: data.variant_id || variant?.id || null,
+        variant: data.variant || variant || null,
+      });
     } catch (err) {
       addToast?.(err?.message || "Error al cargar el CV", "error");
     } finally {
       setEditLoading(null);
+    }
+  };
+
+  const handleDeleteVariant = async (improvementId, variantId) => {
+    try {
+      await deleteCVVariant(improvementId, variantId);
+      setImprovements((current) => (current || []).map((improvement) => {
+        if (improvement.id !== improvementId) return improvement;
+        const nextVariants = (improvement.variants || []).filter((variant) => variant.id !== variantId);
+        return {
+          ...improvement,
+          variants: nextVariants,
+          variant_count: nextVariants.length,
+        };
+      }));
+      addToast?.("Variante eliminada", "success");
+    } catch (err) {
+      addToast?.(err?.detail || err?.message || "Error al eliminar la variante", "error");
     }
   };
 
@@ -1473,6 +1573,63 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
                   })}
                 </div>
               )}
+              {imp.variants?.length > 0 && (
+                <div style={{
+                  marginTop: 12, paddingTop: 12,
+                  borderTop: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#eef2ff"}`,
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Variantes por oferta
+                  </div>
+                  {imp.variants.map((variant) => {
+                    const variantKey = `variant-${variant.id}`;
+                    return (
+                      <div key={variant.id} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        gap: 8, flexWrap: "wrap",
+                        background: dm ? "rgba(255,255,255,0.03)" : "#faf5ff",
+                        border: `1px solid ${dm ? "rgba(124,58,237,0.18)" : "#e9d5ff"}`,
+                        borderRadius: 10, padding: "10px 12px",
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827" }}>
+                            {variant.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: dm ? "#94a3b8" : "#6b7280", marginTop: 2 }}>
+                            {[variant.offer_title, variant.offer_company].filter(Boolean).join(" · ") || "Variante manual"}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button onClick={() => handleDownload(imp.id, variant.id)} disabled={downloading === variantKey} style={{
+                            padding: "6px 12px", borderRadius: 18, border: "1px solid #7c3aed",
+                            background: "none", color: "#7c3aed", cursor: "pointer",
+                            fontSize: 11, fontWeight: 700, fontFamily: typography.family,
+                            opacity: downloading === variantKey ? 0.7 : 1,
+                          }}>
+                            {downloading === variantKey ? "..." : "PDF"}
+                          </button>
+                          <button onClick={() => handleOpenEditor(imp.id, variant)} disabled={editLoading === variantKey} style={{
+                            padding: "6px 12px", borderRadius: 18, border: "1px solid #2563eb",
+                            background: "none", color: "#2563eb", cursor: "pointer",
+                            fontSize: 11, fontWeight: 700, fontFamily: typography.family,
+                            opacity: editLoading === variantKey ? 0.7 : 1,
+                          }}>
+                            {editLoading === variantKey ? "..." : "Editar"}
+                          </button>
+                          <button onClick={() => handleDeleteVariant(imp.id, variant.id)} style={{
+                            padding: "6px 12px", borderRadius: 18, border: "1px solid #ef4444",
+                            background: "none", color: "#ef4444", cursor: "pointer",
+                            fontSize: 11, fontWeight: 700, fontFamily: typography.family,
+                          }}>
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Acciones */}
@@ -1510,8 +1667,28 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
           improvementId={editorState.id}
           initialJson={editorState.json}
           dm={dm}
-          onClose={() => setEditorState({ open: false, id: null, json: null })}
-          onSaved={(editedJson) => setEditorState(s => ({ ...s, json: editedJson }))}
+          variantId={editorState.variantId}
+          variant={editorState.variant}
+          onClose={() => setEditorState({ open: false, id: null, json: null, variantId: null, variant: null })}
+          onSaved={(editedJson, meta) => {
+            setEditorState((current) => ({ ...current, json: editedJson }));
+            if (!meta?.variantId) return;
+            setImprovements((current) => (current || []).map((improvement) => {
+              if (improvement.id !== editorState.id) return improvement;
+              return {
+                ...improvement,
+                variants: (improvement.variants || []).map((variant) => (
+                  variant.id === meta.variantId
+                    ? {
+                        ...variant,
+                        name: meta.variantName || variant.name,
+                        updated_at: new Date().toISOString(),
+                      }
+                    : variant
+                )),
+              };
+            }));
+          }}
         />
       )}
     </div>
