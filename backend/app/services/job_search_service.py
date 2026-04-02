@@ -1,6 +1,7 @@
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.job_index_service import build_offer_dedupe_key, get_recent_db_offers, save_offers_to_db
 from app.services.official_sources_service import fetch_offers_from_public_sources
+from app.services.job_verification_service import refresh_stale_job_offers
 
 
 def _dedupe_and_sort_offers(offers: list[dict]) -> list[dict]:
@@ -31,6 +32,12 @@ async def fetch_offers_for_search(
     locations: list[str] | None = None,
     db=None,
 ) -> list[dict] | None:
+    if db:
+        try:
+            await refresh_stale_job_offers(db)
+        except Exception:
+            pass
+
     cached_offers = get_recent_db_offers(db, skills) if db else []
 
     official_offers = await fetch_offers_from_public_sources(skills, locations=locations)

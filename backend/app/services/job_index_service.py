@@ -87,6 +87,17 @@ def build_source_offer_id(source_name: str, source_job_id: str | None, fallback_
     return f"{normalized_source}:{fallback}"
 
 
+def parse_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
 def compute_source_confidence(offer: dict) -> float:
     source_type = str(offer.get("source_type") or "aggregator").strip().lower()
     base_scores = {
@@ -119,6 +130,82 @@ def compute_source_confidence(offer: dict) -> float:
     return round(max(0.2, min(score, 0.99)), 2)
 
 
+def compute_effective_source_confidence(offer: dict, *, now: datetime | None = None) -> float:
+    if offer.get("is_active") is False:
+        return 0.0
+
+    now = now or datetime.utcnow()
+    score = float(offer.get("base_source_confidence") or offer.get("source_confidence") or 0.58)
+
+    last_verified_at = parse_datetime(offer.get("last_verified_at"))
+    if last_verified_at is None:
+        score -= 0.04
+    else:
+        verification_age_hours = max(0.0, (now - last_verified_at).total_seconds() / 3600)
+        if verification_age_hours <= 24:
+            score += 0.01
+        elif verification_age_hours > 168:
+            score -= 0.12
+        elif verification_age_hours > 72:
+            score -= 0.06
+        elif verification_age_hours > 24:
+            score -= 0.02
+
+    last_seen_at = parse_datetime(offer.get("last_seen_at"))
+    if last_seen_at is not None:
+        seen_age_hours = max(0.0, (now - last_seen_at).total_seconds() / 3600)
+        if seen_age_hours > 168:
+            score -= 0.06
+        elif seen_age_hours > 72:
+            score -= 0.03
+
+    published_at = parse_datetime(offer.get("fecha_publicacion"))
+    if published_at is not None:
+        published_age_days = max(0.0, (now - published_at).total_seconds() / 86400)
+        if published_age_days > 60:
+            score -= 0.05
+        elif published_age_days > 30:
+            score -= 0.03
+
+    return round(max(0.2, min(score, 0.99)), 2)
+
+
+def annotate_offer_freshness(offer: dict, *, now: datetime | None = None) -> dict:
+    now = now or datetime.utcnow()
+    annotated = dict(offer)
+    last_verified_at = parse_datetime(annotated.get("last_verified_at"))
+    last_seen_at = parse_datetime(annotated.get("last_seen_at"))
+
+    freshness_state = "verification_pending"
+    if annotated.get("is_active") is False:
+        freshness_state = "inactive"
+    elif last_verified_at is not None:
+        verification_age_hours = max(0.0, (now - last_verified_at).total_seconds() / 3600)
+        if verification_age_hours <= 24:
+            freshness_state = "verified_recently"
+        elif verification_age_hours <= 72:
+            freshness_state = "verification_due"
+        else:
+            freshness_state = "stale_verification"
+
+    if freshness_state != "inactive" and last_seen_at is not None:
+        seen_age_hours = max(0.0, (now - last_seen_at).total_seconds() / 3600)
+        if seen_age_hours > 168:
+            freshness_state = "stale_listing"
+
+    annotated["verified_recently"] = freshness_state == "verified_recently"
+    annotated["freshness_state"] = freshness_state
+    annotated["source_confidence"] = compute_effective_source_confidence(annotated, now=now)
+    if last_verified_at is not None:
+        annotated["last_verified_at"] = last_verified_at.isoformat()
+    if last_seen_at is not None:
+        annotated["last_seen_at"] = last_seen_at.isoformat()
+    first_seen_at = parse_datetime(annotated.get("first_seen_at"))
+    if first_seen_at is not None:
+        annotated["first_seen_at"] = first_seen_at.isoformat()
+    return annotated
+
+
 def normalize_offer_record(
     source_name: str,
     source_type: str,
@@ -128,6 +215,8 @@ def normalize_offer_record(
     source_job_id: str | None = None,
     canonical_url: str | None = None,
 ) -> dict:
+    now = datetime.utcnow()
+    now_iso = now.isoformat()
     title = str(raw_offer.get("titulo") or raw_offer.get("title") or raw_offer.get("text") or "").strip()
     company = str(raw_offer.get("empresa") or raw_offer.get("company") or company_fallback or "").strip()
     location = str(raw_offer.get("ubicacion") or raw_offer.get("location") or "").strip()
@@ -184,13 +273,18 @@ def normalize_offer_record(
         "source_job_id": external_id or None,
         "source_metadata": raw_offer.get("source_metadata") or {},
         "raw_payload": raw_offer,
+        "first_seen_at": raw_offer.get("first_seen_at") or now_iso,
+        "last_seen_at": raw_offer.get("last_seen_at") or now_iso,
+        "last_verified_at": raw_offer.get("last_verified_at") or now_iso,
+        "is_active": raw_offer.get("is_active", True),
     }
-    offer["source_confidence"] = compute_source_confidence(offer)
-    return offer
+    offer["base_source_confidence"] = compute_source_confidence(offer)
+    offer["source_confidence"] = offer["base_source_confidence"]
+    return annotate_offer_freshness(offer, now=now)
 
 
 def serialize_job_offer_row(row) -> dict:
-    return {
+    offer = {
         "adzuna_id": row.adzuna_id,
         "id": None,
         "titulo": row.titulo or "",
@@ -206,10 +300,16 @@ def serialize_job_offer_row(row) -> dict:
         "source_name": row.source_name or "adzuna",
         "source_type": row.source_type or "aggregator",
         "source_job_id": row.source_job_id or row.adzuna_id,
+        "base_source_confidence": float(row.source_confidence or 0.58),
         "source_confidence": float(row.source_confidence or 0.58),
         "source_metadata": json.loads(row.source_metadata_json) if row.source_metadata_json else {},
         "raw_payload": json.loads(row.raw_payload_json) if row.raw_payload_json else {},
+        "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+        "last_verified_at": row.last_verified_at.isoformat() if row.last_verified_at else None,
+        "is_active": bool(row.is_active),
     }
+    return annotate_offer_freshness(offer)
 
 
 def get_recent_db_offers(db, stack: list[str], *, hours: int = 24) -> list[dict]:
@@ -254,11 +354,26 @@ def save_offers_to_db(db, offers: list[dict], stack: list[str]):
         text = f"{offer.get('descripcion', '')} {offer.get('titulo', '')}"
         skills = extract_skills(text, stack)
         row = existing_rows.get(offer_id)
-        source_metadata_json = json.dumps(offer.get("source_metadata") or {}, ensure_ascii=False)
+        merged_source_metadata = offer.get("source_metadata") or {}
+        if row and row.source_metadata_json:
+            try:
+                existing_metadata = json.loads(row.source_metadata_json) or {}
+                if "verification" in existing_metadata and "verification" not in merged_source_metadata:
+                    merged_source_metadata = {**merged_source_metadata, "verification": existing_metadata["verification"]}
+            except Exception:
+                pass
+        source_metadata_json = json.dumps(merged_source_metadata, ensure_ascii=False)
         raw_payload_json = json.dumps(offer.get("raw_payload") or {}, ensure_ascii=False)
         canonical_url = offer.get("canonical_url") or offer.get("redirect_url") or ""
         canonical_company = offer.get("canonical_company") or offer.get("empresa") or ""
-        source_confidence = float(offer.get("source_confidence") or compute_source_confidence(offer))
+        source_confidence = float(
+            offer.get("base_source_confidence")
+            or offer.get("source_confidence")
+            or compute_source_confidence(offer)
+        )
+        first_seen_at = parse_datetime(offer.get("first_seen_at")) or now
+        last_seen_at = parse_datetime(offer.get("last_seen_at")) or now
+        last_verified_at = parse_datetime(offer.get("last_verified_at")) or now
 
         if row:
             row.titulo = offer.get("titulo", "")
@@ -277,9 +392,10 @@ def save_offers_to_db(db, offers: list[dict], stack: list[str]):
             row.raw_payload_json = raw_payload_json
             row.canonical_url = canonical_url
             row.canonical_company = canonical_company
-            row.last_seen_at = now
-            row.last_verified_at = now
-            row.is_active = True
+            row.first_seen_at = row.first_seen_at or first_seen_at
+            row.last_seen_at = last_seen_at
+            row.last_verified_at = last_verified_at
+            row.is_active = bool(offer.get("is_active", True))
         else:
             db.add(
                 JobOffer(
@@ -300,10 +416,10 @@ def save_offers_to_db(db, offers: list[dict], stack: list[str]):
                     raw_payload_json=raw_payload_json,
                     canonical_url=canonical_url,
                     canonical_company=canonical_company,
-                    first_seen_at=now,
-                    last_seen_at=now,
-                    last_verified_at=now,
-                    is_active=True,
+                    first_seen_at=first_seen_at,
+                    last_seen_at=last_seen_at,
+                    last_verified_at=last_verified_at,
+                    is_active=bool(offer.get("is_active", True)),
                 )
             )
         touched += 1
