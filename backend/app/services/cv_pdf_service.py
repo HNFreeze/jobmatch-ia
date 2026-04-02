@@ -142,6 +142,53 @@ def _extract_url(text: str) -> tuple[str, Optional[str]]:
     return clean, url
 
 
+def _truncate_text(text: str, max_chars: int) -> str:
+    clean = (text or "").strip()
+    if len(clean) <= max_chars:
+        return clean
+    cutoff = clean.rfind(" ", 0, max_chars)
+    if cutoff < max_chars * 0.6:
+        cutoff = max_chars
+    return clean[:cutoff].rstrip(" ,;:.") + "..."
+
+
+def _compact_bullets(bullets: list, max_items: int, max_chars: int) -> list[str]:
+    items = []
+    for bullet in bullets or []:
+        text = _truncate_text(str(bullet or "").strip(), max_chars)
+        if text:
+            items.append(text)
+    return items[:max_items]
+
+
+def _compact_cv_data(data: dict) -> dict:
+    compact = dict(data)
+    compact["summary"] = _truncate_text(data.get("summary", ""), 420)
+    compact["experience"] = []
+    for exp in (data.get("experience") or [])[:4]:
+        compact["experience"].append({
+            **exp,
+            "bullets": _compact_bullets(exp.get("bullets") or [], max_items=2, max_chars=120),
+        })
+
+    compact["education"] = (data.get("education") or [])[:3]
+    compact["skills"] = []
+    for sg in (data.get("skills") or [])[:4]:
+        compact["skills"].append({
+            **sg,
+            "items": [str(item).strip() for item in (sg.get("items") or []) if str(item or "").strip()][:6],
+        })
+    compact["languages"] = (data.get("languages") or [])[:4]
+    compact["projects"] = []
+    for proj in (data.get("projects") or [])[:2]:
+        compact["projects"].append({
+            **proj,
+            "bullets": _compact_bullets(proj.get("bullets") or [], max_items=2, max_chars=110),
+        })
+    compact["certifications"] = (data.get("certifications") or [])[:3]
+    return compact
+
+
 def _parse_cv_text(text: str) -> dict:
     """Parsea el texto estructurado del CV en secciones."""
     lines = [l.rstrip() for l in text.splitlines()]
@@ -365,14 +412,14 @@ def generate_cv_pdf(improved_cv_text: str, candidate_name: str = "") -> bytes:
     return buf.getvalue()
 
 
-def _prep_cv_data(cv_json: dict, candidate_name: str = "") -> dict:
+def _prep_cv_data(cv_json: dict, candidate_name: str = "", fit_one_page: bool = False) -> dict:
     """Prepara y filtra las secciones del CV, eliminando entradas sin contenido útil.
 
     Garantiza que las comprobaciones if section: reflejen si hay algo que renderizar.
     """
     personal = cv_json.get("personal") or {}
     hidden_sections = set((cv_json.get("meta") or {}).get("hidden_sections") or [])
-    return {
+    data = {
         "name":  _safe_text(personal.get("name") or candidate_name or "Candidato"),
         "title": _safe_text(personal.get("title") or ""),
         "summary": "" if "summary" in hidden_sections else (cv_json.get("summary") or "").strip(),
@@ -401,6 +448,9 @@ def _prep_cv_data(cv_json: dict, candidate_name: str = "") -> dict:
             if (c.get("name") or "").strip()
         ],
     }
+    if fit_one_page:
+        data = _compact_cv_data(data)
+    return data
 
 
 def _build_pdf_class():
@@ -423,41 +473,54 @@ def _build_pdf_class():
     return _CV
 
 
-def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
+def _pdf_professional_modern(
+    cv_json: dict,
+    candidate_name: str = "",
+    fit_one_page: bool = False,
+) -> bytes:
     """Plantilla 'Professional Modern': cabecera azul, secciones con fondo claro."""
-    d = _prep_cv_data(cv_json, candidate_name)
+    d = _prep_cv_data(cv_json, candidate_name, fit_one_page=fit_one_page)
     _CV = _build_pdf_class()
+    margin = 14 if fit_one_page else 16
+    header_height = 30 if fit_one_page else 34
+    header_y = 7 if fit_one_page else 8
+    title_line = 5 if fit_one_page else 6
+    after_header_gap = 7 if fit_one_page else 9
+    section_height = 5 if fit_one_page else 6
+    section_gap = 1.5 if fit_one_page else 2
+    body_line = 4.8 if fit_one_page else 5.0
+    bullet_line = 4.8 if fit_one_page else 5.5
 
     pdf = _CV(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_margins(16, 16, 16)
-    w = pdf.w - 32
+    pdf.set_margins(margin, margin, margin)
+    w = pdf.w - (margin * 2)
 
     # ── Cabecera azul ─────────────────────────────────────────────────────────
     pdf.set_fill_color(*_PRIMARY)
-    pdf.rect(0, 0, pdf.w, 34, "F")
-    pdf.set_xy(16, 8)
+    pdf.rect(0, 0, pdf.w, header_height, "F")
+    pdf.set_xy(margin, header_y)
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(*_WHITE)
     pdf.cell(w, 10, d["name"], ln=True)
     if d["title"]:
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(200, 220, 255)
-        pdf.cell(w, 6, d["title"], ln=True)
-    pdf.ln(9)
+        pdf.cell(w, title_line, d["title"], ln=True)
+    pdf.ln(after_header_gap)
 
     def _section_header(label: str) -> None:
         pdf.set_fill_color(*_LIGHT)
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(*_PRIMARY)
-        pdf.cell(w, 6, _safe_text(label), ln=True, fill=True)
+        pdf.cell(w, section_height, _safe_text(label), ln=True, fill=True)
         pdf.set_draw_color(*_PRIMARY)
         pdf.set_line_width(0.5)
-        pdf.line(16, pdf.get_y(), 16 + w, pdf.get_y())
-        pdf.ln(2)
+        pdf.line(margin, pdf.get_y(), margin + w, pdf.get_y())
+        pdf.ln(section_gap)
         pdf.set_text_color(*_DARK)
 
     def _render_bullets(bullets: list) -> None:
@@ -465,18 +528,18 @@ def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
             text = _safe_text(str(b).strip())
             if not text:
                 continue
-            pdf.set_x(23)
+            pdf.set_x(margin + 4)
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*_DARK)
-            pdf.multi_cell(w - 5, 5.5, f"- {text}")
+            pdf.multi_cell(w - 4, bullet_line, f"- {text}")
 
     if d["summary"]:
         _section_header("PERFIL PROFESIONAL")
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(w, 5.0, _safe_text(d["summary"]))
-        pdf.ln(3)
+        pdf.multi_cell(w, body_line, _safe_text(d["summary"]))
+        pdf.ln(2 if fit_one_page else 3)
 
     if d["experience"]:
         _section_header("EXPERIENCIA PROFESIONAL")
@@ -591,42 +654,55 @@ def _pdf_professional_modern(cv_json: dict, candidate_name: str = "") -> bytes:
     return buf.getvalue()
 
 
-def _pdf_ats_minimal(cv_json: dict, candidate_name: str = "") -> bytes:
+def _pdf_ats_minimal(
+    cv_json: dict,
+    candidate_name: str = "",
+    fit_one_page: bool = False,
+) -> bytes:
     """Plantilla 'ATS Minimal': limpia, sin adornos, máxima compatibilidad ATS."""
-    d = _prep_cv_data(cv_json, candidate_name)
+    d = _prep_cv_data(cv_json, candidate_name, fit_one_page=fit_one_page)
     _CV = _build_pdf_class()
+    margin = 14 if fit_one_page else 16
+    header_y = 10 if fit_one_page else 12
+    title_line = 5 if fit_one_page else 6
+    divider_offset = 1.2 if fit_one_page else 1.5
+    after_header_gap = 5 if fit_one_page else 6
+    section_height = 5 if fit_one_page else 6
+    section_gap = 1.5 if fit_one_page else 2
+    body_line = 4.8 if fit_one_page else 5.0
+    bullet_line = 4.8 if fit_one_page else 5.5
 
     pdf = _CV(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_margins(16, 16, 16)
-    w = pdf.w - 32
+    pdf.set_margins(margin, margin, margin)
+    w = pdf.w - (margin * 2)
 
     # ── Cabecera simple (sin colores) ─────────────────────────────────────────
-    pdf.set_xy(16, 12)
+    pdf.set_xy(margin, header_y)
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(*_DARK)
     pdf.cell(w, 10, d["name"], ln=True)
     if d["title"]:
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(*_GRAY)
-        pdf.cell(w, 6, d["title"], ln=True)
+        pdf.cell(w, title_line, d["title"], ln=True)
     # Línea separadora bajo el encabezado
     pdf.set_draw_color(*_DARK)
     pdf.set_line_width(0.6)
-    pdf.line(16, pdf.get_y() + 1.5, 16 + w, pdf.get_y() + 1.5)
-    pdf.ln(6)
+    pdf.line(margin, pdf.get_y() + divider_offset, margin + w, pdf.get_y() + divider_offset)
+    pdf.ln(after_header_gap)
 
     def _section_header(label: str) -> None:
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(*_DARK)
-        pdf.cell(w, 6, _safe_text(label), ln=True)
+        pdf.cell(w, section_height, _safe_text(label), ln=True)
         pdf.set_draw_color(*_GRAY)
         pdf.set_line_width(0.3)
-        pdf.line(16, pdf.get_y(), 16 + w, pdf.get_y())
-        pdf.ln(2)
+        pdf.line(margin, pdf.get_y(), margin + w, pdf.get_y())
+        pdf.ln(section_gap)
         pdf.set_text_color(*_DARK)
 
     def _render_bullets(bullets: list) -> None:
@@ -634,18 +710,18 @@ def _pdf_ats_minimal(cv_json: dict, candidate_name: str = "") -> bytes:
             text = _safe_text(str(b).strip())
             if not text:
                 continue
-            pdf.set_x(23)
+            pdf.set_x(margin + 4)
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*_DARK)
-            pdf.multi_cell(w - 5, 5.5, f"- {text}")
+            pdf.multi_cell(w - 4, bullet_line, f"- {text}")
 
     if d["summary"]:
         _section_header("PERFIL PROFESIONAL")
-        pdf.set_x(16)
+        pdf.set_x(margin)
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_DARK)
-        pdf.multi_cell(w, 5.0, _safe_text(d["summary"]))
-        pdf.ln(3)
+        pdf.multi_cell(w, body_line, _safe_text(d["summary"]))
+        pdf.ln(2 if fit_one_page else 3)
 
     if d["experience"]:
         _section_header("EXPERIENCIA PROFESIONAL")
@@ -763,6 +839,7 @@ def generate_cv_pdf_from_json(
     cv_json: dict,
     candidate_name: str = "",
     template: str = "professional_modern",
+    fit_one_page: bool = False,
 ) -> bytes:
     """
     Genera un PDF directamente desde el JSON canónico del CV.
@@ -775,5 +852,5 @@ def generate_cv_pdf_from_json(
     Las secciones vacías (entradas sin nombre/empresa) no se renderizan.
     """
     if template == "ats_minimal":
-        return _pdf_ats_minimal(cv_json, candidate_name)
-    return _pdf_professional_modern(cv_json, candidate_name)
+        return _pdf_ats_minimal(cv_json, candidate_name, fit_one_page=fit_one_page)
+    return _pdf_professional_modern(cv_json, candidate_name, fit_one_page=fit_one_page)

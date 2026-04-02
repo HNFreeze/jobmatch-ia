@@ -12,6 +12,8 @@
  * - Dark mode opcional via prop `dm`
  */
 
+import { buildPreviewData } from "../utils/cvExport";
+
 const PRIMARY = "#2563eb";
 const DARK    = "#0f172a";
 const GRAY    = "#6b7280";
@@ -418,36 +420,7 @@ function ATSMinimalPreview({ data, dm }) {
 
 function CVPreview({ cvJson, dm, template = "professional_modern" }) {
   if (!cvJson) return null;
-  const hiddenSections = new Set(
-    Array.isArray(cvJson.meta?.hidden_sections) ? cvJson.meta.hidden_sections : []
-  );
-
-  // Filter out empty/incomplete entries so no section header renders without content
-  const data = {
-    personal:       cvJson.personal       || {},
-    summary: hiddenSections.has("summary")
-      ? ""
-      : (cvJson.summary || "").trim(),
-    experience: hiddenSections.has("experience")
-      ? []
-      : (cvJson.experience || []).filter(e => (e.company || "").trim() || (e.role || "").trim()),
-    education: hiddenSections.has("education")
-      ? []
-      : (cvJson.education || []).filter(e => (e.degree || "").trim() || (e.institution || "").trim()),
-    skills: hiddenSections.has("skills")
-      ? []
-      : (cvJson.skills || []).filter(sg => (sg.items || []).some(i => String(i || "").trim())),
-    languages: hiddenSections.has("languages")
-      ? []
-      : (cvJson.languages || []).filter(l => (l.language || "").trim()),
-    projects: hiddenSections.has("projects")
-      ? []
-      : (cvJson.projects || []).filter(p => (p.name || "").trim()),
-    certifications: hiddenSections.has("certifications")
-      ? []
-      : (cvJson.certifications || []).filter(c => (c.name || "").trim()),
-    meta:           cvJson.meta,
-  };
+  const data = buildPreviewData(cvJson);
 
   if (template === "ats_minimal") {
     return <ATSMinimalPreview data={data} dm={dm} />;

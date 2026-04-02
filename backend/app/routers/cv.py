@@ -24,6 +24,7 @@ from app.models.cv_analysis import CVAnalysis
 from app.models.cv_ats_result import CVAtsResult
 from app.models.cv_edit_session import CVEditSession
 from app.models.cv_improvement import CVImprovement
+from app.models.cv_offer_variant import CVOfferVariant
 from app.routers.user import get_current_user_record
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.ai_quota_service import consume_ai_quota
@@ -70,6 +71,28 @@ def _resolve_cv_template(
     )
 
 
+def _extract_fit_one_page(cv_json: Optional[dict]) -> Optional[bool]:
+    if not isinstance(cv_json, dict):
+        return None
+    value = (cv_json.get("meta") or {}).get("fit_one_page")
+    if value is None:
+        return None
+    return bool(value)
+
+
+def _resolve_fit_one_page(
+    requested_fit_one_page: Optional[bool],
+    edited_json: Optional[dict] = None,
+    structured_json: Optional[dict] = None,
+) -> bool:
+    if requested_fit_one_page is not None:
+        return bool(requested_fit_one_page)
+    return bool(
+        _extract_fit_one_page(edited_json)
+        or _extract_fit_one_page(structured_json)
+    )
+
+
 def _compute_cv_profile_hash(cv_analysis_id: int, matching_profile: dict) -> str:
     payload = json.dumps(
         {
@@ -82,6 +105,150 @@ def _compute_cv_profile_hash(cv_analysis_id: int, matching_profile: dict) -> str
         ensure_ascii=False,
     )
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _deserialize_json(raw_value: Optional[str], fallback):
+    try:
+        return json.loads(raw_value or "")
+    except Exception:
+        return fallback
+
+
+def _get_cv_improvement_or_404(db, improvement_id: int, user_id: int):
+    improvement = (
+        db.query(CVImprovement)
+        .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user_id)
+        .first()
+    )
+    if not improvement:
+        raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+    return improvement
+
+
+def _get_latest_edit_session(db, improvement_id: int, user_id: int):
+    return (
+        db.query(CVEditSession)
+        .filter(
+            CVEditSession.improvement_id == improvement_id,
+            CVEditSession.user_id == user_id,
+        )
+        .order_by(CVEditSession.updated_at.desc())
+        .first()
+    )
+
+
+def _build_offer_snapshot(raw_offer: Optional[dict]) -> dict:
+    offer = raw_offer if isinstance(raw_offer, dict) else {}
+    snapshot = {
+        "adzuna_id": str(offer.get("adzuna_id") or "").strip(),
+        "titulo": str(offer.get("titulo") or "").strip(),
+        "empresa": str(offer.get("empresa") or "").strip(),
+        "ubicacion": str(offer.get("ubicacion") or "").strip(),
+        "resultado": str(offer.get("resultado") or "").strip(),
+        "url": str(offer.get("url") or offer.get("redirect_url") or "").strip(),
+    }
+    if offer.get("puntuacion") is not None:
+        snapshot["puntuacion"] = offer.get("puntuacion")
+    if offer.get("descripcion"):
+        snapshot["descripcion"] = str(offer.get("descripcion"))[:1200]
+    for list_key in ("skills_match", "strengths", "gaps", "blockers"):
+        values = offer.get(list_key)
+        if isinstance(values, list) and values:
+            snapshot[list_key] = values[:8]
+    return {k: v for k, v in snapshot.items() if v not in (None, "", [], {})}
+
+
+def _build_variant_name(name: Optional[str], offer_snapshot: Optional[dict], fallback_index: int = 1) -> str:
+    cleaned = (name or "").strip()
+    if cleaned:
+        return cleaned[:255]
+
+    offer_snapshot = offer_snapshot or {}
+    title = str(offer_snapshot.get("titulo") or "").strip()
+    company = str(offer_snapshot.get("empresa") or "").strip()
+    if title and company:
+        return f"{title} · {company}"[:255]
+    if title or company:
+        return (title or company)[:255]
+    return f"Variante {fallback_index}"
+
+
+def _serialize_variant_summary(variant: CVOfferVariant, include_offer_snapshot: bool = False) -> dict:
+    payload = {
+        "id": variant.id,
+        "name": variant.name,
+        "offer_adzuna_id": variant.offer_adzuna_id,
+        "offer_title": variant.offer_title,
+        "offer_company": variant.offer_company,
+        "offer_url": variant.offer_url,
+        "created_at": variant.created_at.isoformat() if variant.created_at else None,
+        "updated_at": variant.updated_at.isoformat() if variant.updated_at else None,
+    }
+    if include_offer_snapshot:
+        payload["offer_snapshot"] = _deserialize_json(variant.offer_snapshot_json, {}) or {}
+    return payload
+
+
+def _get_variant_or_404(db, improvement_id: int, user_id: int, variant_id: int) -> CVOfferVariant:
+    variant = (
+        db.query(CVOfferVariant)
+        .filter(
+            CVOfferVariant.id == variant_id,
+            CVOfferVariant.improvement_id == improvement_id,
+            CVOfferVariant.user_id == user_id,
+        )
+        .first()
+    )
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variante de CV no encontrada")
+    return variant
+
+
+def _load_edit_payload(db, improvement: CVImprovement, user_id: int, variant_id: Optional[int] = None) -> dict:
+    if variant_id is not None:
+        variant = _get_variant_or_404(db, improvement.id, user_id, variant_id)
+        return {
+            "kind": "variant",
+            "record": variant,
+            "cv_json": _deserialize_json(variant.edited_cv_json, None),
+            "action_log": _deserialize_json(variant.action_log_json, []),
+            "updated_at": variant.updated_at.isoformat() if variant.updated_at else None,
+            "variant": _serialize_variant_summary(variant, include_offer_snapshot=True),
+        }
+
+    edit_session = _get_latest_edit_session(db, improvement.id, user_id)
+    if edit_session:
+        edited_json = _deserialize_json(edit_session.edited_cv_json, None)
+        if edited_json is not None:
+            return {
+                "kind": "edit_session",
+                "record": edit_session,
+                "cv_json": edited_json,
+                "action_log": _deserialize_json(edit_session.action_log_json, []),
+                "updated_at": edit_session.updated_at.isoformat() if edit_session.updated_at else None,
+                "variant": None,
+            }
+
+    if improvement.cv_structured_json:
+        structured_json = _deserialize_json(improvement.cv_structured_json, None)
+        if structured_json is not None:
+            return {
+                "kind": "ai_generated",
+                "record": improvement,
+                "cv_json": structured_json,
+                "action_log": [],
+                "updated_at": improvement.created_at.isoformat() if improvement.created_at else None,
+                "variant": None,
+            }
+
+    return {
+        "kind": "legacy",
+        "record": None,
+        "cv_json": None,
+        "action_log": [],
+        "updated_at": None,
+        "variant": None,
+    }
 
 
 def _mark_previous_as_not_latest(db, user_id: int) -> None:
@@ -415,6 +582,8 @@ async def improve_cv_full_endpoint(
 def download_cv_pdf(
     improvement_id: int = Path(..., ge=1),
     template: Optional[str] = Query(None),
+    fit_one_page: Optional[bool] = Query(None),
+    variant_id: Optional[int] = Query(None, ge=1),
     user=Depends(get_current_user_record),
 ):
     """Genera y devuelve el PDF del CV mejorado."""
@@ -424,47 +593,43 @@ def download_cv_pdf(
         if not db:
             raise HTTPException(status_code=500, detail="Base de datos no disponible")
 
-        record = (
-            db.query(CVImprovement)
-            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
-            .first()
-        )
-        if not record:
-            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+        record = _get_cv_improvement_or_404(db, improvement_id, user.id)
 
         candidate_name = getattr(user, "nombre", "") or getattr(user, "alias", "") or ""
 
-        # Fallback: edit_session → cv_structured_json → improved_cv_text (legacy)
-        edit_session = (
-            db.query(CVEditSession)
-            .filter(
-                CVEditSession.improvement_id == improvement_id,
-                CVEditSession.user_id == user.id,
-            )
-            .order_by(CVEditSession.updated_at.desc())
-            .first()
-        )
-
         pdf_bytes: bytes
-        structured: Optional[dict] = None
-        if edit_session:
+        edit_payload = _load_edit_payload(db, record, user.id, variant_id=variant_id)
+        cv_json = edit_payload.get("cv_json")
+        if cv_json:
             try:
-                edited_json = json.loads(edit_session.edited_cv_json)
-                resolved_template = _resolve_cv_template(template, edited_json=edited_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, resolved_template)
-            except Exception:
-                pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
-        elif record.cv_structured_json:
-            try:
-                structured = json.loads(record.cv_structured_json)
-                resolved_template = _resolve_cv_template(template, structured_json=structured)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, resolved_template)
+                structured_json = cv_json if edit_payload.get("kind") == "ai_generated" else None
+                edited_json = cv_json if edit_payload.get("kind") != "ai_generated" else None
+                resolved_template = _resolve_cv_template(
+                    template,
+                    edited_json=edited_json,
+                    structured_json=structured_json,
+                )
+                resolved_fit_one_page = _resolve_fit_one_page(
+                    fit_one_page,
+                    edited_json=edited_json,
+                    structured_json=structured_json,
+                )
+                pdf_bytes = generate_cv_pdf_from_json(
+                    cv_json,
+                    candidate_name,
+                    resolved_template,
+                    resolved_fit_one_page,
+                )
             except Exception:
                 pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
         else:
             pdf_bytes = generate_cv_pdf(record.improved_cv_text, candidate_name)
 
-        filename = f"cv_mejorado_{improvement_id}.pdf"
+        filename = (
+            f"cv_mejorado_{improvement_id}_variante_{variant_id}.pdf"
+            if variant_id is not None
+            else f"cv_mejorado_{improvement_id}.pdf"
+        )
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
@@ -492,6 +657,23 @@ def get_my_improvements(user=Depends(get_current_user_record)):
             .all()
         )
 
+        improvement_ids = [record.id for record in records]
+        variants_by_improvement: dict[int, list[dict]] = {improvement_id: [] for improvement_id in improvement_ids}
+        if improvement_ids:
+            variant_rows = (
+                db.query(CVOfferVariant)
+                .filter(
+                    CVOfferVariant.user_id == user.id,
+                    CVOfferVariant.improvement_id.in_(improvement_ids),
+                )
+                .order_by(CVOfferVariant.updated_at.desc())
+                .all()
+            )
+            for variant in variant_rows:
+                variants_by_improvement.setdefault(variant.improvement_id, []).append(
+                    _serialize_variant_summary(variant)
+                )
+
         items = []
         for r in records:
             meta = {}
@@ -505,10 +687,178 @@ def get_my_improvements(user=Depends(get_current_user_record)):
                 "ats_score_after": r.ats_score_after,
                 "keywords_to_add": meta.get("keywords_to_add", [])[:5],
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "variant_count": len(variants_by_improvement.get(r.id, [])),
+                "variants": variants_by_improvement.get(r.id, []),
             })
 
         return JSONResponse(
             content={"improvements": items},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.get("/api/cv/improvement/{improvement_id}/variants")
+def list_cv_variants(
+    improvement_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        _get_cv_improvement_or_404(db, improvement_id, user.id)
+        variants = (
+            db.query(CVOfferVariant)
+            .filter(
+                CVOfferVariant.improvement_id == improvement_id,
+                CVOfferVariant.user_id == user.id,
+            )
+            .order_by(CVOfferVariant.updated_at.desc())
+            .all()
+        )
+        return JSONResponse(
+            content={"variants": [_serialize_variant_summary(variant) for variant in variants]},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.post("/api/cv/improvement/{improvement_id}/variants")
+def create_cv_variant(
+    improvement_id: int = Path(..., ge=1),
+    body: Dict[str, Any] = Body(default={}),
+    user=Depends(get_current_user_record),
+):
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        improvement = _get_cv_improvement_or_404(db, improvement_id, user.id)
+        base_payload = _load_edit_payload(db, improvement, user.id)
+        base_cv_json = base_payload.get("cv_json")
+        if not isinstance(base_cv_json, dict):
+            raise HTTPException(status_code=422, detail="Este CV no tiene una versión editable para crear variantes")
+
+        offer_snapshot = _build_offer_snapshot(body.get("offer"))
+        existing_count = (
+            db.query(CVOfferVariant)
+            .filter(
+                CVOfferVariant.improvement_id == improvement_id,
+                CVOfferVariant.user_id == user.id,
+            )
+            .count()
+        )
+        variant_name = _build_variant_name(body.get("name"), offer_snapshot, fallback_index=existing_count + 1)
+
+        existing_variant = None
+        offer_adzuna_id = str(offer_snapshot.get("adzuna_id") or "").strip()
+        if offer_adzuna_id:
+            existing_variant = (
+                db.query(CVOfferVariant)
+                .filter(
+                    CVOfferVariant.improvement_id == improvement_id,
+                    CVOfferVariant.user_id == user.id,
+                    CVOfferVariant.offer_adzuna_id == offer_adzuna_id,
+                )
+                .order_by(CVOfferVariant.updated_at.desc())
+                .first()
+            )
+
+        if existing_variant:
+            if body.get("name"):
+                existing_variant.name = variant_name
+            if offer_snapshot:
+                existing_variant.offer_title = offer_snapshot.get("titulo") or existing_variant.offer_title
+                existing_variant.offer_company = offer_snapshot.get("empresa") or existing_variant.offer_company
+                existing_variant.offer_url = offer_snapshot.get("url") or existing_variant.offer_url
+                existing_variant.offer_snapshot_json = json.dumps(offer_snapshot, ensure_ascii=False)
+            db.commit()
+            db.refresh(existing_variant)
+            return JSONResponse(
+                content={
+                    "created": False,
+                    "variant": _serialize_variant_summary(existing_variant, include_offer_snapshot=True),
+                    "cv_json": _deserialize_json(existing_variant.edited_cv_json, None),
+                    "action_log": _deserialize_json(existing_variant.action_log_json, []),
+                },
+                media_type="application/json; charset=utf-8",
+            )
+
+        variant_cv_json = json.loads(json.dumps(base_cv_json, ensure_ascii=False))
+        meta = dict(variant_cv_json.get("meta") or {})
+        meta["variant_name"] = variant_name
+        if offer_snapshot:
+            meta["target_offer"] = offer_snapshot
+        variant_cv_json["meta"] = meta
+
+        now = datetime.utcnow()
+        initial_action_log = [
+            {
+                "type": "variant_created",
+                "name": variant_name,
+                "offer_adzuna_id": offer_adzuna_id or None,
+                "ts": int(now.timestamp() * 1000),
+            }
+        ]
+        variant = CVOfferVariant(
+            user_id=user.id,
+            improvement_id=improvement_id,
+            name=variant_name,
+            offer_adzuna_id=offer_adzuna_id or None,
+            offer_title=offer_snapshot.get("titulo") or None,
+            offer_company=offer_snapshot.get("empresa") or None,
+            offer_url=offer_snapshot.get("url") or None,
+            offer_snapshot_json=json.dumps(offer_snapshot, ensure_ascii=False) if offer_snapshot else None,
+            edited_cv_json=json.dumps(variant_cv_json, ensure_ascii=False),
+            action_log_json=json.dumps(initial_action_log, ensure_ascii=False),
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(variant)
+        db.commit()
+        db.refresh(variant)
+
+        return JSONResponse(
+            content={
+                "created": True,
+                "variant": _serialize_variant_summary(variant, include_offer_snapshot=True),
+                "cv_json": variant_cv_json,
+                "action_log": initial_action_log,
+            },
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
+@router.delete("/api/cv/improvement/{improvement_id}/variants/{variant_id}")
+def delete_cv_variant(
+    improvement_id: int = Path(..., ge=1),
+    variant_id: int = Path(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        _get_cv_improvement_or_404(db, improvement_id, user.id)
+        variant = _get_variant_or_404(db, improvement_id, user.id, variant_id)
+        db.delete(variant)
+        db.commit()
+        return JSONResponse(
+            content={"deleted": True, "variant_id": variant_id},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -668,6 +1018,7 @@ def get_latest_cv_analysis(user=Depends(get_current_user_record)):
 @router.get("/api/cv/improvement/{improvement_id}/edit")
 def get_cv_edit(
     improvement_id: int = Path(..., ge=1),
+    variant_id: Optional[int] = Query(None, ge=1),
     user=Depends(get_current_user_record),
 ):
     """
@@ -680,62 +1031,30 @@ def get_cv_edit(
         if not db:
             raise HTTPException(status_code=500, detail="Base de datos no disponible")
 
-        improvement = (
-            db.query(CVImprovement)
-            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
-            .first()
-        )
-        if not improvement:
-            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
-
-        # ¿Hay sesión de edición guardada?
-        edit_session = (
-            db.query(CVEditSession)
-            .filter(
-                CVEditSession.improvement_id == improvement_id,
-                CVEditSession.user_id == user.id,
+        improvement = _get_cv_improvement_or_404(db, improvement_id, user.id)
+        payload = _load_edit_payload(db, improvement, user.id, variant_id=variant_id)
+        if payload.get("kind") == "legacy":
+            return JSONResponse(
+                content={
+                    "source": "legacy",
+                    "variant_id": variant_id,
+                    "variant": payload.get("variant"),
+                    "cv_json": None,
+                    "action_log": [],
+                },
+                media_type="application/json; charset=utf-8",
             )
-            .order_by(CVEditSession.updated_at.desc())
-            .first()
-        )
 
-        if edit_session:
-            try:
-                edited_json = json.loads(edit_session.edited_cv_json)
-                action_log = json.loads(edit_session.action_log_json or "[]")
-                return JSONResponse(
-                    content={
-                        "source": "edit_session",
-                        "session_id": edit_session.id,
-                        "cv_json": edited_json,
-                        "action_log": action_log,
-                        "updated_at": edit_session.updated_at.isoformat(),
-                    },
-                    media_type="application/json; charset=utf-8",
-                )
-            except Exception:
-                pass
-
-        # ¿Tiene JSON estructurado de la IA?
-        if improvement.cv_structured_json:
-            try:
-                cv_json = json.loads(improvement.cv_structured_json)
-                return JSONResponse(
-                    content={
-                        "source": "ai_generated",
-                        "session_id": None,
-                        "cv_json": cv_json,
-                        "action_log": [],
-                        "updated_at": improvement.created_at.isoformat() if improvement.created_at else None,
-                    },
-                    media_type="application/json; charset=utf-8",
-                )
-            except Exception:
-                pass
-
-        # Registro legacy sin JSON estructurado
         return JSONResponse(
-            content={"source": "legacy", "cv_json": None, "action_log": []},
+            content={
+                "source": payload.get("kind"),
+                "session_id": payload.get("record").id if payload.get("kind") == "edit_session" else None,
+                "variant_id": payload.get("record").id if payload.get("kind") == "variant" else None,
+                "variant": payload.get("variant"),
+                "cv_json": payload.get("cv_json"),
+                "action_log": payload.get("action_log"),
+                "updated_at": payload.get("updated_at"),
+            },
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -747,6 +1066,7 @@ def get_cv_edit(
 def save_cv_edit(
     improvement_id: int = Path(..., ge=1),
     body: Dict[str, Any] = Body(...),
+    variant_id: Optional[int] = Query(None, ge=1),
     user=Depends(get_current_user_record),
 ):
     """
@@ -759,13 +1079,7 @@ def save_cv_edit(
         if not db:
             raise HTTPException(status_code=500, detail="Base de datos no disponible")
 
-        improvement = (
-            db.query(CVImprovement)
-            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
-            .first()
-        )
-        if not improvement:
-            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+        _get_cv_improvement_or_404(db, improvement_id, user.id)
 
         edited_cv_json = body.get("edited_cv_json")
         action_log = body.get("action_log", [])
@@ -775,6 +1089,22 @@ def save_cv_edit(
 
         edited_cv_str = json.dumps(edited_cv_json, ensure_ascii=False)
         action_log_str = json.dumps(action_log if isinstance(action_log, list) else [], ensure_ascii=False)
+        now = datetime.utcnow()
+
+        if variant_id is not None:
+            variant = _get_variant_or_404(db, improvement_id, user.id, variant_id)
+            variant.edited_cv_json = edited_cv_str
+            variant.action_log_json = action_log_str
+            variant.name = _build_variant_name(
+                ((edited_cv_json.get("meta") or {}).get("variant_name") or variant.name),
+                _deserialize_json(variant.offer_snapshot_json, {}),
+            )
+            variant.updated_at = now
+            db.commit()
+            return JSONResponse(
+                content={"session_id": None, "variant_id": variant.id, "saved": True},
+                media_type="application/json; charset=utf-8",
+            )
 
         # Upsert: busca la sesión más reciente para este usuario+improvement
         existing = (
@@ -787,7 +1117,6 @@ def save_cv_edit(
             .first()
         )
 
-        now = datetime.utcnow()
         if existing:
             existing.edited_cv_json = edited_cv_str
             existing.action_log_json = action_log_str
@@ -809,7 +1138,7 @@ def save_cv_edit(
         db.commit()
 
         return JSONResponse(
-            content={"session_id": session_id, "saved": True},
+            content={"session_id": session_id, "variant_id": None, "saved": True},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -821,6 +1150,8 @@ def save_cv_edit(
 def generate_pdf_from_edit(
     improvement_id: int = Path(..., ge=1),
     template: Optional[str] = Query(None),
+    fit_one_page: Optional[bool] = Query(None),
+    variant_id: Optional[int] = Query(None, ge=1),
     user=Depends(get_current_user_record),
 ):
     """
@@ -833,46 +1164,43 @@ def generate_pdf_from_edit(
         if not db:
             raise HTTPException(status_code=500, detail="Base de datos no disponible")
 
-        improvement = (
-            db.query(CVImprovement)
-            .filter(CVImprovement.id == improvement_id, CVImprovement.user_id == user.id)
-            .first()
-        )
-        if not improvement:
-            raise HTTPException(status_code=404, detail="CV mejorado no encontrado")
+        improvement = _get_cv_improvement_or_404(db, improvement_id, user.id)
 
         candidate_name = getattr(user, "nombre", "") or getattr(user, "alias", "") or ""
 
-        # Prioridad: edit_session → cv_structured_json → improved_cv_text
-        edit_session = (
-            db.query(CVEditSession)
-            .filter(
-                CVEditSession.improvement_id == improvement_id,
-                CVEditSession.user_id == user.id,
-            )
-            .order_by(CVEditSession.updated_at.desc())
-            .first()
-        )
-
         pdf_bytes: bytes
-        if edit_session:
+        edit_payload = _load_edit_payload(db, improvement, user.id, variant_id=variant_id)
+        cv_json = edit_payload.get("cv_json")
+        if cv_json:
             try:
-                edited_json = json.loads(edit_session.edited_cv_json)
-                resolved_template = _resolve_cv_template(template, edited_json=edited_json)
-                pdf_bytes = generate_cv_pdf_from_json(edited_json, candidate_name, resolved_template)
-            except Exception:
-                pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
-        elif improvement.cv_structured_json:
-            try:
-                structured = json.loads(improvement.cv_structured_json)
-                resolved_template = _resolve_cv_template(template, structured_json=structured)
-                pdf_bytes = generate_cv_pdf_from_json(structured, candidate_name, resolved_template)
+                structured_json = cv_json if edit_payload.get("kind") == "ai_generated" else None
+                edited_json = cv_json if edit_payload.get("kind") != "ai_generated" else None
+                resolved_template = _resolve_cv_template(
+                    template,
+                    edited_json=edited_json,
+                    structured_json=structured_json,
+                )
+                resolved_fit_one_page = _resolve_fit_one_page(
+                    fit_one_page,
+                    edited_json=edited_json,
+                    structured_json=structured_json,
+                )
+                pdf_bytes = generate_cv_pdf_from_json(
+                    cv_json,
+                    candidate_name,
+                    resolved_template,
+                    resolved_fit_one_page,
+                )
             except Exception:
                 pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
         else:
             pdf_bytes = generate_cv_pdf(improvement.improved_cv_text, candidate_name)
 
-        filename = f"cv_mejorado_{improvement_id}.pdf"
+        filename = (
+            f"cv_mejorado_{improvement_id}_variante_{variant_id}.pdf"
+            if variant_id is not None
+            else f"cv_mejorado_{improvement_id}.pdf"
+        )
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",

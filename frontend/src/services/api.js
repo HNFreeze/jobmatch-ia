@@ -28,6 +28,14 @@ function authHeaders() {
   };
 }
 
+function buildCvQuery({ template = null, fitOnePage = null, variantId = null } = {}) {
+  const query = new URLSearchParams();
+  if (template) query.set("template", template);
+  if (fitOnePage != null) query.set("fit_one_page", String(Boolean(fitOnePage)));
+  if (variantId != null) query.set("variant_id", String(variantId));
+  return query;
+}
+
 async function buildApiError(response, fallbackMessage) {
   const error = await response.json().catch(() => ({}));
   const detailText = typeof error.detail === "string" ? error.detail : "";
@@ -309,9 +317,10 @@ export async function improveCVFull(file) {
   return response.json();
 }
 
-export async function downloadCVPdf(improvementId, template = null) {
-  const templateQuery = template ? `?template=${encodeURIComponent(template)}` : "";
-  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}${templateQuery}`, {
+export async function downloadCVPdf(improvementId, template = null, fitOnePage = null, variantId = null) {
+  const query = buildCvQuery({ template, fitOnePage, variantId });
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const response = await fetch(`${API_URL}/api/cv/download-pdf/${improvementId}${suffix}`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al descargar el PDF");
@@ -321,7 +330,9 @@ export async function downloadCVPdf(improvementId, template = null) {
   // Using <a download> is the most reliable cross-browser approach.
   const a = document.createElement("a");
   a.href = url;
-  a.download = `cv_mejorado_${improvementId}.pdf`;
+  a.download = variantId != null
+    ? `cv_mejorado_${improvementId}_variante_${variantId}.pdf`
+    : `cv_mejorado_${improvementId}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -442,17 +453,20 @@ export async function clearAdminCache() {
   return response.json();
 }
 
-// CV Edit sessions
-export async function getCVEdit(improvementId) {
-  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit`, {
+export async function getCVEdit(improvementId, variantId = null) {
+  const query = buildCvQuery({ variantId });
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit${suffix}`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al cargar la sesión de edición del CV");
   return response.json();
 }
 
-export async function saveCVEdit(improvementId, editedCvJson, actionLog) {
-  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit`, {
+export async function saveCVEdit(improvementId, editedCvJson, actionLog, variantId = null) {
+  const query = buildCvQuery({ variantId });
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/edit${suffix}`, {
     method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify({ edited_cv_json: editedCvJson, action_log: actionLog }),
@@ -461,8 +475,9 @@ export async function saveCVEdit(improvementId, editedCvJson, actionLog) {
   return response.json();
 }
 
-export async function downloadCVPdfFromEdit(improvementId, template = "professional_modern") {
-  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/pdf?template=${encodeURIComponent(template)}`, {
+export async function downloadCVPdfFromEdit(improvementId, template = "professional_modern", fitOnePage = null, variantId = null) {
+  const query = buildCvQuery({ template, fitOnePage, variantId });
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/pdf?${query.toString()}`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -472,9 +487,38 @@ export async function downloadCVPdfFromEdit(improvementId, template = "professio
   // Always trigger a real file download — never open in a new tab.
   const a = document.createElement("a");
   a.href = url;
-  a.download = `cv_mejorado_${improvementId}.pdf`;
+  a.download = variantId != null
+    ? `cv_mejorado_${improvementId}_variante_${variantId}.pdf`
+    : `cv_mejorado_${improvementId}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+export async function listCVVariants(improvementId) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/variants`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar las variantes del CV");
+  return response.json();
+}
+
+export async function createCVVariant(improvementId, payload) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/variants`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload || {}),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al crear la variante del CV");
+  return response.json();
+}
+
+export async function deleteCVVariant(improvementId, variantId) {
+  const response = await fetch(`${API_URL}/api/cv/improvement/${improvementId}/variants/${variantId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al eliminar la variante del CV");
+  return response.json();
 }

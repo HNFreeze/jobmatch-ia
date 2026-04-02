@@ -32,6 +32,7 @@ from app.models.cv_analysis import CVAnalysis  # noqa: F401
 from app.models.cv_ats_result import CVAtsResult  # noqa: F401
 from app.models.cv_improvement import CVImprovement  # noqa: F401
 from app.models.cv_edit_session import CVEditSession  # noqa: F401
+from app.models.cv_offer_variant import CVOfferVariant  # noqa: F401
 
 config = context.config
 
