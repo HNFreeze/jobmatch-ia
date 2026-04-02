@@ -461,6 +461,14 @@ export async function getAdminJobIngestionRuns(limit = 12) {
   return response.json();
 }
 
+export async function getAdminJobIndexHealth() {
+  const response = await fetch(`${API_URL}/api/admin/job-index/health`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar la salud del índice de ofertas");
+  return response.json();
+}
+
 export async function startAdminJobIngestion(payload = {}) {
   const response = await fetch(`${API_URL}/api/admin/job-ingestion/run`, {
     method: "POST",

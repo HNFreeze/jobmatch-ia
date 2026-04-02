@@ -5,6 +5,7 @@ import {
   getAdminActivity,
   getAdminAiUsage,
   getAdminDashboard,
+  getAdminJobIndexHealth,
   getAdminJobIngestionRuns,
   getAdminUsers,
   resetAdminUserQuotaUsage,
@@ -23,6 +24,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [usersData, setUsersData] = useState(null);
   const [activity, setActivity] = useState(null);
   const [aiUsage, setAiUsage] = useState(null);
+  const [jobHealth, setJobHealth] = useState(null);
   const [ingestionRuns, setIngestionRuns] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,7 +53,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     setLoading(true);
     setError(null);
     try {
-      const [dashboardData, usersResponse, activityData, aiUsageData, ingestionData] = await Promise.all([
+      const [dashboardData, usersResponse, activityData, aiUsageData, jobHealthData, ingestionData] = await Promise.all([
         getAdminDashboard(),
         getAdminUsers({
           page: currentPage,
@@ -62,6 +64,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         }),
         getAdminActivity(12),
         getAdminAiUsage(),
+        getAdminJobIndexHealth(),
         getAdminJobIngestionRuns(10),
       ]);
 
@@ -69,6 +72,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setUsersData(usersResponse);
       setActivity(activityData);
       setAiUsage(aiUsageData);
+      setJobHealth(jobHealthData);
       setIngestionRuns(ingestionData);
       setQuotaDrafts((prev) => {
         const next = { ...prev };
@@ -294,6 +298,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
           <div style={S.adminActions}>
             <div style={S.sectionPills}>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("motor-admin")} style={S.pillButton}>Motor</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ingesta-admin")} style={S.pillButton}>Ingesta</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
@@ -348,6 +353,137 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             <MetricCard label="Altas hoy" value={dashboard?.users_registered_today} extra="Registros del día" darkMode={dm} />
             <MetricCard label="Análisis IA" value={dashboard?.total_analyses} extra={`${dashboard?.analyses_today || 0} hoy`} darkMode={dm} />
             <MetricCard label="Cartas" value={dashboard?.total_cover_letters} extra={`${dashboard?.cover_letters_today || 0} hoy`} darkMode={dm} />
+          </div>
+        </section>
+
+        <section id="motor-admin" style={S.section}>
+          <div style={S.sectionHeader}>
+            <div>
+              <h2 style={{ ...S.sectionTitle, color: dm ? "#f8fafc" : "#111827" }}>Motor de ofertas</h2>
+              <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b" }}>
+                Vista rápida de cobertura, frescura y rendimiento de las fuentes que alimentan el índice propio.
+              </p>
+            </div>
+          </div>
+
+          <div style={S.metricsGrid}>
+            <MetricCard
+              label="Ofertas activas"
+              value={jobHealth?.overview?.active_offers}
+              extra={`${jobHealth?.overview?.total_offers || 0} totales`}
+              darkMode={dm}
+            />
+            <MetricCard
+              label="Verificadas"
+              value={jobHealth?.overview?.verified_recently}
+              extra={formatPercent(
+                (jobHealth?.overview?.verified_recently || 0) / Math.max(jobHealth?.overview?.active_offers || 1, 1),
+                0,
+              )}
+              darkMode={dm}
+            />
+            <MetricCard
+              label="Confianza media"
+              value={formatPercent(jobHealth?.overview?.avg_confidence || 0, 0)}
+              extra={`${jobHealth?.overview?.source_count || 0} fuentes`}
+              darkMode={dm}
+            />
+            <MetricCard
+              label="Listados antiguos"
+              value={jobHealth?.overview?.stale_listing}
+              extra="Revisar prioridad"
+              darkMode={dm}
+            />
+          </div>
+
+          <div style={S.twoCol}>
+            <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+              <div style={S.subblock}>
+                <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Fuentes principales</p>
+                {(jobHealth?.sources || []).length ? (
+                  jobHealth.sources.map((source) => (
+                    <div
+                      key={`${source.source_name}-${source.source_type}`}
+                      style={{ ...S.healthRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 800 }}>
+                          {formatSourceName(source.source_name)}
+                        </span>
+                        <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                          {formatSourceType(source.source_type)} · última entrada {formatDate(source.last_seen_at, true)}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+                        <span style={S.runStatBadge}>{source.active_offers} activas</span>
+                        <span style={S.runStatBadge}>{source.verified_recently} verificadas</span>
+                        <span style={S.runStatBadge}>{formatPercent(source.avg_confidence || 0, 0)}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay datos de fuentes en el índice.</p>
+                )}
+              </div>
+
+              <div style={S.subblock}>
+                <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Top ubicaciones activas</p>
+                {(jobHealth?.top_locations || []).length ? (
+                  jobHealth.top_locations.map((item) => (
+                    <div key={item.location} style={S.listRow}>
+                      <span style={{ color: dm ? "#94a3b8" : "#64748b" }}>{item.location}</span>
+                      <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 800 }}>{item.count}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay suficiente señal geográfica.</p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+              <div style={S.subblock}>
+                <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Estado de frescura</p>
+                {(jobHealth?.freshness || []).length ? (
+                  jobHealth.freshness.map((item) => (
+                    <div key={item.key} style={S.listRow}>
+                      <span style={{ color: dm ? "#94a3b8" : "#64748b" }}>{item.label}</span>
+                      <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 800 }}>{item.count}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Sin datos de frescura todavía.</p>
+                )}
+              </div>
+
+              <div style={S.subblock}>
+                <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a" }}>Últimas ingestas</p>
+                {(jobHealth?.recent_runs || []).length ? (
+                  jobHealth.recent_runs.map((run) => (
+                    <div
+                      key={`health-run-${run.id}`}
+                      style={{ ...S.healthRow, borderColor: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb" }}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 800 }}>
+                          Run #{run.id} · {formatIngestionStatus(run.status)}
+                        </span>
+                        <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                          {formatDate(run.created_at, true)} · duración {formatDuration(run.started_at, run.finished_at)}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+                        <span style={S.runStatBadge}>{run.saved_new_count} nuevas</span>
+                        <span style={S.runStatBadge}>{run.saved_updated_count} actualizadas</span>
+                        <span style={S.runStatBadge}>{run.inactive_count} inactivas</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay ingestas registradas.</p>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -914,6 +1050,11 @@ function formatUsd(value) {
   return `${numeric.toFixed(4)} USD`;
 }
 
+function formatPercent(value, digits = 0) {
+  const numeric = Number(value || 0);
+  return `${(numeric * 100).toFixed(digits)}%`;
+}
+
 function formatIngestionStatus(value) {
   const labels = {
     queued: "En cola",
@@ -954,6 +1095,43 @@ function formatShortDay(value) {
   } catch {
     return value;
   }
+}
+
+function formatDuration(startedAt, finishedAt) {
+  if (!startedAt) return "pendiente";
+  const start = new Date(startedAt);
+  const end = finishedAt ? new Date(finishedAt) : new Date();
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "n/d";
+
+  const diffSeconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+
+  const minutes = Math.floor(diffSeconds / 60);
+  const seconds = diffSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatSourceName(value) {
+  const labels = {
+    infojobs: "InfoJobs",
+    greenhouse: "Greenhouse",
+    lever: "Lever",
+    ashby: "Ashby",
+    adzuna: "Adzuna",
+    desconocida: "Desconocida",
+  };
+  const normalized = String(value || "").trim().toLowerCase();
+  return labels[normalized] || String(value || "Desconocida");
+}
+
+function formatSourceType(value) {
+  const labels = {
+    official_api: "API oficial",
+    public_ats: "ATS público",
+    career_page: "Web de empresa",
+    aggregator: "Agregador",
+  };
+  return labels[String(value || "").trim().toLowerCase()] || (value || "Fuente");
 }
 
 function getCostBarWidth(items, currentValue) {
@@ -1524,6 +1702,14 @@ const S = {
     gap: 12,
     fontSize: 13,
     lineHeight: 1.5,
+  },
+  healthRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 14,
+    padding: "12px 0",
+    borderTop: "1px solid",
+    flexWrap: "wrap",
   },
   activityRow: {
     display: "flex",
