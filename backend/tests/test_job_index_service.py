@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
+from datetime import datetime, timedelta
+
 from app.services.job_index_service import (
+    annotate_offer_freshness,
     build_offer_dedupe_key,
+    compute_effective_source_confidence,
     compute_source_confidence,
     matches_requested_locations,
     normalize_offer_record,
@@ -96,3 +100,34 @@ def test_dedupe_and_sort_prefers_more_reliable_source():
 
     assert len(offers) == 1
     assert offers[0]["source_name"] == "infojobs"
+
+
+def test_effective_confidence_penalizes_stale_verification():
+    now = datetime(2026, 4, 2, 12, 0, 0)
+    offer = {
+        "base_source_confidence": 0.92,
+        "source_confidence": 0.92,
+        "last_verified_at": (now - timedelta(days=8)).isoformat(),
+        "last_seen_at": (now - timedelta(days=2)).isoformat(),
+        "is_active": True,
+    }
+
+    assert compute_effective_source_confidence(offer, now=now) < 0.92
+
+
+def test_annotate_offer_freshness_marks_recently_verified_offer():
+    now = datetime(2026, 4, 2, 12, 0, 0)
+    offer = annotate_offer_freshness(
+        {
+            "base_source_confidence": 0.92,
+            "source_confidence": 0.92,
+            "last_verified_at": (now - timedelta(hours=3)).isoformat(),
+            "last_seen_at": (now - timedelta(hours=6)).isoformat(),
+            "first_seen_at": (now - timedelta(days=2)).isoformat(),
+            "is_active": True,
+        },
+        now=now,
+    )
+
+    assert offer["verified_recently"] is True
+    assert offer["freshness_state"] == "verified_recently"
