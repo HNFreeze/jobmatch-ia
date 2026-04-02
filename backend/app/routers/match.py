@@ -185,6 +185,7 @@ async def match_offers(
         result_order = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
         enriched.sort(key=lambda x: (
             result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
+            -(x.get("ranking_score") or 0),
             -(x.get("puntuacion") or 0),
             len(x.get("blockers") or []),
             -len(x.get("skills_match") or []),

@@ -8,6 +8,7 @@ import {
   getCVEdit,
   createCVVariant,
   deleteCVVariant,
+  optimizeCVVariantForOffer,
 } from "../services/api";
 import CompanyLogo from "../components/CompanyLogo";
 import CVEditorModal from "../components/CVEditorModal";
@@ -18,6 +19,14 @@ import {
   colors,
 } from "../constants/theme";
 import OfferTrustSignals from "../components/OfferTrustSignals";
+import {
+  getOfferQualityCounts,
+  hasVisibleSalary,
+  isAggregatorOffer,
+  isDirectSourceOffer,
+  isVerifiedOffer,
+  isJuniorFriendlyOffer,
+} from "../utils/jobTrust";
 
 // ─── Constantes de diseño ────────────────────────────────────────────────────
 
@@ -1146,6 +1155,12 @@ function ImproveTabNew({
   const [downloading, setDownloading] = useState(false);
   const [editorState, setEditorState] = useState({ open: false, json: null, variantId: null, variant: null });
   const [creatingVariantId, setCreatingVariantId] = useState(null);
+  const [searchSortBy, setSearchSortBy] = useState("compatibilidad");
+  const [onlyVerifiedOffers, setOnlyVerifiedOffers] = useState(false);
+  const [onlyDirectOffers, setOnlyDirectOffers] = useState(false);
+  const [hideAggregatedOffers, setHideAggregatedOffers] = useState(false);
+  const [onlySalaryOffers, setOnlySalaryOffers] = useState(false);
+  const [onlyJuniorOffers, setOnlyJuniorOffers] = useState(false);
 
   // Auto-open the editor when a new CV is generated (if structured JSON is available).
   // Using improvement_id as dependency so it only fires on a new generation, not on every save.
@@ -1203,6 +1218,29 @@ function ImproveTabNew({
   };
 
   const quotaLeft = result?.quota?.cv_improve_remaining;
+  const qualityCounts = getOfferQualityCounts(searchResult?.offers || []);
+  const filteredOffers = (() => {
+    const nextOffers = [...(searchResult?.offers || [])];
+    let current = nextOffers;
+
+    if (onlyVerifiedOffers) current = current.filter(isVerifiedOffer);
+    if (onlyDirectOffers) current = current.filter(isDirectSourceOffer);
+    if (hideAggregatedOffers) current = current.filter((offer) => !isAggregatorOffer(offer));
+    if (onlySalaryOffers) current = current.filter(hasVisibleSalary);
+    if (onlyJuniorOffers) current = current.filter(isJuniorFriendlyOffer);
+
+    if (searchSortBy === "confianza") {
+      current.sort((a, b) => (b.source_confidence || 0) - (a.source_confidence || 0));
+    } else if (searchSortBy === "fecha") {
+      current.sort((a, b) => new Date(b.fecha_publicacion || 0) - new Date(a.fecha_publicacion || 0));
+    } else if (searchSortBy === "salario") {
+      current.sort((a, b) => (parseSalaryValue(b.salario) || 0) - (parseSalaryValue(a.salario) || 0));
+    } else {
+      current.sort((a, b) => (b.ranking_score || b.puntuacion || 0) - (a.ranking_score || a.puntuacion || 0));
+    }
+
+    return current;
+  })();
 
   return (
     <div style={{ maxWidth: 780, margin: "0 auto" }}>
@@ -1444,12 +1482,99 @@ function ImproveTabNew({
           {searchResult && !searchLoading && (
             <div style={{ marginTop: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#94a3b8" : "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
-                {searchResult.offers?.length || 0} ofertas · ordenadas por compatibilidad
+                {filteredOffers.length} ofertas visibles · motor propio priorizando compatibilidad y confianza
+              </div>
+              <div style={{
+                display: "grid",
+                gap: 12,
+                marginBottom: 14,
+                padding: "14px 16px",
+                borderRadius: 14,
+                background: dm ? "#1e293b" : "#fff",
+                border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[
+                      { label: "Verificadas", value: qualityCounts.verified, active: onlyVerifiedOffers, toggle: setOnlyVerifiedOffers },
+                      { label: "Directas", value: qualityCounts.direct, active: onlyDirectOffers, toggle: setOnlyDirectOffers },
+                      { label: "Con salario", value: qualityCounts.salaryVisible, active: onlySalaryOffers, toggle: setOnlySalaryOffers },
+                      { label: "Junior", value: qualityCounts.juniorFriendly, active: onlyJuniorOffers, toggle: setOnlyJuniorOffers },
+                    ].map((item) => (
+                      <button
+                        key={item.label}
+                        onClick={() => item.toggle(!item.active)}
+                        style={{
+                          padding: "7px 11px",
+                          borderRadius: 999,
+                          border: `1px solid ${item.active ? "transparent" : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db")}`,
+                          background: item.active ? "#0f766e" : (dm ? "rgba(255,255,255,0.04)" : "#f8fafc"),
+                          color: item.active ? "#fff" : (dm ? "#cbd5e1" : "#374151"),
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontFamily: typography.family,
+                        }}
+                      >
+                        {item.label} ({item.value})
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setHideAggregatedOffers((value) => !value)}
+                      style={{
+                        padding: "7px 11px",
+                        borderRadius: 999,
+                        border: `1px solid ${hideAggregatedOffers ? "transparent" : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db")}`,
+                        background: hideAggregatedOffers ? "#1d4ed8" : (dm ? "rgba(255,255,255,0.04)" : "#f8fafc"),
+                        color: hideAggregatedOffers ? "#fff" : (dm ? "#cbd5e1" : "#374151"),
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontFamily: typography.family,
+                      }}
+                    >
+                      Sin agregadas
+                    </button>
+                  </div>
+                  <select
+                    value={searchSortBy}
+                    onChange={(e) => setSearchSortBy(e.target.value)}
+                    style={{
+                      minWidth: 190,
+                      borderRadius: 10,
+                      padding: "9px 12px",
+                      border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                      background: dm ? "#0f172a" : "#fff",
+                      color: dm ? "#f8fafc" : "#111827",
+                      fontFamily: typography.family,
+                    }}
+                  >
+                    <option value="compatibilidad">Ordenar por compatibilidad</option>
+                    <option value="confianza">Ordenar por confianza</option>
+                    <option value="fecha">Mas recientes</option>
+                    <option value="salario">Mayor salario</option>
+                  </select>
+                </div>
+                <div style={{ fontSize: 12, color: dm ? "#94a3b8" : "#64748b", lineHeight: 1.6 }}>
+                  Usa estos filtros para centrarte en ofertas verificadas, directas o mas amigables para perfiles junior antes de crear la variante del CV.
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {(searchResult.offers || []).map(offer => (
+                {filteredOffers.length > 0 ? filteredOffers.map(offer => (
                   <OfferCard key={offer.adzuna_id || offer.id} offer={offer} dm={dm} onSelect={setSelectedOffer} />
-                ))}
+                )) : (
+                  <div style={{
+                    padding: "22px 18px",
+                    borderRadius: 14,
+                    background: dm ? "#1e293b" : "#fff",
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
+                    fontSize: 13,
+                    color: dm ? "#94a3b8" : "#64748b",
+                    lineHeight: 1.6,
+                  }}>
+                    Ninguna oferta coincide con los filtros de calidad actuales. Prueba a desactivar alguno para recuperar mas opciones.
+                  </div>
+                )}
               </div>
               {searchResult.skills_gap && <SkillsGapPanel gap={searchResult.skills_gap} dm={dm} />}
             </div>
@@ -1478,6 +1603,7 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
   const [downloading, setDownloading] = useState(null);
   const [editorState, setEditorState] = useState({ open: false, id: null, json: null, variantId: null, variant: null });
   const [editLoading, setEditLoading] = useState(null);
+  const [optimizingVariant, setOptimizingVariant] = useState(null);
 
   useEffect(() => {
     getMyImprovements()
@@ -1531,6 +1657,30 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
       addToast?.("Variante eliminada", "success");
     } catch (err) {
       addToast?.(err?.detail || err?.message || "Error al eliminar la variante", "error");
+    }
+  };
+
+  const handleOptimizeVariant = async (improvementId, variant) => {
+    const optimizeKey = `variant-${variant.id}`;
+    setOptimizingVariant(optimizeKey);
+    try {
+      const data = await optimizeCVVariantForOffer(improvementId, variant.id);
+      setImprovements((current) => (current || []).map((improvement) => {
+        if (improvement.id !== improvementId) return improvement;
+        return {
+          ...improvement,
+          variants: (improvement.variants || []).map((item) => (
+            item.id === variant.id
+              ? { ...item, ...(data.variant || {}), updated_at: data.variant?.updated_at || item.updated_at }
+              : item
+          )),
+        };
+      }));
+      addToast?.(data?.focus_summary || "Variante optimizada para la oferta", "success");
+    } catch (err) {
+      addToast?.(err?.detail || err?.message || "Error al optimizar la variante", "error");
+    } finally {
+      setOptimizingVariant(null);
     }
   };
 
@@ -1624,6 +1774,14 @@ function MisCVsTab({ addToast, onSearchFromId, dm }) {
                             opacity: downloading === variantKey ? 0.7 : 1,
                           }}>
                             {downloading === variantKey ? "..." : "PDF"}
+                          </button>
+                          <button onClick={() => handleOptimizeVariant(imp.id, variant)} disabled={optimizingVariant === variantKey} style={{
+                            padding: "6px 12px", borderRadius: 18, border: "1px solid #0f766e",
+                            background: "none", color: "#0f766e", cursor: "pointer",
+                            fontSize: 11, fontWeight: 700, fontFamily: typography.family,
+                            opacity: optimizingVariant === variantKey ? 0.7 : 1,
+                          }}>
+                            {optimizingVariant === variantKey ? "..." : "Optimizar IA"}
                           </button>
                           <button onClick={() => handleOpenEditor(imp.id, variant)} disabled={editLoading === variantKey} style={{
                             padding: "6px 12px", borderRadius: 18, border: "1px solid #2563eb",

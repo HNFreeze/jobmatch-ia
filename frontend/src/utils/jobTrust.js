@@ -66,6 +66,10 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function hasMeaningfulValue(value) {
+  return String(value || "").trim().length > 0;
+}
+
 function titleCase(value) {
   return String(value || "")
     .split(/[\s_-]+/)
@@ -102,6 +106,44 @@ export function formatRelativeTimestamp(dateString) {
     month: "short",
     year: "numeric",
   });
+}
+
+export function isVerifiedOffer(offer) {
+  return normalizeText(offer?.freshness_state) === "verified_recently" || Boolean(offer?.verified_recently);
+}
+
+export function isOfficialOffer(offer) {
+  return normalizeText(offer?.source_type) === "official_api";
+}
+
+export function isDirectSourceOffer(offer) {
+  return ["official_api", "public_ats", "career_page"].includes(normalizeText(offer?.source_type));
+}
+
+export function isAggregatorOffer(offer) {
+  return normalizeText(offer?.source_type) === "aggregator";
+}
+
+export function hasVisibleSalary(offer) {
+  const salary = normalizeText(offer?.salario);
+  return hasMeaningfulValue(salary) && !["salario no especificado", "no especificado"].includes(salary);
+}
+
+export function isJuniorFriendlyOffer(offer) {
+  const seniority = normalizeText(offer?.signals_summary?.seniority_level);
+  if (seniority === "junior") return true;
+  const text = normalizeText(`${offer?.titulo || ""} ${offer?.descripcion || ""}`);
+  return /(junior|trainee|intern|beca|practicas|prácticas|primer empleo)/.test(text);
+}
+
+export function getOfferQualityCounts(offers = []) {
+  return {
+    verified: offers.filter(isVerifiedOffer).length,
+    direct: offers.filter(isDirectSourceOffer).length,
+    official: offers.filter(isOfficialOffer).length,
+    salaryVisible: offers.filter(hasVisibleSalary).length,
+    juniorFriendly: offers.filter(isJuniorFriendlyOffer).length,
+  };
 }
 
 export function getOfferTrustSignals(offer, maxSignals = 3) {

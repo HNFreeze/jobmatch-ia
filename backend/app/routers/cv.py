@@ -39,6 +39,7 @@ from app.services.cv_service import (
     hash_cv_text,
     improve_cv_full,
     improve_cv_with_ai,
+    optimize_cv_json_for_offer,
     read_and_validate_content,
     validate_cv_upload,
 )
@@ -378,6 +379,7 @@ async def analyze_cv(
         enriched.sort(
             key=lambda x: (
                 result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
+                -(x.get("ranking_score") or 0),
                 -(x.get("puntuacion") or 0),
                 len(x.get("blockers") or []),
                 -len(x.get("skills_match") or []),
@@ -842,6 +844,76 @@ def create_cv_variant(
             db.close()
 
 
+@router.post("/api/cv/improvement/{improvement_id}/optimize-for-offer")
+async def optimize_cv_for_offer(
+    improvement_id: int = Path(..., ge=1),
+    variant_id: int = Query(..., ge=1),
+    user=Depends(get_current_user_record),
+):
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "CLAUDE_API_KEY no configurada"},
+            media_type="application/json; charset=utf-8",
+        )
+
+    SessionLocal = get_session_local()
+    db = SessionLocal() if SessionLocal is not None else None
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+        _get_cv_improvement_or_404(db, improvement_id, user.id)
+        variant = _get_variant_or_404(db, improvement_id, user.id, variant_id)
+        offer_snapshot = _deserialize_json(variant.offer_snapshot_json, {}) or {}
+        if not offer_snapshot:
+            raise HTTPException(status_code=422, detail="Esta variante no tiene una oferta objetivo asociada")
+
+        current_cv_json = _deserialize_json(variant.edited_cv_json, None)
+        if not isinstance(current_cv_json, dict):
+            raise HTTPException(status_code=422, detail="Esta variante no tiene un CV editable valido")
+
+        quota = consume_ai_quota(db, user, "cv_improve")
+        optimized_result, _usage = await optimize_cv_json_for_offer(
+            current_cv_json,
+            offer_snapshot,
+            api_key,
+            user_id=user.id,
+        )
+
+        optimized_cv_json = optimized_result.get("cv_structured_json") or current_cv_json
+        action_log = _deserialize_json(variant.action_log_json, []) or []
+        action_log.append({
+            "type": "offer_optimize_ai",
+            "offer_title": offer_snapshot.get("titulo") or variant.offer_title,
+            "changes_applied": (optimized_result.get("changes_applied") or [])[:5],
+            "ts": int(datetime.utcnow().timestamp() * 1000),
+        })
+
+        variant.edited_cv_json = json.dumps(optimized_cv_json, ensure_ascii=False)
+        variant.action_log_json = json.dumps(action_log, ensure_ascii=False)
+        variant.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(variant)
+
+        return JSONResponse(
+            content={
+                "optimized": True,
+                "quota": quota,
+                "focus_summary": optimized_result.get("focus_summary") or "",
+                "changes_applied": optimized_result.get("changes_applied") or [],
+                "variant": _serialize_variant_summary(variant, include_offer_snapshot=True),
+                "cv_json": optimized_cv_json,
+                "action_log": action_log,
+            },
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        if db:
+            db.close()
+
+
 @router.delete("/api/cv/improvement/{improvement_id}/variants/{variant_id}")
 def delete_cv_variant(
     improvement_id: int = Path(..., ge=1),
@@ -943,6 +1015,7 @@ async def search_from_improvement(
         result_order = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
         enriched.sort(key=lambda x: (
             result_order.get(x.get("resultado", "NO_ENCAJA"), 2),
+            -(x.get("ranking_score") or 0),
             -(x.get("puntuacion") or 0),
             -(float(x.get("source_confidence") or 0)),
         ))
