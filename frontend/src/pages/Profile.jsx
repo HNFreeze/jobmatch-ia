@@ -10,6 +10,7 @@ import {
   transition,
 } from "../constants/theme";
 import CompanyLogo from "../components/CompanyLogo";
+import OfferTrustSignals from "../components/OfferTrustSignals";
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -1516,6 +1517,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
 
                       {/* Row 2: Context chips */}
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0 0" }}>
+                        <OfferTrustSignals offer={offer} darkMode={dm} compact maxSignals={2} />
                         {offer.ubicacion && (
                           <span style={{ ...S.chip, ...(dm ? S.chipDm : {}) }}>
                             <span style={{ fontSize: 11, opacity: 0.6 }}>📍</span> {offer.ubicacion}
@@ -2105,6 +2107,13 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                           </span>
                         )}
                       </div>
+
+                      <OfferTrustSignals
+                        offer={selectedOffer}
+                        darkMode={dm}
+                        showDetail
+                        style={{ marginTop: 14 }}
+                      />
 
                       {selectedOffer.company_review_sources?.length > 0 && (
                         <div style={{

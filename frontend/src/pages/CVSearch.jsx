@@ -17,6 +17,7 @@ import {
   transition,
   colors,
 } from "../constants/theme";
+import OfferTrustSignals from "../components/OfferTrustSignals";
 
 // ─── Constantes de diseño ────────────────────────────────────────────────────
 
@@ -158,6 +159,14 @@ function OfferCard({ offer, dm, onSelect }) {
         <ScoreBar score={offer.puntuacion} resultado={offer.resultado} dm={dm} />
       </div>
 
+      <OfferTrustSignals
+        offer={offer}
+        darkMode={dm}
+        compact
+        maxSignals={2}
+        style={{ marginBottom: 10 }}
+      />
+
       {/* Skills match */}
       {offer.skills_match && offer.skills_match.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
@@ -257,6 +266,13 @@ function OfferModal({ offer, dm, onClose, onCreateVariant = null, creatingVarian
             <ScoreBar score={offer.puntuacion} resultado={offer.resultado} dm={dm} />
           </div>
         </div>
+
+        <OfferTrustSignals
+          offer={offer}
+          darkMode={dm}
+          showDetail
+          style={{ marginBottom: 18 }}
+        />
 
         {/* Puntos fuertes */}
         {offer.strengths && offer.strengths.length > 0 && (
