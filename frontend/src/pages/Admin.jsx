@@ -6,6 +6,7 @@ import {
   getAdminAiUsage,
   getAdminDashboard,
   getAdminJobIndexHealth,
+  getAdminJobSourceStatus,
   getAdminJobIngestionRuns,
   getAdminUsers,
   resetAdminUserQuotaUsage,
@@ -25,6 +26,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [activity, setActivity] = useState(null);
   const [aiUsage, setAiUsage] = useState(null);
   const [jobHealth, setJobHealth] = useState(null);
+  const [jobSources, setJobSources] = useState(null);
   const [ingestionRuns, setIngestionRuns] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,7 +55,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     setLoading(true);
     setError(null);
     try {
-      const [dashboardData, usersResponse, activityData, aiUsageData, jobHealthData, ingestionData] = await Promise.all([
+      const [dashboardData, usersResponse, activityData, aiUsageData, jobHealthData, jobSourceData, ingestionData] = await Promise.all([
         getAdminDashboard(),
         getAdminUsers({
           page: currentPage,
@@ -65,6 +67,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         getAdminActivity(12),
         getAdminAiUsage(),
         getAdminJobIndexHealth(),
+        getAdminJobSourceStatus(),
         getAdminJobIngestionRuns(10),
       ]);
 
@@ -73,6 +76,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setActivity(activityData);
       setAiUsage(aiUsageData);
       setJobHealth(jobHealthData);
+      setJobSources(jobSourceData);
       setIngestionRuns(ingestionData);
       setQuotaDrafts((prev) => {
         const next = { ...prev };
@@ -394,6 +398,97 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               extra="Revisar prioridad"
               darkMode={dm}
             />
+          </div>
+
+          <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel), marginTop: 16 }}>
+            <div style={S.sectionHeader}>
+              <div>
+                <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Fuentes disponibles y configuración</p>
+                <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b", margin: 0 }}>
+                  Aquí ves qué conectores gratuitos o públicos soporta el motor y si ya están listos en este entorno.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ ...S.metricsGrid, marginTop: 12 }}>
+              <MetricCard
+                label="Fuentes listas"
+                value={jobSources?.overview?.ready_sources}
+                extra={`${jobSources?.overview?.missing_sources || 0} pendientes`}
+                darkMode={dm}
+              />
+              <MetricCard
+                label="ATS públicos listos"
+                value={jobSources?.overview?.public_ready_sources}
+                extra="Sin pago por lectura"
+                darkMode={dm}
+              />
+              <MetricCard
+                label="Targets públicos"
+                value={jobSources?.overview?.configured_public_targets}
+                extra="Boards, sites o slugs configurados"
+                darkMode={dm}
+              />
+              <MetricCard
+                label="Fallback activo"
+                value={(jobSources?.sources || []).some((item) => item.key === "adzuna" && item.is_configured) ? "Sí" : "No"}
+                extra="Adzuna"
+                darkMode={dm}
+              />
+            </div>
+
+            <div style={{ ...S.sourceStatusGrid, marginTop: 16 }}>
+              {(jobSources?.sources || []).map((source) => (
+                <div
+                  key={source.key}
+                  style={{
+                    ...S.sourceStatusCard,
+                    ...(dm ? S.sourceStatusCardDm : {}),
+                    borderColor: source.is_configured
+                      ? (dm ? "rgba(16,185,129,0.34)" : "rgba(16,185,129,0.26)")
+                      : (dm ? "rgba(148,163,184,0.18)" : "#dbe2ea"),
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 900 }}>{source.label}</span>
+                      <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                        {formatSourceType(source.source_type)} · {formatPricingLabel(source.pricing)}
+                      </span>
+                    </div>
+                    <span style={{
+                      ...S.sourceStatusBadge,
+                      backgroundColor: source.is_configured
+                        ? (dm ? "rgba(16,185,129,0.16)" : "rgba(16,185,129,0.12)")
+                        : (dm ? "rgba(148,163,184,0.16)" : "#eef2f7"),
+                      color: source.is_configured ? "#047857" : (dm ? "#cbd5e1" : "#475569"),
+                      borderColor: source.is_configured
+                        ? "rgba(16,185,129,0.22)"
+                        : (dm ? "rgba(148,163,184,0.2)" : "#dbe2ea"),
+                    }}>
+                      {source.is_configured ? "Lista" : "Pendiente"}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <span style={S.runStatBadge}>{source.configured_key_count}/{source.required_key_count} claves</span>
+                    <span style={S.runStatBadge}>{source.configured_values_count || 0} targets</span>
+                  </div>
+
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: dm ? "#cbd5e1" : "#475569" }}>
+                    {source.activation_hint}
+                  </div>
+
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
+                    <strong>Variables:</strong> {source.env_keys.join(", ")}
+                  </div>
+
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
+                    <strong>Vista previa:</strong> {(source.configured_values_preview || []).join(", ") || "sin boards/sites/slugs aún"}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div style={S.twoCol}>
@@ -1117,6 +1212,7 @@ function formatSourceName(value) {
     greenhouse: "Greenhouse",
     lever: "Lever",
     ashby: "Ashby",
+    recruitee: "Recruitee",
     adzuna: "Adzuna",
     desconocida: "Desconocida",
   };
@@ -1132,6 +1228,14 @@ function formatSourceType(value) {
     aggregator: "Agregador",
   };
   return labels[String(value || "").trim().toLowerCase()] || (value || "Fuente");
+}
+
+function formatPricingLabel(value) {
+  const labels = {
+    public_free: "Gratuita y pública",
+    free_developer: "Gratis con alta de desarrollador",
+  };
+  return labels[String(value || "").trim().toLowerCase()] || "Configuración manual";
 }
 
 function getCostBarWidth(items, currentValue) {
@@ -1690,6 +1794,32 @@ const S = {
     flexDirection: "column",
     gap: 10,
     marginTop: 14,
+  },
+  sourceStatusGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 12,
+  },
+  sourceStatusCard: {
+    borderRadius: 16,
+    border: "1px solid #dbe2ea",
+    backgroundColor: "rgba(0,122,138,0.03)",
+    padding: "14px 14px 12px",
+    display: "grid",
+    gap: 10,
+    minWidth: 0,
+  },
+  sourceStatusCardDm: {
+    backgroundColor: "rgba(15,23,42,0.72)",
+  },
+  sourceStatusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: 999,
+    border: "1px solid",
+    padding: "4px 9px",
+    fontSize: 11,
+    fontWeight: 800,
   },
   subTitle: {
     margin: 0,

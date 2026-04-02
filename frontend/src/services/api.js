@@ -469,6 +469,14 @@ export async function getAdminJobIndexHealth() {
   return response.json();
 }
 
+export async function getAdminJobSourceStatus() {
+  const response = await fetch(`${API_URL}/api/admin/job-sources/status`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el estado de las fuentes de ofertas");
+  return response.json();
+}
+
 export async function startAdminJobIngestion(payload = {}) {
   const response = await fetch(`${API_URL}/api/admin/job-ingestion/run`, {
     method: "POST",
