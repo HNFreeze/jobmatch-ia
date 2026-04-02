@@ -66,6 +66,17 @@ function getEnglishForMatch(idiomas) {
   return eng.nivel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+function normalizeResultValue(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+
+  if (normalized === "QUIZA" || normalized === "QUIZ?") return "QUIZÁ";
+  return String(value || "").trim();
+}
+
 function hasExperienceValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
@@ -160,7 +171,7 @@ function dedupeTextList(items, limit = 6) {
 function truncateText(text, max = 120) {
   const value = String(text || "").trim();
   if (value.length <= max) return value;
-  return `${value.slice(0, max - 1).trim()}?`;
+  return `${value.slice(0, max - 1).trim()}…`;
 }
 
 function getOfferFocusStrengths(offer, limit = 4) {
@@ -172,11 +183,11 @@ function getOfferFocusRisks(offer, limit = 4) {
 }
 
 function getOfferHeadline(offer) {
-  if (!offer) return "Lectura r?pida del encaje";
+  if (!offer) return "Lectura rápida del encaje";
   if (getBlockers(offer).length > 0) return "Hay incompatibilidades claras que conviene revisar antes de aplicar";
   if (offer.resultado === "APLICA") return "Tu perfil encaja bien con esta oferta y merece prioridad";
-  if (offer.resultado === "QUIZ?") return "Puede convertirse en una buena candidatura si ajustas el CV";
-  return "El encaje es parcial y conviene decidir si compensa invertir tiempo aqu?";
+  if (normalizeResultValue(offer.resultado) === "QUIZÁ") return "Puede convertirse en una buena candidatura si ajustas el CV";
+  return "El encaje es parcial y conviene decidir si compensa invertir tiempo aquí";
 }
 
 function getOfferNextSteps(offer) {
@@ -187,32 +198,32 @@ function getOfferNextSteps(offer) {
   const blockersText = normalizeInsightText(getBlockers(offer).join(" "));
   const gapsText = normalizeInsightText(getGaps(offer).join(" "));
 
-  if (offer.resultado === "APLICA") {
+  if (normalizeResultValue(offer.resultado) === "APLICA") {
     actions.push("Personaliza el resumen del CV con las skills que ya encajan y aplica pronto.");
-  } else if (offer.resultado === "QUIZ?") {
+  } else if (normalizeResultValue(offer.resultado) === "QUIZÁ") {
     actions.push("Adapta el CV a esta oferta antes de aplicar para intentar moverla a 'Aplica'.");
   } else {
-    actions.push("No la priorizar?a ahora salvo que quieras practicar candidatura o cambiar de perfil objetivo.");
+    actions.push("No la priorizaría ahora salvo que quieras practicar candidatura o cambiar de perfil objetivo.");
   }
 
   if (missingSkills.length > 0) {
-    actions.push(`Refuerza o evidencia ${missingSkills.join(", ")} con proyectos, logros o formaci?n visible en tu CV.`);
+    actions.push(`Refuerza o evidencia ${missingSkills.join(", ")} con proyectos, logros o formación visible en tu CV.`);
   }
 
   if (blockersText.includes("idioma")) {
-    actions.push("Ajusta el filtro de idioma o prepara una versi?n del CV que haga m?s visible tu nivel.");
+    actions.push("Ajusta el filtro de idioma o prepara una versión del CV que haga más visible tu nivel.");
   }
 
   if (blockersText.includes("ubicacion") || blockersText.includes("modalidad") || blockersText.includes("presencial")) {
-    actions.push("Filtra mejor por ubicaci?n o modalidad para no perder tiempo en ofertas inviables.");
+    actions.push("Filtra mejor por ubicación o modalidad para no perder tiempo en ofertas inviables.");
   }
 
   if (blockersText.includes("anos") || blockersText.includes("senior") || blockersText.includes("experiencia") || gapsText.includes("experiencia")) {
-    actions.push("Si eres junior, compensa la experiencia con proyectos, pr?cticas, TFG o freelance en el CV.");
+    actions.push("Si eres junior, compensa la experiencia con proyectos, prácticas, TFG o freelance en el CV.");
   }
 
   if (actions.length === 1 && getGaps(offer).length > 0) {
-    actions.push("Reordena tu CV para que lo m?s alineado con la oferta aparezca arriba del todo.");
+    actions.push("Reordena tu CV para que lo más alineado con la oferta aparezca arriba del todo.");
   }
 
   return dedupeTextList(actions, 3);
@@ -226,7 +237,7 @@ function getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap }) {
     items.push({
       tone: "positive",
       label: "Prioriza",
-      text: `Tienes ${aplica.length} oferta${aplica.length !== 1 ? "s" : ""} con buen encaje. Empezar?a por ellas antes de gastar tiempo en el resto.`,
+      text: `Tienes ${aplica.length} oferta${aplica.length !== 1 ? "s" : ""} con buen encaje. Empezaría por ellas antes de gastar tiempo en el resto.`,
     });
   }
 
@@ -234,7 +245,7 @@ function getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap }) {
     items.push({
       tone: "warning",
       label: "Convierte",
-      text: `${quiza.length} oferta${quiza.length !== 1 ? "s" : ""} podr?an subir de nivel si adaptas el CV y destacas mejor tu experiencia o tus proyectos.`,
+      text: `${quiza.length} oferta${quiza.length !== 1 ? "s" : ""} podrían subir de nivel si adaptas el CV y destacas mejor tu experiencia o tus proyectos.`,
     });
   }
 
@@ -242,21 +253,21 @@ function getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap }) {
     items.push({
       tone: "info",
       label: "Mejora",
-      text: `La palanca de mejora m?s repetida ahora mismo es ${topSkill.name}. ${truncateText(topSkill.reason, 95)}`,
+      text: `La palanca de mejora más repetida ahora mismo es ${topSkill.name}. ${truncateText(topSkill.reason, 95)}`,
     });
   } else if (noEncaja.length > 0) {
     items.push({
       tone: "danger",
       label: "Evita",
-      text: `Hay ${noEncaja.length} oferta${noEncaja.length !== 1 ? "s" : ""} con bloqueadores claros. Mejor desc?rtalas r?pido y centra energ?a en las viables.`,
+      text: `Hay ${noEncaja.length} oferta${noEncaja.length !== 1 ? "s" : ""} con bloqueadores claros. Mejor descártalas rápido y centra energía en las viables.`,
     });
   }
 
   if (!items.length) return null;
 
   return {
-    title: "Qu? har?a ahora",
-    summary: `Has analizado ${visible.length} oferta${visible.length !== 1 ? "s" : ""}. Esta ser?a mi lectura pr?ctica para avanzar m?s r?pido.`,
+    title: "Qué haría ahora",
+    summary: `Has analizado ${visible.length} oferta${visible.length !== 1 ? "s" : ""}. Esta sería mi lectura práctica para avanzar más rápido.`,
     items,
   };
 }
@@ -290,8 +301,8 @@ function getCompareGaps(offer) {
 function sortByRelevance(offers) {
   const order = { APLICA: 0, "QUIZÁ": 1, NO_ENCAJA: 2 };
   return offers.slice().sort((a, b) => {
-    const aOrder = order[a.resultado] ?? 2;
-    const bOrder = order[b.resultado] ?? 2;
+    const aOrder = order[normalizeResultValue(a.resultado)] ?? 2;
+    const bOrder = order[normalizeResultValue(b.resultado)] ?? 2;
     if (aOrder !== bOrder) return aOrder - bOrder;
     if ((b.puntuacion || 0) !== (a.puntuacion || 0)) return (b.puntuacion || 0) - (a.puntuacion || 0);
     if ((getBlockers(a).length) !== (getBlockers(b).length)) return getBlockers(a).length - getBlockers(b).length;
@@ -462,7 +473,7 @@ function MatchInsightSummary({ offer, darkMode, compact = false }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
         <div>
           <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
-            Lectura r?pida
+            Lectura rápida
           </p>
           <p style={{ margin: "6px 0 0", fontSize: compact ? 14 : 15, fontWeight: 700, color: dm ? "#f8fafc" : "#111827", lineHeight: 1.45, fontFamily: typography.family }}>
             {getOfferHeadline(offer)}
@@ -591,7 +602,7 @@ function MatchInsightSummary({ offer, darkMode, compact = false }) {
           border: `1px solid ${dm ? "rgba(37,99,235,0.16)" : "#bfdbfe"}`,
         }}>
           <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: dm ? "#93c5fd" : "#1d4ed8", fontFamily: typography.family }}>
-            Qu? har?a ahora
+            Qué haría ahora
           </div>
           <div style={{ display: "grid", gap: 8, marginTop: 9 }}>
             {actions.map((action) => (
@@ -861,7 +872,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         ubicaciones:      profileObj.ubicaciones || [],
         modalidad:        profileObj.modalidad || [],
         num_aplica:       offersData.filter(r => r.resultado === "APLICA").length,
-        num_quiza:        offersData.filter(r => r.resultado === "QUIZÁ").length,
+        num_quiza:        offersData.filter(r => normalizeResultValue(r.resultado) === "QUIZÁ").length,
         num_no_encaja:    offersData.filter(r => r.resultado === "NO_ENCAJA").length,
       })
         .then(() => getHistory().then(setSearchHistory).catch(() => {}))
@@ -935,7 +946,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   function handleShare() {
     if (!results) return;
     const aplica   = results.filter(r => r.resultado === "APLICA").length;
-    const quiza    = results.filter(r => r.resultado === "QUIZÁ").length;
+    const quiza    = results.filter(r => normalizeResultValue(r.resultado) === "QUIZÁ").length;
     const noEncaja = results.filter(r => r.resultado === "NO_ENCAJA").length;
     const stack    = profile?.stack?.slice(0, 4).join(", ") || "";
     const text = `Mi análisis JobMatch.IA 🤖\n✓ APLICA: ${aplica}  △ QUIZÁ: ${quiza}  ✗ NO ENCAJA: ${noEncaja}\nStack: ${stack}${analysisTime != null ? `\n⚡ Analizado en ${analysisTime}s` : ""}`;
@@ -1018,7 +1029,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     const allSorted = sortByRelevance(results);
     const visible  = allSorted.filter(r => !discarded.has(r.adzuna_id || r.id));
     const aplica   = visible.filter(r => r.resultado === "APLICA");
-    const quiza    = visible.filter(r => r.resultado === "QUIZÁ");
+    const quiza    = visible.filter(r => normalizeResultValue(r.resultado) === "QUIZÁ");
     const noEncaja = visible.filter(r => r.resultado === "NO_ENCAJA");
     const favCount = visible.filter(r => r.adzuna_id && favorites.has(r.adzuna_id)).length;
 
@@ -1279,7 +1290,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
               }}>
                 <div style={{ marginBottom: 14 }}>
                   <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
-                    Gu?a r?pida
+                    Guía rápida
                   </p>
                   <h2 style={{ margin: "6px 0 0", fontSize: 20, fontWeight: 800, color: dm ? "#f8fafc" : "#111827", fontFamily: typography.family }}>
                     {coach.title}
@@ -1448,7 +1459,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {filtered.length > 0 ? (
                 filtered.map((offer, index) => {
-                  const rs    = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+                  const rs    = RESULT_STYLES[normalizeResultValue(offer.resultado)] || RESULT_STYLES.NO_ENCAJA;
                   const isFav = offer.adzuna_id && favorites.has(offer.adzuna_id);
                   const tags  = extractTechTags(offer, profile?.stack);
                   const isNew = isNewOffer(offer.fecha_publicacion);
@@ -1766,7 +1777,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     minWidth: compareOffers.length >= 3 ? 960 : "auto",
                   }}>
                     {compareOffers.map(offer => {
-                      const rs = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+                      const rs = RESULT_STYLES[normalizeResultValue(offer.resultado)] || RESULT_STYLES.NO_ENCAJA;
                       const compareStrengths = getCompareStrengths(offer);
                       const compareGaps = getCompareGaps(offer);
                       const compareCritical = getCriticalGaps(offer);
@@ -1979,7 +1990,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
 
         {/* ── Offer Detail Modal ───────────────────────────────────── */}
         {selectedOffer && (() => {
-          const rs = RESULT_STYLES[selectedOffer.resultado] || RESULT_STYLES.NO_ENCAJA;
+          const rs = RESULT_STYLES[normalizeResultValue(selectedOffer.resultado)] || RESULT_STYLES.NO_ENCAJA;
           const isFavModal = selectedOffer.adzuna_id && favorites.has(selectedOffer.adzuna_id);
           const aidModal = selectedOffer.adzuna_id || selectedOffer.id;
           const isTrackedModal = tracked.has(aidModal);
