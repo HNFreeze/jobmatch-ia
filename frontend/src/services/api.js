@@ -453,6 +453,24 @@ export async function clearAdminCache() {
   return response.json();
 }
 
+export async function getAdminJobIngestionRuns(limit = 12) {
+  const response = await fetch(`${API_URL}/api/admin/job-ingestion/runs?limit=${encodeURIComponent(limit)}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar las ejecuciones de ingesta");
+  return response.json();
+}
+
+export async function startAdminJobIngestion(payload = {}) {
+  const response = await fetch(`${API_URL}/api/admin/job-ingestion/run`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al lanzar la ingesta manual");
+  return response.json();
+}
+
 export async function getCVEdit(improvementId, variantId = null) {
   const query = buildCvQuery({ variantId });
   const suffix = query.toString() ? `?${query.toString()}` : "";

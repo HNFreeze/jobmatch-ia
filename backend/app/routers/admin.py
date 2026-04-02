@@ -2,7 +2,7 @@
 import os
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, inspect, literal
@@ -15,10 +15,18 @@ from app.models.application import Application
 from app.models.cache import SearchCache
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
+from app.models.job_ingestion_run import JobIngestionRun
 from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.search_history import SearchHistory
 from app.models.user import User
 from app.routers.user import require_admin_user
+from app.services.job_ingestion_service import (
+    create_ingestion_run,
+    has_running_ingestion,
+    list_ingestion_runs,
+    prepare_ingestion_payload,
+    run_ingestion_task,
+)
 
 router = APIRouter()
 ADMIN_DELETE_CONFIRMATION_CODE = os.getenv("ADMIN_DELETE_CONFIRMATION_CODE", "715345")
@@ -48,6 +56,12 @@ class ResetQuotaUsageRequest(BaseModel):
 
 class DeleteAdminUserRequest(BaseModel):
     confirmation_code: str = Field(..., min_length=1, max_length=32)
+
+
+class StartJobIngestionRequest(BaseModel):
+    sources: list[str] | None = None
+    skills: list[str] | None = None
+    locations: list[str] | None = None
 
 
 def _today_range():
@@ -694,5 +708,57 @@ def clear_search_cache(_: User = Depends(require_admin_user)):
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/job-ingestion/runs")
+def get_job_ingestion_runs(
+    _: User = Depends(require_admin_user),
+    limit: int = Query(12, ge=1, le=50),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        return JSONResponse(content={
+            "items": list_ingestion_runs(db, limit=limit),
+            "running": (
+                db.query(JobIngestionRun)
+                .filter(JobIngestionRun.status == "running")
+                .order_by(JobIngestionRun.created_at.desc())
+                .count()
+            ) > 0,
+        })
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/job-ingestion/run")
+def start_job_ingestion(
+    background_tasks: BackgroundTasks,
+    body: StartJobIngestionRequest,
+    admin_user: User = Depends(require_admin_user),
+):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        if has_running_ingestion(db):
+            raise HTTPException(status_code=409, detail="Ya hay una ingesta en ejecucion. Espera a que termine antes de lanzar otra.")
+
+        payload = prepare_ingestion_payload(body.model_dump())
+        run = create_ingestion_run(db, payload, user_id=admin_user.id, trigger_mode="admin")
+        background_tasks.add_task(run_ingestion_task, run.id, payload)
+        return JSONResponse(content={
+            "detail": "Ingesta lanzada correctamente",
+            "run_id": run.id,
+            "status": run.status,
+            "payload": payload,
+        })
     finally:
         db.close()
