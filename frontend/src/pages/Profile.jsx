@@ -66,8 +66,12 @@ function getEnglishForMatch(idiomas) {
   return eng.nivel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+function hasExperienceValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
 function hasProfile(profile) {
-  return profile && ((profile.stack && profile.stack.length > 0) || profile.anos_experiencia);
+  return profile && ((profile.stack && profile.stack.length > 0) || hasExperienceValue(profile.anos_experiencia));
 }
 
 function formatSearchDate(dateStr) {
@@ -536,7 +540,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       setAnalysisTime(Math.round((Date.now() - startTime) / 1000));
       saveHistory({
         stack:            profileObj.stack || [],
-        anos_experiencia: profileObj.anos_experiencia || "",
+        anos_experiencia: hasExperienceValue(profileObj.anos_experiencia) ? String(profileObj.anos_experiencia) : "",
         ubicaciones:      profileObj.ubicaciones || [],
         modalidad:        profileObj.modalidad || [],
         num_aplica:       offersData.filter(r => r.resultado === "APLICA").length,
@@ -561,7 +565,9 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     const currentStack = Array.isArray(profile?.stack) && profile.stack.length > 0
       ? profile.stack
       : (item.stack || []);
-    const currentExperience = profile?.anos_experiencia || item.anos_experiencia || "";
+    const currentExperience = hasExperienceValue(profile?.anos_experiencia)
+      ? String(profile.anos_experiencia)
+      : (hasExperienceValue(item.anos_experiencia) ? String(item.anos_experiencia) : "");
     const currentIdiomas = Array.isArray(profile?.idiomas) ? profile.idiomas : [];
     const rerunLocations = Array.isArray(item.ubicaciones) && item.ubicaciones.length > 0
       ? item.ubicaciones
@@ -575,7 +581,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       return null;
     }
 
-    if (!currentExperience) {
+    if (!hasExperienceValue(currentExperience)) {
       addToast?.("No se puede re-ejecutar: falta experiencia en tu perfil actual o en la búsqueda histórica", "warning");
       return null;
     }
@@ -634,7 +640,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         },
         {
           stack:            profile.stack || [],
-          anos_experiencia: profile.anos_experiencia || null,
+          anos_experiencia: hasExperienceValue(profile.anos_experiencia) ? String(profile.anos_experiencia) : null,
           email:            profile.email || null,
         }
       );
@@ -2217,7 +2223,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
           </p>
           <p style={{ margin: 0, fontSize: 14, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.6, fontFamily: typography.family }}>
             {[
-              profile.anos_experiencia ? `${profile.anos_experiencia} año${profile.anos_experiencia !== "1" ? "s" : ""} de experiencia` : null,
+              hasExperienceValue(profile.anos_experiencia) ? `${profile.anos_experiencia} año${String(profile.anos_experiencia) !== "1" ? "s" : ""} de experiencia` : null,
               profile.stack?.length > 0 ? `Stack: ${stackPreview}` : null,
               englishEntryReady ? `Inglés: ${englishEntryReady.nivel}` : null,
               `📍 ${profile.ubicaciones?.length > 0 ? profile.ubicaciones.join(", ") : "Toda España"}`,
@@ -2276,7 +2282,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     {item.stack.slice(0, 3).join(", ")}{item.stack.length > 3 ? "…" : ""}
                   </p>
                   <p style={{ margin: "2px 0 0", fontSize: 11, color: dm ? "#94a3b8" : "#6b7280", fontFamily: typography.family }}>
-                    {item.anos_experiencia ? `${item.anos_experiencia} años exp.` : "Experiencia no indicada"}
+                    {hasExperienceValue(item.anos_experiencia) ? `${item.anos_experiencia} años exp.` : "Experiencia no indicada"}
                   </p>
                   {(item.ubicaciones?.length > 0 || item.modalidad?.length > 0) && (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
