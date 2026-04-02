@@ -11,7 +11,7 @@ import anthropic
 from app.models.job_offer import JobOffer
 from app.services.ai_cost_service import record_ai_api_cost
 
-MATCH_ENGINE_VERSION = "v2_structured"
+MATCH_ENGINE_VERSION = "v3_description_depth"
 MATCH_SIGNAL_BATCH_SIZE = max(1, min(int(os.getenv("MATCH_SIGNAL_BATCH_SIZE", "8")), 12))
 MATCH_MAX_OFFERS_ANALYZED = max(1, int(os.getenv("MATCH_MAX_OFFERS_ANALYZED", "20")))
 MATCH_MAX_OFFERS_RETURNED = max(1, int(os.getenv("MATCH_MAX_OFFERS_RETURNED", "20")))
@@ -154,6 +154,38 @@ def _sanitize_string_list(values: Any, limit: int = 8) -> list[str]:
     return _dedupe_keep_order(normalized)
 
 
+def _sanitize_skill_year_requirements(values: Any, limit: int = 8) -> list[dict]:
+    if not isinstance(values, list):
+        return []
+    normalized: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for item in values[:limit]:
+        if not isinstance(item, dict):
+            continue
+        skill = str(item.get("skill") or "").strip()
+        years = item.get("years")
+        if not skill:
+            continue
+        try:
+            years_int = int(years)
+        except (TypeError, ValueError):
+            continue
+        if years_int < 0:
+            continue
+        key = (_normalize_text(skill), years_int)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(
+            {
+                "skill": skill,
+                "years": years_int,
+                "required": bool(item.get("required", True)),
+            }
+        )
+    return normalized
+
+
 def _sanitize_signals(raw: dict) -> dict:
     signals = {
         "normalized_role": str(raw.get("normalized_role") or "").strip() or None,
@@ -166,7 +198,10 @@ def _sanitize_signals(raw: dict) -> dict:
         "salary_signal": str(raw.get("salary_signal") or "").strip() or None,
         "responsibilities_summary": str(raw.get("responsibilities_summary") or "").strip() or None,
         "critical_requirements": _sanitize_string_list(raw.get("critical_requirements"), 8),
+        "must_have_requirements": _sanitize_string_list(raw.get("must_have_requirements"), 8),
         "nice_to_have": _sanitize_string_list(raw.get("nice_to_have"), 8),
+        "hard_constraints": _sanitize_string_list(raw.get("hard_constraints"), 8),
+        "required_skill_years": _sanitize_skill_year_requirements(raw.get("required_skill_years"), 8),
         "red_flags": _sanitize_string_list(raw.get("red_flags"), 6),
         "requires_explicit_years": bool(raw.get("requires_explicit_years")) if raw.get("requires_explicit_years") is not None else False,
         "required_years_min": None,
@@ -217,6 +252,47 @@ def _infer_years_required(text: str) -> tuple[bool, int | None]:
     return True, years
 
 
+def _extract_relevant_requirement_lines(text: str, patterns: list[str], limit: int = 6) -> list[str]:
+    lines = []
+    for raw_line in re.split(r"[\n\r•·\-]+", text or ""):
+        line = " ".join(str(raw_line or "").strip().split())
+        normalized = _normalize_text(line)
+        if not line or len(line) < 8:
+            continue
+        if any(re.search(pattern, normalized) for pattern in patterns):
+            lines.append(line)
+    return _dedupe_keep_order(lines)[:limit]
+
+
+def _extract_skill_year_requirements(text: str, skills: list[str]) -> list[dict]:
+    normalized = _normalize_text(text)
+    results: list[dict] = []
+    for skill in skills:
+        skill_norm = _normalize_text(skill)
+        if not skill_norm:
+            continue
+        patterns = [
+            rf"(\d+)\+?\s*(?:anos|years)[^.\n,;:]{{0,45}}(?:con|en|de experiencia en|trabajando con)?[^.\n,;:]{{0,20}}{re.escape(skill_norm)}",
+            rf"{re.escape(skill_norm)}[^.\n,;:]{{0,35}}(\d+)\+?\s*(?:anos|years)",
+        ]
+        matches: list[int] = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, normalized):
+                try:
+                    matches.append(int(match.group(1)))
+                except (TypeError, ValueError, IndexError):
+                    continue
+        if matches:
+            results.append(
+                {
+                    "skill": skill,
+                    "years": max(matches),
+                    "required": True,
+                }
+            )
+    return results[:8]
+
+
 def _infer_work_mode(text: str) -> str | None:
     normalized = _normalize_text(text)
     if any(token in normalized for token in ["100% remoto", "fully remote", "remote", "teletrabajo", "trabajo remoto"]):
@@ -237,6 +313,33 @@ def _heuristic_offer_signals(offer: dict) -> dict:
     preferred_skills = []
     critical_requirements = []
     nice_to_have = []
+    must_have_requirements = _extract_relevant_requirement_lines(
+        combined,
+        [
+            r"imprescindible",
+            r"\bmust\b",
+            r"obligatorio",
+            r"se requiere",
+            r"required",
+            r"requisito",
+            r"experiencia con",
+            r"experience with",
+        ],
+    )
+    hard_constraints = _extract_relevant_requirement_lines(
+        combined,
+        [
+            r"presencial",
+            r"onsite",
+            r"guardias",
+            r"disponibilidad",
+            r"viajar",
+            r"viajes",
+            r"visado",
+            r"reubicacion",
+            r"relocalizacion",
+        ],
+    )
     normalized = _normalize_text(combined)
 
     for skill in required_skills:
@@ -256,6 +359,7 @@ def _heuristic_offer_signals(offer: dict) -> dict:
         required_languages.append("Aleman")
 
     requires_years, years_min = _infer_years_required(combined)
+    required_skill_years = _extract_skill_year_requirements(combined, required_skills)
     return {
         "normalized_role": _infer_role(title, required_skills),
         "seniority_level": _infer_seniority(combined),
@@ -267,7 +371,10 @@ def _heuristic_offer_signals(offer: dict) -> dict:
         "salary_signal": offer.get("salario") if offer.get("salario") and offer.get("salario") != "Salario no especificado" else None,
         "responsibilities_summary": None,
         "critical_requirements": _dedupe_keep_order(critical_requirements)[:8],
+        "must_have_requirements": must_have_requirements,
         "nice_to_have": _dedupe_keep_order(nice_to_have)[:8],
+        "hard_constraints": hard_constraints,
+        "required_skill_years": required_skill_years,
         "red_flags": [],
         "requires_explicit_years": requires_years,
         "required_years_min": years_min,
@@ -283,10 +390,12 @@ Si una senal no aparece de forma razonable, devuelvela vacia o null.
 
 Analiza con especial cuidado:
 - skills requeridas vs deseables
+- si la oferta pide anos concretos en una tecnologia especifica
 - seniority y anos de experiencia
 - idiomas exigidos explicitamente
 - modalidad de trabajo
 - restricciones de ubicacion
+- condiciones duras como presencialidad, guardias, viajes o disponibilidad especial
 - requisitos criticos o bloqueantes
 - red flags relevantes
 
@@ -304,7 +413,10 @@ Devuelve UNICAMENTE un array JSON valido con este formato:
     "salary_signal": "Rango salarial claro o null",
     "responsibilities_summary": "Resumen muy breve de responsabilidades",
     "critical_requirements": ["Python", "3+ anos de experiencia"],
+    "must_have_requirements": ["Experiencia demostrable con APIs REST"],
     "nice_to_have": ["Docker"],
+    "hard_constraints": ["Presencial 4 dias en Madrid"],
+    "required_skill_years": [{"skill": "Python", "years": 3, "required": true}],
     "red_flags": ["Presencial 5 dias"],
     "requires_explicit_years": true,
     "required_years_min": 3
@@ -599,6 +711,55 @@ def _score_seniority(profile_years: float | None, signals: dict) -> tuple[float,
     return 8, notes, blockers
 
 
+def _score_skill_depth(profile_stack_norm: set[str], profile_years: float | None, signals: dict) -> tuple[float, list[str], list[str]]:
+    notes: list[str] = []
+    blockers: list[str] = []
+    requirements = signals.get("required_skill_years") or []
+    if not requirements:
+        return 0, notes, blockers
+
+    matched_depth = 0
+    for requirement in requirements[:4]:
+        skill = str(requirement.get("skill") or "").strip()
+        years = requirement.get("years")
+        if not skill or not isinstance(years, int):
+            continue
+
+        skill_norm = _normalize_text(skill)
+        if skill_norm not in profile_stack_norm:
+            blockers.append(f"La oferta menciona {years}+ anos con {skill} y no aparece en tu stack")
+            continue
+
+        if profile_years is None:
+            notes.append(f"Piden {years}+ anos con {skill}; conviene justificarlo mejor en el CV")
+            matched_depth += 0.5
+            continue
+
+        gap = years - profile_years
+        if gap <= 0:
+            notes.append(f"Tu experiencia global puede sostener el requisito de {years}+ anos con {skill}")
+            matched_depth += 1
+        elif gap <= 1:
+            notes.append(f"El requisito de {years}+ anos con {skill} puede quedarte algo justo")
+            matched_depth += 0.5
+        else:
+            blockers.append(f"La oferta pide {years}+ anos con {skill} y tu experiencia declarada parece corta")
+
+    score = min(10, matched_depth * 5)
+    return score, _dedupe_keep_order(notes)[:3], _dedupe_keep_order(blockers)[:3]
+
+
+def _score_constraint_signals(signals: dict) -> tuple[float, list[str]]:
+    notes: list[str] = []
+    hard_constraints = signals.get("hard_constraints") or []
+    if hard_constraints:
+        notes.append(f"Condicion a revisar: {hard_constraints[0]}")
+    must_have = signals.get("must_have_requirements") or []
+    if must_have:
+        notes.append(f"Buscan explicitamente: {must_have[0]}")
+    return (2 if must_have else 0), _dedupe_keep_order(notes)[:2]
+
+
 def _score_languages(profile_languages: dict[str, int], signals: dict) -> tuple[float, list[str], list[str]]:
     blockers: list[str] = []
     notes: list[str] = []
@@ -806,6 +967,10 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
     strengths.extend(seniority_notes[:1])
     blockers.extend(seniority_blockers)
 
+    skill_depth_score, skill_depth_notes, skill_depth_blockers = _score_skill_depth(profile_stack_norm, profile_years, signals)
+    strengths.extend(skill_depth_notes[:1])
+    blockers.extend(skill_depth_blockers)
+
     language_score, language_notes, language_blockers = _score_languages(profile_languages, signals)
     strengths.extend(language_notes[:1])
     blockers.extend(language_blockers)
@@ -821,7 +986,10 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
     minor_score, minor_notes = _score_minor_signals(profile_stack_norm, signals)
     strengths.extend(minor_notes[:1])
 
-    score = skills_score + role_score + seniority_score + language_score + mode_score + location_score + minor_score
+    constraint_score, constraint_notes = _score_constraint_signals(signals)
+    gaps.extend(constraint_notes[:2])
+
+    score = skills_score + role_score + seniority_score + skill_depth_score + language_score + mode_score + location_score + minor_score + constraint_score
     score = max(0, min(100, round(score)))
 
     if blockers:
@@ -868,11 +1036,19 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
         "gaps": gaps,
         "blockers": blockers,
         "critical_gaps": blockers,
+        "offer_requirements": {
+            "critical": (signals.get("critical_requirements") or [])[:5],
+            "must_have": (signals.get("must_have_requirements") or [])[:5],
+            "nice_to_have": (signals.get("nice_to_have") or [])[:5],
+            "hard_constraints": (signals.get("hard_constraints") or [])[:5],
+            "required_skill_years": (signals.get("required_skill_years") or [])[:5],
+        },
         "signals_summary": {
             "normalized_role": signals.get("normalized_role"),
             "seniority_level": signals.get("seniority_level"),
             "work_mode": signals.get("work_mode"),
             "required_years_min": signals.get("required_years_min"),
+            "required_skill_years": (signals.get("required_skill_years") or [])[:3],
         },
         "_required_skill_coverage": required_skill_coverage,
         "_blocker_count": blocker_count,

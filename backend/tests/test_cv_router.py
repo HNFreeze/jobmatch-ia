@@ -119,6 +119,10 @@ def test_create_variant_uses_latest_edit_session(monkeypatch):
                 "empresa": "Acme Labs",
                 "url": "https://example.com/jobs/1",
                 "resultado": "APLICA",
+                "offer_requirements": {
+                    "critical": ["Python", "FastAPI"],
+                    "required_skill_years": [{"skill": "Python", "years": 3, "required": True}],
+                },
             }
         },
     )
@@ -130,6 +134,7 @@ def test_create_variant_uses_latest_edit_session(monkeypatch):
     assert payload["cv_json"]["personal"]["name"] == "Ana Editada"
     assert payload["cv_json"]["meta"]["variant_name"] == "Senior Backend Developer · Acme Labs"
     assert payload["cv_json"]["meta"]["target_offer"]["empresa"] == "Acme Labs"
+    assert payload["cv_json"]["meta"]["target_offer"]["offer_requirements"]["critical"][0] == "Python"
 
     with SessionLocal() as db:
         from app.models.cv_offer_variant import CVOfferVariant

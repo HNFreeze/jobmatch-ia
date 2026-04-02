@@ -310,6 +310,22 @@ function OfferModal({ offer, dm, onClose, onCreateVariant = null, creatingVarian
           </Section>
         )}
 
+        {(offer.offer_requirements?.critical?.length > 0 ||
+          offer.offer_requirements?.required_skill_years?.length > 0 ||
+          offer.offer_requirements?.hard_constraints?.length > 0) && (
+          <Section title="Lectura de la descripción" color="#2563eb" dm={dm}>
+            {offer.offer_requirements?.critical?.slice(0, 3).map((item, i) => (
+              <BulletItem key={`critical-${i}`} text={`Crítico: ${item}`} color="#b45309" dm={dm} />
+            ))}
+            {offer.offer_requirements?.required_skill_years?.slice(0, 3).map((item, i) => (
+              <BulletItem key={`years-${i}`} text={`${item.skill}: ${item.years}+ años`} color="#2563eb" dm={dm} />
+            ))}
+            {offer.offer_requirements?.hard_constraints?.slice(0, 2).map((item, i) => (
+              <BulletItem key={`constraint-${i}`} text={`Condición: ${item}`} color="#ef4444" dm={dm} />
+            ))}
+          </Section>
+        )}
+
         {/* Descripción */}
         {offer.descripcion && (
           <Section title="Descripción" dm={dm}>
