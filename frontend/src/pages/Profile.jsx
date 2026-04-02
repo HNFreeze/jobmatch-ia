@@ -138,6 +138,129 @@ function getOfferCompareKey(offer) {
   return String(offer?.adzuna_id || offer?.id || "");
 }
 
+function normalizeInsightText(text) {
+  return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function dedupeTextList(items, limit = 6) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of items || []) {
+    const text = String(item || "").trim();
+    if (!text) continue;
+    const key = normalizeInsightText(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(text);
+    if (deduped.length >= limit) break;
+  }
+  return deduped;
+}
+
+function truncateText(text, max = 120) {
+  const value = String(text || "").trim();
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1).trim()}?`;
+}
+
+function getOfferFocusStrengths(offer, limit = 4) {
+  return dedupeTextList([...(offer?.skills_match || []), ...getStrengths(offer)], limit);
+}
+
+function getOfferFocusRisks(offer, limit = 4) {
+  return dedupeTextList([...(offer?.skills_missing || []), ...getGaps(offer), ...getBlockers(offer)], limit);
+}
+
+function getOfferHeadline(offer) {
+  if (!offer) return "Lectura r?pida del encaje";
+  if (getBlockers(offer).length > 0) return "Hay incompatibilidades claras que conviene revisar antes de aplicar";
+  if (offer.resultado === "APLICA") return "Tu perfil encaja bien con esta oferta y merece prioridad";
+  if (offer.resultado === "QUIZ?") return "Puede convertirse en una buena candidatura si ajustas el CV";
+  return "El encaje es parcial y conviene decidir si compensa invertir tiempo aqu?";
+}
+
+function getOfferNextSteps(offer) {
+  if (!offer) return [];
+
+  const actions = [];
+  const missingSkills = dedupeTextList(offer?.skills_missing || [], 3);
+  const blockersText = normalizeInsightText(getBlockers(offer).join(" "));
+  const gapsText = normalizeInsightText(getGaps(offer).join(" "));
+
+  if (offer.resultado === "APLICA") {
+    actions.push("Personaliza el resumen del CV con las skills que ya encajan y aplica pronto.");
+  } else if (offer.resultado === "QUIZ?") {
+    actions.push("Adapta el CV a esta oferta antes de aplicar para intentar moverla a 'Aplica'.");
+  } else {
+    actions.push("No la priorizar?a ahora salvo que quieras practicar candidatura o cambiar de perfil objetivo.");
+  }
+
+  if (missingSkills.length > 0) {
+    actions.push(`Refuerza o evidencia ${missingSkills.join(", ")} con proyectos, logros o formaci?n visible en tu CV.`);
+  }
+
+  if (blockersText.includes("idioma")) {
+    actions.push("Ajusta el filtro de idioma o prepara una versi?n del CV que haga m?s visible tu nivel.");
+  }
+
+  if (blockersText.includes("ubicacion") || blockersText.includes("modalidad") || blockersText.includes("presencial")) {
+    actions.push("Filtra mejor por ubicaci?n o modalidad para no perder tiempo en ofertas inviables.");
+  }
+
+  if (blockersText.includes("anos") || blockersText.includes("senior") || blockersText.includes("experiencia") || gapsText.includes("experiencia")) {
+    actions.push("Si eres junior, compensa la experiencia con proyectos, pr?cticas, TFG o freelance en el CV.");
+  }
+
+  if (actions.length === 1 && getGaps(offer).length > 0) {
+    actions.push("Reordena tu CV para que lo m?s alineado con la oferta aparezca arriba del todo.");
+  }
+
+  return dedupeTextList(actions, 3);
+}
+
+function getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap }) {
+  const items = [];
+  const topSkill = skillsGap?.recommended_skills?.[0];
+
+  if (aplica.length > 0) {
+    items.push({
+      tone: "positive",
+      label: "Prioriza",
+      text: `Tienes ${aplica.length} oferta${aplica.length !== 1 ? "s" : ""} con buen encaje. Empezar?a por ellas antes de gastar tiempo en el resto.`,
+    });
+  }
+
+  if (quiza.length > 0) {
+    items.push({
+      tone: "warning",
+      label: "Convierte",
+      text: `${quiza.length} oferta${quiza.length !== 1 ? "s" : ""} podr?an subir de nivel si adaptas el CV y destacas mejor tu experiencia o tus proyectos.`,
+    });
+  }
+
+  if (topSkill?.name) {
+    items.push({
+      tone: "info",
+      label: "Mejora",
+      text: `La palanca de mejora m?s repetida ahora mismo es ${topSkill.name}. ${truncateText(topSkill.reason, 95)}`,
+    });
+  } else if (noEncaja.length > 0) {
+    items.push({
+      tone: "danger",
+      label: "Evita",
+      text: `Hay ${noEncaja.length} oferta${noEncaja.length !== 1 ? "s" : ""} con bloqueadores claros. Mejor desc?rtalas r?pido y centra energ?a en las viables.`,
+    });
+  }
+
+  if (!items.length) return null;
+
+  return {
+    title: "Qu? har?a ahora",
+    summary: `Has analizado ${visible.length} oferta${visible.length !== 1 ? "s" : ""}. Esta ser?a mi lectura pr?ctica para avanzar m?s r?pido.`,
+    items,
+  };
+}
+
 function getWorkModeLabel(offer) {
   const workMode = offer?.signals_summary?.work_mode;
   if (workMode === "remote") return "Remoto";
@@ -291,6 +414,200 @@ function QuotaCard({ quota, darkMode, compact = false }) {
 // ═══════════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════════
+
+function MatchInsightSummary({ offer, darkMode, compact = false }) {
+  const dm = darkMode;
+  const strengths = getOfferFocusStrengths(offer, compact ? 3 : 5);
+  const risks = getOfferFocusRisks(offer, compact ? 3 : 5);
+  const actions = getOfferNextSteps(offer);
+  const blockerCount = getBlockers(offer).length;
+  const reviewCount = dedupeTextList([...(offer?.skills_missing || []), ...getGaps(offer)], 8).length;
+
+  const tonePalette = {
+    positive: {
+      bg: dm ? "rgba(16,185,129,0.12)" : "#ecfdf5",
+      border: dm ? "rgba(16,185,129,0.24)" : "#bbf7d0",
+      color: dm ? "#6ee7b7" : "#15803d",
+    },
+    warning: {
+      bg: dm ? "rgba(245,158,11,0.12)" : "#fffbeb",
+      border: dm ? "rgba(245,158,11,0.22)" : "#fde68a",
+      color: dm ? "#fbbf24" : "#b45309",
+    },
+    danger: {
+      bg: dm ? "rgba(239,68,68,0.12)" : "#fef2f2",
+      border: dm ? "rgba(239,68,68,0.22)" : "#fecaca",
+      color: dm ? "#fca5a5" : "#dc2626",
+    },
+  };
+
+  const stats = [
+    { label: "Encaje", value: offer?.skills_match?.length || 0, tone: "positive" },
+    { label: "A revisar", value: reviewCount, tone: "warning" },
+    { label: "Bloqueos", value: blockerCount, tone: "danger" },
+  ];
+
+  const shouldRender = getDecisionReason(offer) || strengths.length > 0 || risks.length > 0 || actions.length > 0;
+  if (!shouldRender) return null;
+
+  return (
+    <div style={{
+      marginTop: compact ? 16 : 0,
+      padding: compact ? "16px 18px" : "18px 20px",
+      borderRadius: 14,
+      backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#fff",
+      border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e5e7eb"}`,
+      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
+            Lectura r?pida
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: compact ? 14 : 15, fontWeight: 700, color: dm ? "#f8fafc" : "#111827", lineHeight: 1.45, fontFamily: typography.family }}>
+            {getOfferHeadline(offer)}
+          </p>
+        </div>
+        {offer?.puntuacion != null && !compact && (
+          <span style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+            backgroundColor: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
+            color: dm ? "#5eead4" : TEAL,
+            border: `1px solid ${dm ? "rgba(94,234,212,0.18)" : "rgba(0,117,138,0.12)"}`,
+            fontFamily: typography.family,
+          }}>
+            {offer.puntuacion}% match
+          </span>
+        )}
+      </div>
+
+      {getDecisionReason(offer) && (
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
+          {getDecisionReason(offer)}
+        </p>
+      )}
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+        gap: 10,
+        marginTop: 14,
+      }}>
+        {stats.map((stat) => {
+          const palette = tonePalette[stat.tone];
+          return (
+            <div key={stat.label} style={{
+              padding: compact ? "10px 12px" : "12px 14px",
+              borderRadius: 12,
+              backgroundColor: palette.bg,
+              border: `1px solid ${palette.border}`,
+              minWidth: 0,
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: palette.color, fontFamily: typography.family }}>
+                {stat.label}
+              </div>
+              <div style={{ marginTop: 6, fontSize: compact ? 20 : 24, fontWeight: 800, color: dm ? "#f8fafc" : "#111827", lineHeight: 1, fontFamily: typography.family }}>
+                {stat.value}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 12,
+        marginTop: 14,
+      }}>
+        {strengths.length > 0 && (
+          <div style={{
+            padding: compact ? "12px 14px" : "14px 16px",
+            borderRadius: 12,
+            backgroundColor: dm ? "rgba(16,185,129,0.08)" : "#f0fdf4",
+            border: `1px solid ${dm ? "rgba(16,185,129,0.16)" : "#dcfce7"}`,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: dm ? "#6ee7b7" : "#15803d", fontFamily: typography.family }}>
+              A tu favor
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {strengths.map((item) => (
+                <span key={`pro-${item}`} style={{
+                  padding: "4px 9px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
+                  color: dm ? "#6ee7b7" : "#15803d",
+                  border: `1px solid ${dm ? "rgba(16,185,129,0.2)" : "#bbf7d0"}`,
+                  fontFamily: typography.family,
+                }}>
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {risks.length > 0 && (
+          <div style={{
+            padding: compact ? "12px 14px" : "14px 16px",
+            borderRadius: 12,
+            backgroundColor: dm ? "rgba(245,158,11,0.08)" : "#fffbeb",
+            border: `1px solid ${dm ? "rgba(245,158,11,0.16)" : "#fde68a"}`,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: dm ? "#fbbf24" : "#b45309", fontFamily: typography.family }}>
+              Conviene revisar
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {risks.map((item) => (
+                <span key={`risk-${item}`} style={{
+                  padding: "4px 9px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7",
+                  color: dm ? "#fbbf24" : "#b45309",
+                  border: `1px solid ${dm ? "rgba(245,158,11,0.2)" : "#fde68a"}`,
+                  fontFamily: typography.family,
+                }}>
+                  {truncateText(item, compact ? 70 : 90)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {actions.length > 0 && (
+        <div style={{
+          marginTop: 14,
+          padding: compact ? "12px 14px" : "14px 16px",
+          borderRadius: 12,
+          backgroundColor: dm ? "rgba(37,99,235,0.08)" : "#eff6ff",
+          border: `1px solid ${dm ? "rgba(37,99,235,0.16)" : "#bfdbfe"}`,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: dm ? "#93c5fd" : "#1d4ed8", fontFamily: typography.family }}>
+            Qu? har?a ahora
+          </div>
+          <div style={{ display: "grid", gap: 8, marginTop: 9 }}>
+            {actions.map((action) => (
+              <div key={action} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ color: dm ? "#93c5fd" : "#2563eb", fontSize: 12, lineHeight: 1.6 }}>?</span>
+                <span style={{ fontSize: 12, lineHeight: 1.6, color: dm ? "#dbeafe" : "#1e3a8a", fontFamily: typography.family }}>
+                  {action}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Profile({ analysisResults, setAnalysisResults, addToast, darkMode, forceAnalyze, onAnalyzeStarted }) {
   const analyzeBtnRef = useRef(null);
@@ -756,6 +1073,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       : null;
     const dm = darkMode;
     const userStack = profile?.stack || [];
+    const coach = getAnalysisCoach({ visible, aplica, quiza, noEncaja, skillsGap });
 
     return (
       <div className="profile-results-page" style={{ ...S.resultsPage, ...(dm ? S.dmPage : {}) }}>
@@ -947,6 +1265,57 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                 </div>
               ))}
             </div>
+
+            {coach && (
+              <div style={{
+                marginBottom: 20,
+                padding: "18px 20px",
+                borderRadius: 16,
+                background: dm
+                  ? "linear-gradient(135deg, rgba(15,118,110,0.14), rgba(37,99,235,0.10))"
+                  : "linear-gradient(135deg, rgba(0,117,138,0.06), rgba(37,99,235,0.05))",
+                border: `1px solid ${dm ? "rgba(94,234,212,0.18)" : "rgba(0,117,138,0.10)"}`,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              }}>
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: dm ? "#5eead4" : TEAL, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
+                    Gu?a r?pida
+                  </p>
+                  <h2 style={{ margin: "6px 0 0", fontSize: 20, fontWeight: 800, color: dm ? "#f8fafc" : "#111827", fontFamily: typography.family }}>
+                    {coach.title}
+                  </h2>
+                  <p style={{ margin: "6px 0 0", fontSize: 13, lineHeight: 1.6, color: dm ? "#cbd5e1" : "#475569", fontFamily: typography.family }}>
+                    {coach.summary}
+                  </p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                  {coach.items.map((item) => {
+                    const toneMap = {
+                      positive: { bg: dm ? "rgba(16,185,129,0.12)" : "#ecfdf5", border: dm ? "rgba(16,185,129,0.2)" : "#bbf7d0", color: dm ? "#6ee7b7" : "#15803d" },
+                      warning: { bg: dm ? "rgba(245,158,11,0.12)" : "#fffbeb", border: dm ? "rgba(245,158,11,0.2)" : "#fde68a", color: dm ? "#fbbf24" : "#b45309" },
+                      info: { bg: dm ? "rgba(37,99,235,0.12)" : "#eff6ff", border: dm ? "rgba(37,99,235,0.2)" : "#bfdbfe", color: dm ? "#93c5fd" : "#1d4ed8" },
+                      danger: { bg: dm ? "rgba(239,68,68,0.12)" : "#fef2f2", border: dm ? "rgba(239,68,68,0.2)" : "#fecaca", color: dm ? "#fca5a5" : "#dc2626" },
+                    };
+                    const tone = toneMap[item.tone] || toneMap.info;
+                    return (
+                      <div key={`${item.label}-${item.text}`} style={{
+                        padding: "14px 16px",
+                        borderRadius: 14,
+                        backgroundColor: tone.bg,
+                        border: `1px solid ${tone.border}`,
+                      }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: tone.color, fontFamily: typography.family }}>
+                          {item.label}
+                        </div>
+                        <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.6, color: dm ? "#f8fafc" : "#1f2937", fontFamily: typography.family }}>
+                          {item.text}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Mobile filters toggle */}
             {isMobile && (
@@ -1154,80 +1523,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       </div>
 
                       {/* Row 3: IA Insight */}
-                      {getDecisionReason(offer) && (
-                        <div style={{
-                          margin: "16px 0 0",
-                          padding: "14px 18px",
-                          borderRadius: 12,
-                          backgroundColor: dm ? "rgba(0,117,138,0.08)" : "rgba(0,117,138,0.04)",
-                          border: `1px solid ${dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.1)"}`,
-                        }}>
-                          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
-                            <strong style={{ color: dm ? "#5eead4" : TEAL, fontWeight: 700 }}>IA Insight: </strong>
-                            {getDecisionReason(offer)}
-                          </p>
-                          {(offer.skills_match?.length > 0 || offer.skills_missing?.length > 0 || getStrengths(offer).length > 0 || getGaps(offer).length > 0 || getBlockers(offer).length > 0) && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                              {getStrengths(offer).length > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                  {getStrengths(offer).slice(0, 2).map(s => (
-                                    <span key={`strength-${s}`} style={{
-                                      padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
-                                      backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
-                                      color: dm ? "#34d399" : "#15803d",
-                                      border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
-                                    }}>✓ {s}</span>
-                                  ))}
-                                </div>
-                              )}
-                              {getGaps(offer).length > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                  {getGaps(offer).slice(0, 2).map(s => (
-                                    <span key={`gap-${s}`} style={{
-                                      padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
-                                      backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7",
-                                      color: dm ? "#fbbf24" : "#b45309",
-                                      border: `1px solid ${dm ? "rgba(245,158,11,0.22)" : "#fde68a"}`,
-                                    }}>△ {s}</span>
-                                  ))}
-                                </div>
-                              )}
-                              {getBlockers(offer).length > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                  {getBlockers(offer).slice(0, 1).map(s => (
-                                    <span key={`blocker-${s}`} style={{
-                                      padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
-                                      backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
-                                      color: dm ? "#f87171" : "#dc2626",
-                                      border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
-                                    }}>✕ {s}</span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {(offer.skills_match?.length > 0 || offer.skills_missing?.length > 0) && (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
-                              {(offer.skills_match || []).map(s => (
-                                <span key={s} style={{
-                                  padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
-                                  color: dm ? "#34d399" : "#15803d",
-                                  border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
-                                }}>✓ {s}</span>
-                              ))}
-                              {(offer.skills_missing || []).map(s => (
-                                <span key={s} style={{
-                                  padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
-                                  color: dm ? "#f87171" : "#dc2626",
-                                  border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
-                                }}>– {s}</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <MatchInsightSummary offer={offer} darkMode={dm} compact />
+
 
                       {/* Row 4: Actions */}
                       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 18, gap: 12 }}>
@@ -1912,109 +2209,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                     )}
 
                     {/* Match insights card */}
-                    {(selectedOffer.skills_match?.length > 0 || selectedOffer.skills_missing?.length > 0 || getStrengths(selectedOffer).length > 0 || getGaps(selectedOffer).length > 0 || getBlockers(selectedOffer).length > 0) && (
-                      <div style={{
-                        backgroundColor: dm ? "#1e293b" : "#fff",
-                        borderRadius: 14, padding: "18px 20px",
-                        border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                          <div style={{
-                            width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-                            backgroundColor: dm ? "rgba(0,117,138,0.15)" : "#e0f2f1",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 15,
-                          }}>📊</div>
-                          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827" }}>Claves del match</h3>
-                        </div>
-                        {getStrengths(selectedOffer).length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              Puntos fuertes
-                            </span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                              {getStrengths(selectedOffer).map(s => (
-                                <span key={`strength-${s}`} style={{
-                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
-                                  color: dm ? "#34d399" : "#15803d",
-                                  border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
-                                }}>✓ {s}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {getGaps(selectedOffer).length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#fbbf24" : "#b45309", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              Gaps relevantes
-                            </span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                              {getGaps(selectedOffer).map(s => (
-                                <span key={`gap-${s}`} style={{
-                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7",
-                                  color: dm ? "#fbbf24" : "#b45309",
-                                  border: `1px solid ${dm ? "rgba(245,158,11,0.22)" : "#fde68a"}`,
-                                }}>△ {s}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {getBlockers(selectedOffer).length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              Bloqueadores
-                            </span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                              {getBlockers(selectedOffer).map(s => (
-                                <span key={`blocker-${s}`} style={{
-                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 700,
-                                  backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
-                                  color: dm ? "#f87171" : "#dc2626",
-                                  border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
-                                }}>✕ {s}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {selectedOffer.skills_match?.length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              Cumples
-                            </span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                              {selectedOffer.skills_match.map(s => (
-                                <span key={s} style={{
-                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(16,185,129,0.12)" : "#dcfce7",
-                                  color: dm ? "#34d399" : "#15803d",
-                                  border: `1px solid ${dm ? "rgba(16,185,129,0.25)" : "#bbf7d0"}`,
-                                }}>✓ {s}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {selectedOffer.skills_missing?.length > 0 && (
-                          <div>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: dm ? "#f87171" : "#dc2626", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              Te falta
-                            </span>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                              {selectedOffer.skills_missing.map(s => (
-                                <span key={s} style={{
-                                  padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                  backgroundColor: dm ? "rgba(239,68,68,0.12)" : "#fee2e2",
-                                  color: dm ? "#f87171" : "#dc2626",
-                                  border: `1px solid ${dm ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
-                                }}>– {s}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <MatchInsightSummary offer={selectedOffer} darkMode={dm} />
+
 
                     {/* Cover letter card */}
                     {showCoverLetter && (
