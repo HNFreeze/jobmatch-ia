@@ -156,6 +156,12 @@ def _build_offer_snapshot(raw_offer: Optional[dict]) -> dict:
         values = offer.get(list_key)
         if isinstance(values, list) and values:
             snapshot[list_key] = values[:8]
+    offer_requirements = offer.get("offer_requirements")
+    if isinstance(offer_requirements, dict) and offer_requirements:
+        snapshot["offer_requirements"] = offer_requirements
+    signals_summary = offer.get("signals_summary")
+    if isinstance(signals_summary, dict) and signals_summary:
+        snapshot["signals_summary"] = signals_summary
     return {k: v for k, v in snapshot.items() if v not in (None, "", [], {})}
 
 

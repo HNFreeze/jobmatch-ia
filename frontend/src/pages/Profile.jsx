@@ -2326,6 +2326,81 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         style={{ marginTop: 14 }}
                       />
 
+                      {(selectedOffer.offer_requirements?.critical?.length > 0 ||
+                        selectedOffer.offer_requirements?.required_skill_years?.length > 0 ||
+                        selectedOffer.offer_requirements?.hard_constraints?.length > 0) && (
+                        <div style={{
+                          marginTop: 16,
+                          padding: "16px 18px",
+                          borderRadius: 14,
+                          backgroundColor: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
+                          border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e2e8f0"}`,
+                          display: "grid",
+                          gap: 12,
+                        }}>
+                          <div>
+                            <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 800, color: dm ? "#e2e8f0" : "#111827", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              Requisitos detectados en la descripción
+                            </p>
+                            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: dm ? "#94a3b8" : "#64748b" }}>
+                              El motor ha leído la oferta para separar señales obligatorias, experiencia por tecnología y condiciones duras.
+                            </p>
+                          </div>
+                          {selectedOffer.offer_requirements?.critical?.length > 0 && (
+                            <div>
+                              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#b45309" }}>Críticos</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                {selectedOffer.offer_requirements.critical.map((item) => (
+                                  <span key={item} style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fffbeb",
+                                    color: dm ? "#fbbf24" : "#b45309",
+                                    border: `1px solid ${dm ? "rgba(245,158,11,0.2)" : "#fde68a"}`,
+                                  }}>
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {selectedOffer.offer_requirements?.required_skill_years?.length > 0 && (
+                            <div>
+                              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#2563eb" }}>Experiencia por tecnología</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                {selectedOffer.offer_requirements.required_skill_years.map((item, index) => (
+                                  <span key={`${item.skill}-${index}`} style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    backgroundColor: dm ? "rgba(37,99,235,0.12)" : "#eff6ff",
+                                    color: dm ? "#93c5fd" : "#1d4ed8",
+                                    border: `1px solid ${dm ? "rgba(37,99,235,0.2)" : "#bfdbfe"}`,
+                                  }}>
+                                    {item.skill}: {item.years}+ años
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {selectedOffer.offer_requirements?.hard_constraints?.length > 0 && (
+                            <div>
+                              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#dc2626" }}>Condiciones a revisar</p>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {selectedOffer.offer_requirements.hard_constraints.map((item) => (
+                                  <div key={item} style={{ fontSize: 12, color: dm ? "#fca5a5" : "#b91c1c", lineHeight: 1.6 }}>
+                                    • {item}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {selectedOffer.company_review_sources?.length > 0 && (
                         <div style={{
                           display: "flex",
