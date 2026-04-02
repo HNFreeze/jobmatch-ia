@@ -228,6 +228,14 @@ async def fetch_offers_from_public_sources(
     skills: list[str],
     locations: list[str] | None = None,
 ) -> list[dict]:
+    result = await fetch_offers_from_public_sources_with_details(skills, locations=locations)
+    return result["offers"]
+
+
+async def fetch_offers_from_public_sources_with_details(
+    skills: list[str],
+    locations: list[str] | None = None,
+) -> dict:
     infojobs_auth = _build_infojobs_auth()
     greenhouse_boards = _parse_list_env("GREENHOUSE_BOARD_TOKENS")
     ashby_boards = _parse_list_env("ASHBY_JOB_BOARD_NAMES")
@@ -235,38 +243,53 @@ async def fetch_offers_from_public_sources(
     lever_eu_sites = _parse_list_env("LEVER_EU_SITE_NAMES")
 
     if not any((infojobs_auth, greenhouse_boards, ashby_boards, lever_sites, lever_eu_sites)):
-        return []
+        return {"offers": [], "sources": []}
 
     offers = []
+    source_logs = []
     async with httpx.AsyncClient(timeout=20.0) as client:
         if infojobs_auth:
             try:
-                offers.extend(await _fetch_infojobs_offers(client, infojobs_auth, skills, locations=locations))
-            except Exception:
-                pass
+                source_offers = await _fetch_infojobs_offers(client, infojobs_auth, skills, locations=locations)
+                offers.extend(source_offers)
+                source_logs.append({"source": "infojobs", "status": "ok", "fetched_count": len(source_offers)})
+            except Exception as exc:
+                source_logs.append({"source": "infojobs", "status": "error", "error": str(exc)[:240], "fetched_count": 0})
 
         for board_token in greenhouse_boards:
             try:
-                offers.extend(await _fetch_greenhouse_board(client, board_token))
-            except Exception:
+                source_offers = await _fetch_greenhouse_board(client, board_token)
+                offers.extend(source_offers)
+                source_logs.append({"source": f"greenhouse:{board_token}", "status": "ok", "fetched_count": len(source_offers)})
+            except Exception as exc:
+                source_logs.append({"source": f"greenhouse:{board_token}", "status": "error", "error": str(exc)[:240], "fetched_count": 0})
                 continue
 
         for board_name in ashby_boards:
             try:
-                offers.extend(await _fetch_ashby_board(client, board_name))
-            except Exception:
+                source_offers = await _fetch_ashby_board(client, board_name)
+                offers.extend(source_offers)
+                source_logs.append({"source": f"ashby:{board_name}", "status": "ok", "fetched_count": len(source_offers)})
+            except Exception as exc:
+                source_logs.append({"source": f"ashby:{board_name}", "status": "error", "error": str(exc)[:240], "fetched_count": 0})
                 continue
 
         for site_name in lever_sites:
             try:
-                offers.extend(await _fetch_lever_site(client, site_name, eu_instance=False))
-            except Exception:
+                source_offers = await _fetch_lever_site(client, site_name, eu_instance=False)
+                offers.extend(source_offers)
+                source_logs.append({"source": f"lever:{site_name}", "status": "ok", "fetched_count": len(source_offers)})
+            except Exception as exc:
+                source_logs.append({"source": f"lever:{site_name}", "status": "error", "error": str(exc)[:240], "fetched_count": 0})
                 continue
 
         for site_name in lever_eu_sites:
             try:
-                offers.extend(await _fetch_lever_site(client, site_name, eu_instance=True))
-            except Exception:
+                source_offers = await _fetch_lever_site(client, site_name, eu_instance=True)
+                offers.extend(source_offers)
+                source_logs.append({"source": f"lever_eu:{site_name}", "status": "ok", "fetched_count": len(source_offers)})
+            except Exception as exc:
+                source_logs.append({"source": f"lever_eu:{site_name}", "status": "error", "error": str(exc)[:240], "fetched_count": 0})
                 continue
 
     filtered = [
@@ -278,4 +301,4 @@ async def fetch_offers_from_public_sources(
             description=offer.get("descripcion"),
         )
     ]
-    return filtered
+    return {"offers": filtered, "sources": source_logs}

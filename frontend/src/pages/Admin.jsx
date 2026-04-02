@@ -5,8 +5,10 @@ import {
   getAdminActivity,
   getAdminAiUsage,
   getAdminDashboard,
+  getAdminJobIngestionRuns,
   getAdminUsers,
   resetAdminUserQuotaUsage,
+  startAdminJobIngestion,
   updateAdminUserBlock,
   updateAdminUserQuota,
 } from "../services/api";
@@ -21,6 +23,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [usersData, setUsersData] = useState(null);
   const [activity, setActivity] = useState(null);
   const [aiUsage, setAiUsage] = useState(null);
+  const [ingestionRuns, setIngestionRuns] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
@@ -36,12 +39,19 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [actionError, setActionError] = useState("");
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheNotice, setCacheNotice] = useState("");
+  const [startingIngestion, setStartingIngestion] = useState(false);
+  const [ingestionNotice, setIngestionNotice] = useState("");
+  const [ingestionDraft, setIngestionDraft] = useState({
+    skills: "",
+    locations: "",
+    sources: "public_sources,adzuna",
+  });
 
   async function loadAdminData(currentPage = page, currentSearch = search, currentSortBy = sortBy, currentSortDir = sortDir) {
     setLoading(true);
     setError(null);
     try {
-      const [dashboardData, usersResponse, activityData, aiUsageData] = await Promise.all([
+      const [dashboardData, usersResponse, activityData, aiUsageData, ingestionData] = await Promise.all([
         getAdminDashboard(),
         getAdminUsers({
           page: currentPage,
@@ -52,12 +62,14 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         }),
         getAdminActivity(12),
         getAdminAiUsage(),
+        getAdminJobIngestionRuns(10),
       ]);
 
       setDashboard(dashboardData);
       setUsersData(usersResponse);
       setActivity(activityData);
       setAiUsage(aiUsageData);
+      setIngestionRuns(ingestionData);
       setQuotaDrafts((prev) => {
         const next = { ...prev };
         (usersResponse.items || []).forEach((user) => {
@@ -76,8 +88,23 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     loadAdminData(1, "", "created_at", "desc");
   }, []);
 
+  useEffect(() => {
+    if (!ingestionRuns?.running) return undefined;
+    const timer = setInterval(() => {
+      loadAdminData(page, search, sortBy, sortDir);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [ingestionRuns?.running, page, search, sortBy, sortDir]);
+
   function scrollToSection(sectionId) {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function parseCsvInput(value) {
+    return String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 
   function handleSearchSubmit(event) {
@@ -186,6 +213,26 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     }
   }
 
+  async function handleStartIngestion() {
+    setStartingIngestion(true);
+    setIngestionNotice("");
+    setActionError("");
+    try {
+      const payload = {
+        skills: parseCsvInput(ingestionDraft.skills),
+        locations: parseCsvInput(ingestionDraft.locations),
+        sources: parseCsvInput(ingestionDraft.sources),
+      };
+      const result = await startAdminJobIngestion(payload);
+      setIngestionNotice(`Ingesta lanzada. Run #${result.run_id} en estado ${result.status}.`);
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setIngestionNotice(`Error: ${err.message || "No se pudo lanzar la ingesta."}`);
+    } finally {
+      setStartingIngestion(false);
+    }
+  }
+
   if (loading && !dashboard) {
     return (
       <div style={{ ...S.page, ...(dm ? S.pageDm : {}) }}>
@@ -248,6 +295,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             <div style={S.sectionPills}>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ingesta-admin")} style={S.pillButton}>Ingesta</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
               <a
@@ -617,6 +665,123 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               Herramientas de mantenimiento de la plataforma.
             </p>
 
+            <div id="ingesta-admin" style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`, paddingTop: 18, marginBottom: 22 }}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Ingesta manual de ofertas</p>
+              <p style={{ fontSize: 13, color: dm ? "#94a3b8" : "#64748b", marginBottom: 14, lineHeight: 1.6 }}>
+                Lanza una ingesta bajo demanda, revisa el estado y consulta el log resumido de cada ejecución.
+              </p>
+
+              {ingestionNotice && (
+                <div style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  marginBottom: 12,
+                  backgroundColor: ingestionNotice.startsWith("Error") ? (dm ? "rgba(239,68,68,0.12)" : "#fee2e2") : (dm ? "rgba(16,185,129,0.12)" : "#dcfce7"),
+                  color: ingestionNotice.startsWith("Error") ? "#dc2626" : "#15803d",
+                  border: `1px solid ${ingestionNotice.startsWith("Error") ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`,
+                }}>
+                  {ingestionNotice}
+                </div>
+              )}
+
+              <div style={S.ingestionForm}>
+                <label style={S.ingestionField}>
+                  <span style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b" }}>Skills semilla</span>
+                  <input
+                    value={ingestionDraft.skills}
+                    onChange={(event) => setIngestionDraft((prev) => ({ ...prev, skills: event.target.value }))}
+                    placeholder="python, react, java"
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                  />
+                </label>
+
+                <label style={S.ingestionField}>
+                  <span style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b" }}>Ubicaciones</span>
+                  <input
+                    value={ingestionDraft.locations}
+                    onChange={(event) => setIngestionDraft((prev) => ({ ...prev, locations: event.target.value }))}
+                    placeholder="Madrid, Barcelona, Toda España"
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                  />
+                </label>
+
+                <label style={S.ingestionField}>
+                  <span style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b" }}>Fuentes</span>
+                  <input
+                    value={ingestionDraft.sources}
+                    onChange={(event) => setIngestionDraft((prev) => ({ ...prev, sources: event.target.value }))}
+                    placeholder="public_sources, adzuna"
+                    style={{ ...S.input, ...(dm ? S.inputDm : {}), width: "100%" }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                <button
+                  type="button"
+                  className="admin-btn-primary"
+                  onClick={handleStartIngestion}
+                  disabled={startingIngestion || ingestionRuns?.running}
+                  style={{ ...S.primaryButton, opacity: (startingIngestion || ingestionRuns?.running) ? 0.6 : 1 }}
+                >
+                  {startingIngestion ? "Lanzando..." : ingestionRuns?.running ? "Ingesta en curso" : "Lanzar ingesta"}
+                </button>
+
+                <button
+                  type="button"
+                  className="admin-btn-secondary"
+                  onClick={() => loadAdminData(page, search, sortBy, sortDir)}
+                  style={S.secondaryButton}
+                >
+                  Actualizar historial
+                </button>
+              </div>
+
+              <div style={S.ingestionRunsWrap}>
+                {(ingestionRuns?.items || []).length ? (
+                  ingestionRuns.items.map((run) => (
+                    <details key={run.id} style={{ ...S.runCard, borderColor: dm ? "rgba(255,255,255,0.07)" : "#e5e7eb", backgroundColor: dm ? "rgba(15,23,42,0.35)" : "#f8fafc" }}>
+                      <summary style={S.runSummary}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span style={{ color: dm ? "#f8fafc" : "#111827", fontWeight: 800 }}>
+                            Run #{run.id} · {formatIngestionStatus(run.status)}
+                          </span>
+                          <span style={{ color: dm ? "#94a3b8" : "#64748b", fontSize: 12 }}>
+                            {formatDate(run.created_at, true)} · {run.requested_sources?.join(", ") || "sin fuentes"}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={S.runStatBadge}>fetched {run.fetched_count}</span>
+                          <span style={S.runStatBadge}>new {run.saved_new_count}</span>
+                          <span style={S.runStatBadge}>updated {run.saved_updated_count}</span>
+                          <span style={S.runStatBadge}>inactive {run.inactive_count}</span>
+                        </div>
+                      </summary>
+
+                      <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                        <div style={{ fontSize: 12, color: dm ? "#94a3b8" : "#64748b", lineHeight: 1.6 }}>
+                          <strong>Skills:</strong> {(run.requested_skills || []).join(", ") || "por defecto"}<br />
+                          <strong>Ubicaciones:</strong> {(run.requested_locations || []).join(", ") || "por defecto"}
+                        </div>
+
+                        <div>
+                          <div style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b", marginBottom: 6 }}>Log</div>
+                          <div style={{ ...S.logBox, ...(dm ? S.logBoxDm : {}) }}>
+                            {(run.logs || []).length ? run.logs.map((line, index) => (
+                              <div key={`${run.id}-log-${index}`}>{line}</div>
+                            )) : "Sin log disponible todavía."}
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  ))
+                ) : (
+                  <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay ejecuciones de ingesta.</p>
+                )}
+              </div>
+            </div>
+
             <div style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`, paddingTop: 18 }}>
               <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Caché de búsquedas</p>
               <p style={{ fontSize: 13, color: dm ? "#94a3b8" : "#64748b", marginBottom: 14, lineHeight: 1.6 }}>
@@ -747,6 +912,16 @@ function formatDate(value, short = false) {
 function formatUsd(value) {
   const numeric = Number(value || 0);
   return `${numeric.toFixed(4)} USD`;
+}
+
+function formatIngestionStatus(value) {
+  const labels = {
+    queued: "En cola",
+    running: "Ejecutándose",
+    completed: "Completada",
+    failed: "Fallida",
+  };
+  return labels[value] || value || "Desconocido";
 }
 
 function formatFeatureLabel(value) {
@@ -1099,6 +1274,64 @@ const S = {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
+  },
+  ingestionForm: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 12,
+    marginBottom: 14,
+  },
+  ingestionField: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  ingestionRunsWrap: {
+    display: "grid",
+    gap: 10,
+  },
+  runCard: {
+    border: "1px solid",
+    borderRadius: 14,
+    padding: "12px 14px",
+  },
+  runSummary: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    cursor: "pointer",
+    listStyle: "none",
+    flexWrap: "wrap",
+  },
+  runStatBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    backgroundColor: "rgba(0,122,138,0.08)",
+    color: TEAL,
+    border: "1px solid rgba(0,122,138,0.14)",
+  },
+  logBox: {
+    maxHeight: 220,
+    overflow: "auto",
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+    border: "1px solid #e2e8f0",
+    padding: "10px 12px",
+    fontSize: 12,
+    lineHeight: 1.6,
+    fontFamily: "Consolas, monospace",
+    color: "#334155",
+    whiteSpace: "pre-wrap",
+  },
+  logBoxDm: {
+    backgroundColor: "#0f172a",
+    borderColor: "rgba(255,255,255,0.08)",
+    color: "#cbd5e1",
   },
   input: {
     minWidth: 220,
