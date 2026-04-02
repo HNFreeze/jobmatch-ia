@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, inspect, literal
+from sqlalchemy import and_, case, func, inspect, literal
 from sqlalchemy.orm import aliased
 
 from app.database import get_session_local
@@ -16,6 +16,7 @@ from app.models.cache import SearchCache
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
 from app.models.job_ingestion_run import JobIngestionRun
+from app.models.job_offer import JobOffer
 from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.search_history import SearchHistory
 from app.models.user import User
@@ -731,6 +732,186 @@ def get_job_ingestion_runs(
                 .order_by(JobIngestionRun.created_at.desc())
                 .count()
             ) > 0,
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/job-index/health")
+def get_job_index_health(_: User = Depends(require_admin_user)):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        recent_verification_cutoff = now - timedelta(hours=24)
+        due_verification_cutoff = now - timedelta(hours=72)
+        stale_listing_cutoff = now - timedelta(hours=168)
+
+        verified_recently_case = case(
+            (
+                and_(
+                    JobOffer.is_active.is_(True),
+                    JobOffer.last_verified_at.isnot(None),
+                    JobOffer.last_verified_at >= recent_verification_cutoff,
+                    (JobOffer.last_seen_at.is_(None) | (JobOffer.last_seen_at > stale_listing_cutoff)),
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        verification_due_case = case(
+            (
+                and_(
+                    JobOffer.is_active.is_(True),
+                    JobOffer.last_verified_at.isnot(None),
+                    JobOffer.last_verified_at < recent_verification_cutoff,
+                    JobOffer.last_verified_at >= due_verification_cutoff,
+                    (JobOffer.last_seen_at.is_(None) | (JobOffer.last_seen_at > stale_listing_cutoff)),
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        stale_verification_case = case(
+            (
+                and_(
+                    JobOffer.is_active.is_(True),
+                    (
+                        JobOffer.last_verified_at.is_(None)
+                        | (JobOffer.last_verified_at < due_verification_cutoff)
+                    ),
+                    (JobOffer.last_seen_at.is_(None) | (JobOffer.last_seen_at > stale_listing_cutoff)),
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        stale_listing_case = case(
+            (
+                and_(
+                    JobOffer.is_active.is_(True),
+                    JobOffer.last_seen_at.isnot(None),
+                    JobOffer.last_seen_at <= stale_listing_cutoff,
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        inactive_case = case((JobOffer.is_active.is_(False), 1), else_=0)
+
+        overview = db.query(
+            func.count(JobOffer.id).label("total_offers"),
+            func.coalesce(func.sum(case((JobOffer.is_active.is_(True), 1), else_=0)), 0).label("active_offers"),
+            func.coalesce(func.avg(JobOffer.source_confidence), 0.0).label("avg_confidence"),
+            func.coalesce(func.sum(verified_recently_case), 0).label("verified_recently"),
+            func.coalesce(func.sum(stale_listing_case), 0).label("stale_listing"),
+            func.coalesce(func.count(func.distinct(JobOffer.source_name)), 0).label("source_count"),
+        ).one()
+
+        source_rows = db.query(
+            func.coalesce(JobOffer.source_name, "desconocida").label("source_name"),
+            func.coalesce(JobOffer.source_type, "aggregator").label("source_type"),
+            func.count(JobOffer.id).label("total_offers"),
+            func.coalesce(func.sum(case((JobOffer.is_active.is_(True), 1), else_=0)), 0).label("active_offers"),
+            func.coalesce(func.sum(verified_recently_case), 0).label("verified_recently"),
+            func.coalesce(func.avg(JobOffer.source_confidence), 0.0).label("avg_confidence"),
+            func.max(JobOffer.last_seen_at).label("last_seen_at"),
+        ).group_by(
+            func.coalesce(JobOffer.source_name, "desconocida"),
+            func.coalesce(JobOffer.source_type, "aggregator"),
+        ).order_by(
+            func.coalesce(func.sum(case((JobOffer.is_active.is_(True), 1), else_=0)), 0).desc(),
+            func.count(JobOffer.id).desc(),
+            func.coalesce(JobOffer.source_name, "desconocida").asc(),
+        ).limit(8).all()
+
+        location_rows = db.query(
+            JobOffer.ubicacion,
+            func.count(JobOffer.id).label("count"),
+        ).filter(
+            JobOffer.is_active.is_(True),
+            JobOffer.ubicacion.isnot(None),
+            func.length(func.trim(JobOffer.ubicacion)) > 0,
+        ).group_by(
+            JobOffer.ubicacion
+        ).order_by(
+            func.count(JobOffer.id).desc(),
+            JobOffer.ubicacion.asc(),
+        ).limit(6).all()
+
+        recent_runs = (
+            db.query(JobIngestionRun)
+            .order_by(JobIngestionRun.created_at.desc(), JobIngestionRun.id.desc())
+            .limit(5)
+            .all()
+        )
+
+        freshness = [
+            {
+                "key": "verified_recently",
+                "label": "Verificadas recientemente",
+                "count": int(db.query(func.coalesce(func.sum(verified_recently_case), 0)).scalar() or 0),
+            },
+            {
+                "key": "verification_due",
+                "label": "Verificación reciente",
+                "count": int(db.query(func.coalesce(func.sum(verification_due_case), 0)).scalar() or 0),
+            },
+            {
+                "key": "stale_verification",
+                "label": "Verificación pendiente",
+                "count": int(db.query(func.coalesce(func.sum(stale_verification_case), 0)).scalar() or 0),
+            },
+            {
+                "key": "stale_listing",
+                "label": "Listado antiguo",
+                "count": int(db.query(func.coalesce(func.sum(stale_listing_case), 0)).scalar() or 0),
+            },
+            {
+                "key": "inactive",
+                "label": "Inactivas",
+                "count": int(db.query(func.coalesce(func.sum(inactive_case), 0)).scalar() or 0),
+            },
+        ]
+
+        return JSONResponse(content={
+            "overview": {
+                "total_offers": int(overview.total_offers or 0),
+                "active_offers": int(overview.active_offers or 0),
+                "verified_recently": int(overview.verified_recently or 0),
+                "stale_listing": int(overview.stale_listing or 0),
+                "avg_confidence": round(float(overview.avg_confidence or 0.0), 3),
+                "source_count": int(overview.source_count or 0),
+            },
+            "freshness": freshness,
+            "sources": [{
+                "source_name": row.source_name,
+                "source_type": row.source_type,
+                "total_offers": int(row.total_offers or 0),
+                "active_offers": int(row.active_offers or 0),
+                "verified_recently": int(row.verified_recently or 0),
+                "avg_confidence": round(float(row.avg_confidence or 0.0), 3),
+                "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+            } for row in source_rows],
+            "top_locations": [{
+                "location": row.ubicacion,
+                "count": int(row.count or 0),
+            } for row in location_rows],
+            "recent_runs": [{
+                "id": run.id,
+                "status": run.status,
+                "fetched_count": int(run.fetched_count or 0),
+                "saved_new_count": int(run.saved_new_count or 0),
+                "saved_updated_count": int(run.saved_updated_count or 0),
+                "inactive_count": int(run.inactive_count or 0),
+                "error_count": int(run.error_count or 0),
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            } for run in recent_runs],
         })
     finally:
         db.close()
