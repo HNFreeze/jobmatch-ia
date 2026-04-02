@@ -19,7 +19,7 @@ def upgrade() -> None:
     op.add_column("job_offers", sa.Column("source_name", sa.String(length=100), nullable=True))
     op.add_column("job_offers", sa.Column("source_type", sa.String(length=50), nullable=True))
     op.add_column("job_offers", sa.Column("source_job_id", sa.String(length=200), nullable=True))
-    op.add_column("job_offers", sa.Column("source_confidence", sa.Float(), nullable=True, server_default="0.58"))
+    op.add_column("job_offers", sa.Column("source_confidence", sa.Float(), nullable=True, server_default=sa.text("0.58")))
     op.add_column("job_offers", sa.Column("source_metadata_json", sa.Text(), nullable=True))
     op.add_column("job_offers", sa.Column("raw_payload_json", sa.Text(), nullable=True))
     op.add_column("job_offers", sa.Column("canonical_url", sa.String(length=2000), nullable=True))
@@ -37,7 +37,7 @@ def upgrade() -> None:
     op.execute("UPDATE job_offers SET first_seen_at = created_at WHERE first_seen_at IS NULL")
     op.execute("UPDATE job_offers SET last_seen_at = created_at WHERE last_seen_at IS NULL")
     op.execute("UPDATE job_offers SET last_verified_at = created_at WHERE last_verified_at IS NULL")
-    op.execute("UPDATE job_offers SET is_active = 1 WHERE is_active IS NULL")
+    op.execute("UPDATE job_offers SET is_active = true WHERE is_active IS NULL")
 
     op.alter_column("job_offers", "source_confidence", server_default=None)
     op.alter_column("job_offers", "is_active", server_default=None)
