@@ -107,9 +107,10 @@ function getLangFlag(name) {
 }
 
 function expToNum(val) {
-  if (!val) return null;
+  if (val === "" || val == null) return null;
   if (val === "10+") return 10;
-  return parseInt(val, 10) || null;
+  const parsed = parseInt(val, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function expFromNum(n) {
@@ -243,7 +244,9 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
         setEmail(data.email || "");
         setAlias(data.alias || data.email?.split("@")[0] || "");
         if (data.stack?.length)       setStack(data.stack);
-        if (data.anos_experiencia)    setExperience(data.anos_experiencia);
+        if (data.anos_experiencia !== undefined && data.anos_experiencia !== null) {
+          setExperience(String(data.anos_experiencia));
+        }
         if (data.idiomas?.length)     setIdiomas(data.idiomas);
         if (data.ubicaciones?.length) setUbicaciones(data.ubicaciones);
         if (data.modalidad?.length)   setModalidad(data.modalidad);
@@ -407,7 +410,7 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
   const filteredTechs   = TECH_OPTIONS.filter(t => t.toLowerCase().includes(search.toLowerCase()));
   const unselectedTechs = filteredTechs.filter(t => !stack.includes(t));
   const sliderNum       = expToNum(experience);
-  const sliderPct       = sliderNum ? ((sliderNum - 1) / 9) * 100 : 0;
+  const sliderPct       = sliderNum == null ? 0 : (sliderNum / 10) * 100;
   const sliderBg        = `linear-gradient(to right, ${TEAL} ${sliderPct}%, #e5e7eb ${sliderPct}%)`;
 
   const dm = darkMode;
@@ -687,7 +690,7 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
               <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24, minHeight: 180, display: "flex", flexDirection: "column", justifyContent: "center" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
                   <span style={{ fontSize: 48, fontWeight: 800, color: TEAL, lineHeight: 1, letterSpacing: "-2px", fontFamily: typography.family }}>
-                    {sliderNum || "—"}
+                    {sliderNum ?? "—"}
                   </span>
                   <span style={{ fontSize: 14, fontWeight: 500, color: dmSub, paddingBottom: 4, fontFamily: typography.family }}>
                     Años totales
@@ -695,9 +698,9 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
                 </div>
                 <input
                   type="range"
-                  min={1}
+                  min={0}
                   max={10}
-                  value={sliderNum || 1}
+                  value={sliderNum ?? 0}
                   onChange={e => { setExperience(expFromNum(Number(e.target.value))); setHasChanges(true); }}
                   style={{ display: "block", width: "100%", marginBottom: 8, background: sliderBg }}
                 />
