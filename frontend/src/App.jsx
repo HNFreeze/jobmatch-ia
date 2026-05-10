@@ -12,13 +12,14 @@ import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
 import Admin from "./pages/Admin";
 import CVSearch from "./pages/CVSearch";
+import Dashboard from "./pages/Dashboard";
 import { getUserProfile, updateUserProfile, getHistory, updateConsent } from "./services/api";
 import ConsentBanner from "./components/ConsentBanner";
 import { initClarity, stopClarity } from "./services/clarity";
 
-const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin"];
+const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin", "dashboard"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
-const USER_APP_PAGES = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas"];
+const USER_APP_PAGES = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "dashboard"];
 const PAGE_TITLES = {
   home: "JobMatch IA | Matching inteligente de ofertas",
   landing: "JobMatch IA | Matching inteligente de ofertas",
@@ -30,6 +31,7 @@ const PAGE_TITLES = {
   favoritos: "Favoritos | JobMatch IA",
   candidaturas: "Candidaturas | JobMatch IA",
   "user-profile": "Mi perfil | JobMatch IA",
+  dashboard: "Inicio | JobMatch IA",
   admin: "Admin | JobMatch IA",
 };
 
@@ -300,7 +302,7 @@ function App() {
               }
               setCurrentUser(profile);
               setProfileCompletion(computeCompletion(profile));
-              const targetPage = profile.is_admin ? "admin" : "buscar";
+              const targetPage = profile.is_admin ? "admin" : "dashboard";
               navigateTo(targetPage);
             } catch {
               // ignore
@@ -344,6 +346,12 @@ function App() {
           onSkip={() => navigateTo("buscar")}
           addToast={addToast}
           darkMode={darkMode}
+        />
+      )}
+      {page === "dashboard" && !isAdminSession && (
+        <Dashboard
+          darkMode={darkMode}
+          onNavigate={(target) => navigateTo(target)}
         />
       )}
       {page === "admin" && isAdminSession && (

@@ -7,6 +7,7 @@ import {
 import BrandLogo from "./BrandLogo";
 
 const BASE_NAV_LINKS = [
+  { key: "dashboard",    label: "Inicio" },
   { key: "buscar",       label: "Buscar ofertas" },
   { key: "cv-buscar",   label: "Buscar por CV" },
   { key: "mapa",         label: "Ubicaciones" },
@@ -78,7 +79,7 @@ export default function Navbar({
 
         <div className="nav-inner" style={S.inner}>
           {/* Logo */}
-          <button style={S.logo} onClick={() => navigate("buscar")}>
+          <button style={S.logo} onClick={() => navigate("dashboard")}>
             <BrandLogo
               size={34}
               showWordmark={true}
