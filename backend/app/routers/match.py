@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.database import get_session_local
 from app.models.cache import SearchCache
+from app.models.match_feedback import MatchFeedback
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
 from app.services.job_search_service import fetch_offers_for_search
@@ -213,3 +214,63 @@ async def match_offers(
     finally:
         if db:
             db.close()
+
+# -- Feedback endpoints -------------------------------------------------------
+
+class FeedbackRequest(BaseModel):
+    adzuna_id: str
+    rating: str  # "up" | "down"
+    offer_score: int | None = None
+    offer_result: str | None = None  # APLICA | QUIZA | NO_ENCAJA
+
+
+@router.post("/api/match/feedback")
+def submit_match_feedback(
+    body: FeedbackRequest,
+    user=Depends(get_current_user_record),
+):
+    if body.rating not in ("up", "down"):
+        return JSONResponse(status_code=422, content={"detail": "rating debe ser up o down"})
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+    db = SessionLocal()
+    try:
+        existing = (
+            db.query(MatchFeedback)
+            .filter(MatchFeedback.user_id == user.id, MatchFeedback.adzuna_id == body.adzuna_id)
+            .first()
+        )
+        if existing:
+            existing.rating = body.rating
+            existing.offer_score = body.offer_score
+            existing.offer_result = body.offer_result
+        else:
+            db.add(MatchFeedback(
+                user_id=user.id,
+                adzuna_id=body.adzuna_id,
+                rating=body.rating,
+                offer_score=body.offer_score,
+                offer_result=body.offer_result,
+                created_at=datetime.utcnow(),
+            ))
+        db.commit()
+        return JSONResponse(content={"detail": "Feedback guardado", "rating": body.rating})
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.get("/api/match/feedback")
+def get_my_feedback(user=Depends(get_current_user_record)):
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+    db = SessionLocal()
+    try:
+        rows = db.query(MatchFeedback).filter(MatchFeedback.user_id == user.id).all()
+        return JSONResponse(content={"feedback": {row.adzuna_id: row.rating for row in rows}})
+    finally:
+        db.close()

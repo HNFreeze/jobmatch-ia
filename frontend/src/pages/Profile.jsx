@@ -3,7 +3,7 @@ import {
   matchOffers, getUserProfile,
   getFavorites, addFavorite, removeFavorite,
   saveHistory, getHistory, generateCoverLetter, createApplication, getApplications, deleteApplication, getAiQuota,
-} from "../services/api";
+, submitMatchFeedback, getMatchFeedback } from "../services/api";
 import {
   gradients,
   typography,
@@ -517,6 +517,21 @@ function MatchInsightSummary({ offer, darkMode, compact = false }) {
             {offer.puntuacion}% match
           </span>
         )}
+        {/* Ranking score badge */}
+        {offer?.ranking_score != null && !compact && (
+          <span style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+            backgroundColor: dm ? "rgba(37,99,235,0.12)" : "rgba(37,99,235,0.06)",
+            color: dm ? "#93c5fd" : "#1d4ed8",
+            border: `1px solid ${dm ? "rgba(147,197,253,0.18)" : "rgba(29,78,216,0.12)"}`,
+            fontFamily: typography.family,
+          }}>
+            {offer.ranking_score}/100 score
+          </span>
+        )}
       </div>
 
       {getDecisionReason(offer) && (
@@ -650,6 +665,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
   const [profileLoading,      setProfileLoading]      = useState(true);
   const [loading,             setLoading]             = useState(false);
   const [loadingPhase,        setLoadingPhase]        = useState(0);
+  const [feedbackMap, setFeedbackMap] = useState({});
+  const [feedbackLoading, setFeedbackLoading] = useState({});
   const [results,             setResults]             = useState(() => {
     if (!analysisResults) return null;
     return Array.isArray(analysisResults) ? analysisResults : (analysisResults.offers || null);
@@ -712,6 +729,9 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       .catch(() => {});
     getApplications()
       .then(list => setTracked(new Map(list.map(a => [a.adzuna_id, a.id]))))
+      .catch(() => {});
+    getMatchFeedback()
+      .then(r => r?.feedback && setFeedbackMap(r.feedback))
       .catch(() => {});
     getHistory()
       .then(setSearchHistory)
@@ -2189,7 +2209,51 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                                   Abrir oferta
                                 </a>
                               )}
-                            </div>
+                            
+                        {/* Feedback buttons */}
+                        <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexShrink: 0 }}>
+                          {["up", "down"].map(rating => {
+                            const myFeedback = feedbackMap[offer.adzuna_id];
+                            const isActive = myFeedback === rating;
+                            const isLoading = feedbackLoading[offer.adzuna_id];
+                            return (
+                              <button
+                                key={rating}
+                                title={rating === "up" ? "Buen resultado" : "Mal resultado"}
+                                disabled={isLoading}
+                                onClick={async () => {
+                                  setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: true }));
+                                  try {
+                                    await submitMatchFeedback({
+                                      adzuna_id: offer.adzuna_id,
+                                      rating,
+                                      offer_score: offer.ranking_score ?? offer.puntuacion,
+                                      offer_result: offer.resultado,
+                                    });
+                                    setFeedbackMap(prev => ({ ...prev, [offer.adzuna_id]: rating }));
+                                  } catch { /* silent */ }
+                                  setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: false }));
+                                }}
+                                style={{
+                                  width: 30, height: 30, borderRadius: 8,
+                                  border: `1.5px solid ${isActive
+                                    ? (rating === "up" ? "#10b981" : "#ef4444")
+                                    : (dm ? "rgba(255,255,255,0.1)" : "#e5e7eb")}`,
+                                  background: isActive
+                                    ? (rating === "up" ? "#d1fae5" : "#fee2e2")
+                                    : "none",
+                                  cursor: isLoading ? "not-allowed" : "pointer",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: 14, opacity: isLoading ? 0.5 : 1,
+                                  transition: "all 0.2s ease",
+                                }}
+                              >
+                                {rating === "up" ? "👍" : "👎"}
+                              </button>
+                            );
+                          })}
+                        </div>
+</div>
                           </div>
                         </div>
                       );

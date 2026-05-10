@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getUserProfile, updateUserProfile, changePassword, deleteAccount } from "../services/api";
+import { getMyAlert, upsertMyAlert, deleteMyAlert } from "../services/api";
 import { typography, transition } from "../constants/theme";
 
 const TEAL = "#00758A";
@@ -49,6 +50,12 @@ const EditIcon = () => (
     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
   </svg>
 );
+const BellIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  </svg>
+);
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const CITY_OPTIONS = [
@@ -87,6 +94,7 @@ const SIDEBAR_ITEMS = [
   { key: "stack",       label: "Stack Tecnológico",      Icon: TerminalIcon },
   { key: "experience",  label: "Experiencia e Idiomas",  Icon: BriefcaseIcon },
   { key: "preferences", label: "Preferencias de Trabajo", Icon: SlidersIcon },
+  { key: "alerts",      label: "Alertas de empleo",      Icon: BellIcon },
   { key: "security",    label: "Seguridad",              Icon: ShieldIcon },
 ];
 
@@ -232,6 +240,14 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
   const [deleteError,          setDeleteError]          = useState(null);
   const [deleteSuccess,        setDeleteSuccess]        = useState(false);
 
+  // Alert state
+  const [alertData,       setAlertData]       = useState(null);
+  const [alertLoading,    setAlertLoading]    = useState(false);
+  const [alertSaving,     setAlertSaving]     = useState(false);
+  const [alertThreshold,  setAlertThreshold]  = useState(70);
+  const [alertFrequency,  setAlertFrequency]  = useState("daily");
+  const [alertActive,     setAlertActive]     = useState(false);
+
   const initial = (alias || email).charAt(0).toUpperCase() || "?";
 
   // Load profile
@@ -253,7 +269,19 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
       } catch {
         // new user — keep defaults
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          // Load alert config
+          try {
+            const al = await import('../services/api').then(m => m.getMyAlert());
+            if (al?.alert) {
+              setAlertData(al.alert);
+              setAlertThreshold(al.alert.min_score_threshold);
+              setAlertFrequency(al.alert.email_frequency);
+              setAlertActive(al.alert.is_active);
+            }
+          } catch { /* ignore */ }
+        }
       }
     }
     loadProfile();
@@ -894,6 +922,160 @@ export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, 
           </div>
 
           {/* ── Seguridad ──────────────────────────────────────────────────── */}
+          {/* ── Alertas de empleo ───────────────────────────────────────────── */}
+          <div id="section-alerts" style={{ marginTop: 32 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
+              <h2 style={{ ...S.sectionTitle, color: dmText }}>Alertas de empleo</h2>
+              <span style={{ fontSize: 11, fontWeight: 700, color: dmHint, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                NOTIFICACIONES
+              </span>
+            </div>
+            <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24 }}>
+
+              {/* Toggle on/off */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: dmText, fontFamily: typography.family }}>
+                    Recibir alertas por email
+                  </div>
+                  <div style={{ fontSize: 12, color: dmSub, marginTop: 3, fontFamily: typography.family }}>
+                    Te avisamos cuando aparecen nuevas ofertas que encajan con tu perfil
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAlertActive(prev => !prev)}
+                  style={{
+                    width: 52, height: 28, borderRadius: 14,
+                    background: alertActive ? TEAL : (dm ? "#334155" : "#d1d5db"),
+                    border: "none", cursor: "pointer", position: "relative",
+                    transition: "background 0.25s ease", flexShrink: 0,
+                  }}
+                >
+                  <span style={{
+                    position: "absolute", top: 3,
+                    left: alertActive ? 26 : 3,
+                    width: 22, height: 22, borderRadius: "50%",
+                    background: "#fff",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                    transition: "left 0.25s ease",
+                  }} />
+                </button>
+              </div>
+
+              {alertActive && (
+                <>
+                  {/* Threshold slider */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: dmText, fontFamily: typography.family }}>
+                        Compatibilidad mínima
+                      </label>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: TEAL, fontFamily: typography.family }}>
+                        {alertThreshold}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={30}
+                      max={95}
+                      step={5}
+                      value={alertThreshold}
+                      onChange={e => setAlertThreshold(Number(e.target.value))}
+                      style={{
+                        display: "block", width: "100%", marginBottom: 6,
+                        background: `linear-gradient(to right, ${TEAL} ${((alertThreshold - 30) / 65) * 100}%, #e5e7eb ${((alertThreshold - 30) / 65) * 100}%)`,
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: dmHint, fontFamily: typography.family }}>
+                      <span>30% — Más ofertas</span>
+                      <span>95% — Solo las mejores</span>
+                    </div>
+                    <div style={{
+                      marginTop: 10, padding: "8px 12px", borderRadius: 8,
+                      background: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
+                      border: `1px solid ${dm ? "rgba(0,117,138,0.25)" : "rgba(0,117,138,0.15)"}`,
+                      fontSize: 12, color: dm ? "#5eead4" : TEAL, fontFamily: typography.family,
+                    }}>
+                      💡 Solo recibirás emails cuando las nuevas ofertas superen el {alertThreshold}% de compatibilidad con tu perfil.
+                    </div>
+                  </div>
+
+                  {/* Frequency selector */}
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ fontSize: 13, fontWeight: 700, color: dmText, display: "block", marginBottom: 8, fontFamily: typography.family }}>
+                      Frecuencia de emails
+                    </label>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      {[
+                        { value: "daily",  label: "📅 Diaria",  desc: "Una vez al día" },
+                        { value: "weekly", label: "📆 Semanal", desc: "Una vez a la semana" },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setAlertFrequency(opt.value)}
+                          style={{
+                            flex: 1, padding: "12px 14px", borderRadius: 10, cursor: "pointer",
+                            border: `2px solid ${alertFrequency === opt.value ? TEAL : (dm ? "rgba(255,255,255,0.1)" : "#e5e7eb")}`,
+                            background: alertFrequency === opt.value
+                              ? (dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.06)")
+                              : (dm ? "#1e293b" : "#fff"),
+                            textAlign: "center", fontFamily: typography.family,
+                          }}
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 700, color: alertFrequency === opt.value ? TEAL : dmText }}>
+                            {opt.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: dmSub, marginTop: 2 }}>{opt.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Last triggered info */}
+              {alertData?.last_triggered_at && (
+                <div style={{ fontSize: 12, color: dmSub, marginBottom: 16, fontFamily: typography.family }}>
+                  Última alerta enviada: {new Date(alertData.last_triggered_at).toLocaleDateString("es-ES", {
+                    day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"
+                  })}
+                </div>
+              )}
+
+              {/* Save button */}
+              <button
+                onClick={async () => {
+                  setAlertSaving(true);
+                  try {
+                    const res = await upsertMyAlert({
+                      min_score_threshold: alertThreshold,
+                      email_frequency: alertFrequency,
+                      is_active: alertActive,
+                    });
+                    setAlertData(res.alert);
+                    addToast?.("Alerta de empleo guardada", "success");
+                  } catch {
+                    addToast?.("Error al guardar la alerta", "error");
+                  } finally {
+                    setAlertSaving(false);
+                  }
+                }}
+                disabled={alertSaving}
+                className="save-btn-main"
+                style={{
+                  width: "100%", padding: "13px 0", borderRadius: 50,
+                  background: alertSaving ? "#94a3b8" : `linear-gradient(135deg, ${TEAL}, #2563eb)`,
+                  color: "#fff", border: "none", cursor: alertSaving ? "not-allowed" : "pointer",
+                  fontSize: 14, fontWeight: 700, fontFamily: typography.family,
+                  boxShadow: alertSaving ? "none" : `0 4px 14px ${TEAL}50`,
+                }}
+              >
+                {alertSaving ? "Guardando..." : alertActive ? "Guardar alerta" : "Desactivar alertas"}
+              </button>
+            </div>
+          </div>
+
+
           <div id="section-security" style={{ marginTop: 32 }}>
             <h2 style={{ ...S.sectionTitle, color: dmText, marginBottom: 16 }}>Seguridad</h2>
 
