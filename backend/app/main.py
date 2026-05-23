@@ -8,6 +8,10 @@ from urllib.parse import urlparse
 # Cargar .env ANTES de importar cualquier módulo de app (database.py lee DATABASE_URL al importarse)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+# FIX for Render and Heroku: SQLAlchemy 1.4+ requires postgresql:// instead of postgres://
+if os.environ.get("DATABASE_URL", "").startswith("postgres://"):
+    os.environ["DATABASE_URL"] = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
