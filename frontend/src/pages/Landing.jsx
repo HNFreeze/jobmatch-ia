@@ -300,12 +300,138 @@ export default function Landing({ onStartClick }) {
 
       {/* ── Trust bar ───────────────────────────────────────────────────────── */}
       <section style={{ textAlign: "center", paddingBottom: 64, paddingTop: 0 }}>
-        <p style={{
+        <div style={{
           fontSize: 11, fontWeight: 700, color: GRAY_400,
           letterSpacing: "0.18em", textTransform: "uppercase", margin: 0,
         }}>
-          Líderes tecnológicos confían en JobMatch IA
-        </p>
+          <div style={{ display: "flex", gap: 40, justifyContent: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            {[
+              { value: "5K+", label: "Ofertas analizadas" },
+              { value: "IA", label: "Motor propio" },
+              { value: "100%", label: "Gratuito" },
+            ].map(stat => (
+              <div key={stat.label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color: TEAL, fontFamily: typography.family, letterSpacing: "-0.02em" }}>
+                  {stat.value}
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: GRAY_400, fontFamily: typography.family }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: GRAY_400, letterSpacing: "0.15em", textTransform: "uppercase" }}>Líderes tecnológicos confían en JobMatch IA</p>
+        </div>
+      </section>
+
+
+      {/* ── Cómo funciona ────────────────────────────────────────────────── */}
+      <section style={{
+        padding: "80px 24px",
+        background: "linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)",
+        borderTop: `1px solid ${GRAY_200}`,
+      }}>
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 56 }}>
+            <span style={{
+              display: "inline-block",
+              backgroundColor: "#E0F2FE", color: "#0284C7",
+              fontSize: 11, fontWeight: 700, padding: "5px 14px",
+              borderRadius: 50, letterSpacing: "0.12em", textTransform: "uppercase",
+              marginBottom: 16,
+            }}>
+              Proceso
+            </span>
+            <h2 className="lv2-section-title" style={{
+              margin: "0 0 14px", fontSize: 38, fontWeight: 800,
+              color: NAVY, letterSpacing: "-0.025em",
+            }}>
+              Encuentra trabajo en 3 pasos
+            </h2>
+            <p style={{ margin: 0, fontSize: 17, color: GRAY_500, maxWidth: 500, marginInline: "auto", lineHeight: 1.7 }}>
+              Sin configuraciones complejas, sin pérdida de tiempo. Empieza a encontrar ofertas reales en minutos.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {[
+              {
+                num: "01",
+                title: "Completa tu perfil técnico",
+                desc: "Indica tu stack, años de experiencia, idiomas y preferencias de modalidad. Nuestro sistema de IA necesita esta información para crear tu scoring personalizado.",
+                icon: "👤",
+                accent: TEAL,
+              },
+              {
+                num: "02",
+                title: "La IA analiza miles de ofertas",
+                desc: "Nuestro motor compara tu perfil contra miles de ofertas reales de toda España. Cada oferta recibe una puntuación APLICA / QUIZÁ / NO ENCAJA con explicación detallada.",
+                icon: "🤖",
+                accent: "#2563eb",
+              },
+              {
+                num: "03",
+                title: "Actúa y haz seguimiento",
+                desc: "Guarda favoritos, registra tus candidaturas con estado, genera cartas de presentación personalizadas y activa alertas para no perderte ninguna oferta nueva.",
+                icon: "🚀",
+                accent: "#7c3aed",
+              },
+            ].map((step, i) => (
+              <div key={i} style={{
+                display: "flex", gap: 28, alignItems: "flex-start",
+                padding: "32px 0",
+                borderBottom: i < 2 ? `1px solid ${GRAY_200}` : "none",
+              }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 16, flexShrink: 0,
+                  background: `${step.accent}15`,
+                  border: `1.5px solid ${step.accent}30`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 24,
+                }}>
+                  {step.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 800, color: step.accent,
+                      letterSpacing: "0.12em", fontFamily: typography.family,
+                    }}>
+                      PASO {step.num}
+                    </span>
+                  </div>
+                  <h3 style={{
+                    margin: "0 0 8px", fontSize: 20, fontWeight: 700,
+                    color: NAVY, letterSpacing: "-0.01em", fontFamily: typography.family,
+                  }}>
+                    {step.title}
+                  </h3>
+                  <p style={{
+                    margin: 0, fontSize: 15, color: GRAY_500, lineHeight: 1.75,
+                    fontFamily: typography.family, maxWidth: 560,
+                  }}>
+                    {step.desc}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ textAlign: "center", marginTop: 48 }}>
+            <button onClick={onStartClick} style={{
+              padding: "13px 32px", borderRadius: 50, fontSize: 15, fontWeight: 700,
+              color: "#fff", backgroundColor: TEAL,
+              border: "none", cursor: "pointer",
+              fontFamily: typography.family,
+              boxShadow: "0 4px 14px rgba(0,122,138,0.3)",
+            }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = TEAL_DARK}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = TEAL}
+            >
+              Comenzar ahora — Es gratis →
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* ── Features ────────────────────────────────────────────────────────── */}
@@ -345,8 +471,8 @@ export default function Landing({ onStartClick }) {
               {
                 icon: <BellIcon />,
                 iconBg: "#F3E8FF",
-                title: "Plan de Mejora Personalizado",
-                desc: "Detectamos qué skills te faltan para acceder a más ofertas y te damos un plan concreto para cerrar esas brechas.",
+                title: "Alertas de Empleo Inteligentes",
+                desc: "Recibe notificaciones por email cuando aparecen nuevas ofertas que encajan con tu perfil. Configura tu umbral de compatibilidad y frecuencia.",
               },
             ].map((f, i) => (
               <div key={i} className="lv2-feature-card" style={{
@@ -429,6 +555,7 @@ export default function Landing({ onStartClick }) {
                   "Matching en tiempo real con ofertas",
                   "Plan de mejora de skills",
                   "Carta de presentación IA",
+                  "Alertas de empleo personalizadas",
                   "Historial de búsquedas",
                 ].map(item => (
                   <li key={item} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500, color: "#374151" }}>
@@ -482,7 +609,7 @@ export default function Landing({ onStartClick }) {
                 {[
                   "Simulador de entrevistas con IA",
                   "Subida de CV para autocompletar perfil",
-                  "Alertas automáticas por email",
+                  "Simulador de entrevistas IA avanzado",
                   "Exportar candidaturas a PDF",
                   "Posicionamiento prioritario",
                 ].map(item => (

@@ -8,6 +8,7 @@ from app.models.ai_daily_usage import AIDailyUsage
 
 DEFAULT_DAILY_AI_QUOTA = 8
 CV_IMPROVE_DAILY_LIMIT = 2
+INTERVIEW_DAILY_LIMIT = 1
 
 
 def _get_or_create_usage(db, user_id: int, usage_date: date) -> AIDailyUsage:
@@ -51,6 +52,8 @@ def get_quota_snapshot(db, user) -> dict:
         "cv_analysis_count": cv_analysis_count,
         "cv_improve_count": cv_improve_count,
         "cv_improve_remaining": max(CV_IMPROVE_DAILY_LIMIT - cv_improve_count, 0),
+        "interview_count": usage.interview_count or 0 if usage else 0,
+        "interview_remaining": max(INTERVIEW_DAILY_LIMIT - (usage.interview_count or 0), 0) if usage else INTERVIEW_DAILY_LIMIT,
     }
 
 
@@ -67,6 +70,8 @@ def consume_ai_quota(db, user, action: str) -> dict:
             "cv_analysis_count": 0,
             "cv_improve_count": 0,
             "cv_improve_remaining": 9999,
+            "interview_count": 0,
+            "interview_remaining": 9999,
         }
 
     today = date.today()
@@ -94,6 +99,15 @@ def consume_ai_quota(db, user, action: str) -> dict:
                 detail=f"Has alcanzado el límite de {CV_IMPROVE_DAILY_LIMIT} mejoras de CV por día. Vuelve mañana.",
             )
         usage.cv_improve_count = current + 1
+    elif action == "interview":
+        # Cuota independiente: máx INTERVIEW_DAILY_LIMIT al día
+        current = usage.interview_count or 0
+        if current >= INTERVIEW_DAILY_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Ya has realizado tu simulación de entrevista de hoy. Vuelve mañana para practicar de nuevo.",
+            )
+        usage.interview_count = current + 1
 
     usage.total_units = (usage.total_units or 0) + 1
     usage.updated_at = datetime.utcnow()
@@ -110,4 +124,6 @@ def consume_ai_quota(db, user, action: str) -> dict:
         "cv_analysis_count": usage.cv_analysis_count or 0,
         "cv_improve_count": usage.cv_improve_count or 0,
         "cv_improve_remaining": max(CV_IMPROVE_DAILY_LIMIT - (usage.cv_improve_count or 0), 0),
+        "interview_count": usage.interview_count or 0,
+        "interview_remaining": max(INTERVIEW_DAILY_LIMIT - (usage.interview_count or 0), 0),
     }

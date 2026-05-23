@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import hashlib
+import html as html_module
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import anthropic
 from app.models.job_offer import JobOffer
 from app.services.ai_cost_service import record_ai_api_cost
 
-MATCH_ENGINE_VERSION = "v3_description_depth"
+MATCH_ENGINE_VERSION = "v8_synonyms"
 MATCH_SIGNAL_BATCH_SIZE = max(1, min(int(os.getenv("MATCH_SIGNAL_BATCH_SIZE", "8")), 12))
 MATCH_MAX_OFFERS_ANALYZED = max(1, int(os.getenv("MATCH_MAX_OFFERS_ANALYZED", "20")))
 MATCH_MAX_OFFERS_RETURNED = max(1, int(os.getenv("MATCH_MAX_OFFERS_RETURNED", "20")))
@@ -19,12 +20,122 @@ MATCH_MAX_OFFERS_RETURNED = max(1, int(os.getenv("MATCH_MAX_OFFERS_RETURNED", "2
 TECH_KEYWORDS = [
     "python", "django", "flask", "fastapi", "java", "spring", "kotlin", "scala",
     "javascript", "typescript", "node.js", "node", "react", "react native", "next.js",
-    "angular", "vue", "php", "laravel", "symfony", "c#", ".net", "asp.net", "go",
+    "angular", "vue", "php", "laravel", "symfony", "c#", ".net", "asp.net",
+    # "go" removed — too ambiguous (matches "go to market", "go ahead", etc.)
+    # Use "golang" as the canonical form; profile stack "Go" is expanded via TECH_NAME_SYNONYMS
     "golang", "rust", "swift", "sql", "postgresql", "mysql", "mongodb", "redis",
     "docker", "kubernetes", "aws", "azure", "gcp", "terraform", "graphql", "git",
     "linux", "devops", "pandas", "numpy", "spark", "airflow", "etl", "machine learning",
     "data engineering", "power bi", "tableau", "salesforce", "sap", "elasticsearch",
 ]
+
+# Canonical name synonyms for profile stack normalization.
+# Ensures that user-written variants match signals extracted from offer descriptions.
+TECH_NAME_SYNONYMS: dict[str, str] = {
+    # Go / Golang
+    "go": "golang",
+    # JavaScript / TypeScript
+    "js": "javascript",
+    "javascript": "javascript",
+    "ts": "typescript",
+    "typescript": "typescript",
+    # Node
+    "node": "node.js",
+    "nodejs": "node.js",
+    "node.js": "node.js",
+    # React / React Native / Next
+    "reactjs": "react",
+    "react.js": "react",
+    "next.js": "next.js",
+    "nextjs": "next.js",
+    # Vue / Angular
+    "vue.js": "vue",
+    "vuejs": "vue",
+    "angular.js": "angular",
+    "angularjs": "angular",
+    # .NET / C#
+    "c sharp": "c#",
+    "csharp": "c#",
+    ".net": "c#",
+    "dotnet": "c#",
+    "dot net": "c#",
+    "dotnetcore": "c#",
+    ".net core": "c#",
+    # ASP.NET
+    "asp.net": "asp.net",
+    "asp net": "asp.net",
+    # Spring Boot
+    "spring boot": "spring",
+    "springboot": "spring",
+    # Databases
+    "postgres": "postgresql",
+    "mysql": "mysql",
+    "mssql": "sql server",
+    "ms sql": "sql server",
+    "sql server": "sql server",
+    "oracle db": "oracle",
+    "oracle database": "oracle",
+    # PL/SQL
+    "pl/sql": "pl/sql",
+    "plsql": "pl/sql",
+    "pl sql": "pl/sql",
+    # Cloud
+    "amazon web services": "aws",
+    "google cloud": "gcp",
+    "google cloud platform": "gcp",
+    # Power BI / BI tools
+    "powerbi": "power bi",
+    "power bi": "power bi",
+    "power query": "power query",
+    # Container / Infra
+    "k8s": "kubernetes",
+    # Elasticsearch
+    "elastic": "elasticsearch",
+    "elk": "elasticsearch",
+    # Search / APIs
+    "rest api": "rest",
+    "rest apis": "rest",
+    "restful": "rest",
+    # Ruby on Rails
+    "ruby on rails": "ruby",
+    "rails": "ruby",
+    # React Native
+    "react native": "react native",
+}
+
+# Broader set used for pre-filtering: tech keywords + tech role words.
+# An offer that matches NONE of these is almost certainly non-tech.
+# Deliberately excludes short/ambiguous words ("go", "sap") to avoid false positives.
+TECH_JOB_INDICATORS = (set(TECH_KEYWORDS) - {"go", "sap"}) | {
+    "golang",  # explicit Go language indicator
+    "engineer", "engineering", "developer", "programmer", "software", "backend", "frontend",
+    "fullstack", "full-stack", "full stack", "desarrollador", "programador", "ingeniero",
+    "ingenieria", "devsecops", "data scientist", "data engineer", "analytics engineer",
+    "ml engineer", "sre", "qa engineer", "cloud engineer", "tech lead", "platform engineer",
+    "devops engineer", "mobile developer", "ios developer", "android developer",
+    "firmware", "embedded", "arquitecto", "architect", "cyber", "security engineer", "infosec",
+    "it specialist", "it engineer", "systems administrator", "administrador de sistemas",
+}
+
+# Skills that indicate genuine data/ML domain expertise in a profile.
+# Used by the data-domain mismatch filter: if an offer is normalized_role="data"
+# but the profile has NONE of these, an APLICA result is demoted to QUIZÁ.
+# Generic skills like Python, SQL, Docker are excluded — they appear in many domains.
+DATA_SPECIFIC_SKILLS: frozenset[str] = frozenset({
+    "pandas", "numpy", "scipy", "scikit-learn", "scikit",
+    "tensorflow", "pytorch", "keras", "mlflow", "xgboost", "lightgbm",
+    "spark", "pyspark", "airflow", "dbt", "hadoop", "hive",
+    "tableau", "power bi", "powerbi", "looker", "superset",
+    "jupyter", "data engineering", "machine learning", "deep learning",
+    "nlp", "computer vision", "feature engineering",
+    # Additional data/BI/warehouse tools (frequently added as custom techs)
+    "ssis", "ssrs", "sas", "dax", "power query", "powerquery",
+    "qlik", "qlikview", "qliksense", "metabase", "redash",
+    "snowflake", "databricks", "redshift", "bigquery", "dbt cloud",
+    "azure synapse", "azure data factory", "aws glue",
+    "data lake", "data warehouse", "data lakehouse",
+    "plotly", "matplotlib", "seaborn", "streamlit",
+})
 
 ROLE_HINTS = {
     "backend": ["backend", "back-end", "python", "java", "spring", "django", "fastapi", "node", "api"],
@@ -84,8 +195,15 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
     return result
 
 
+def _strip_html(text: str) -> str:
+    """Decode HTML entities and remove all tags so Claude never sees raw HTML."""
+    text = html_module.unescape(str(text or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
 def _truncate_description(description: str, max_chars: int = 2600) -> str:
-    text = (description or "").strip()
+    text = _strip_html(description)
     if len(text) <= max_chars:
         return text
     head = text[:1600].rstrip()
@@ -224,6 +342,24 @@ def _extract_known_skills(text: str) -> list[str]:
     return _dedupe_keep_order(found)
 
 
+def _is_tech_offer(offer: dict) -> bool:
+    """Return True if the offer has at least one tech indicator in its title or description.
+
+    Checks the title first (fast path), then falls back to a 600-char snippet of the
+    stripped description. An offer that matches none of TECH_JOB_INDICATORS is almost
+    certainly a non-tech role (operations, finance, sales, fleet management, etc.) and
+    should be skipped before signal extraction and scoring.
+    """
+    title = _normalize_text(offer.get("titulo", ""))
+    desc_snippet = _normalize_text(_strip_html(offer.get("descripcion", "")))[:600]
+    combined = f"{title} {desc_snippet}"
+    for kw in TECH_JOB_INDICATORS:
+        kw_norm = _normalize_text(kw)
+        if kw_norm and re.search(rf"(?<!\w){re.escape(kw_norm)}(?!\w)", combined):
+            return True
+    return False
+
+
 def _infer_role(title: str, skills: list[str]) -> str | None:
     normalized = _normalize_text(f"{title} {' '.join(skills)}")
     for role, hints in ROLE_HINTS.items():
@@ -295,10 +431,10 @@ def _extract_skill_year_requirements(text: str, skills: list[str]) -> list[dict]
 
 def _infer_work_mode(text: str) -> str | None:
     normalized = _normalize_text(text)
+    if any(token in normalized for token in ["hibrido", "hibrida", "híbrido", "híbrida", "hybrid", "mixto"]):
+        return "hybrid"
     if any(token in normalized for token in ["100% remoto", "fully remote", "remote", "teletrabajo", "trabajo remoto"]):
         return "remote"
-    if any(token in normalized for token in ["hibrido", "híbrido", "hybrid", "mixto"]):
-        return "hybrid"
     if any(token in normalized for token in ["presencial", "onsite", "on-site", "en oficina"]):
         return "onsite"
     return None
@@ -615,7 +751,13 @@ def _normalize_profile_locations(profile: dict) -> set[str]:
 
 def _normalize_profile_stack(profile: dict) -> tuple[list[str], set[str]]:
     stack = _dedupe_keep_order([str(item).strip() for item in profile.get("stack") or [] if str(item).strip()])
-    normalized = {_normalize_text(item) for item in stack}
+    normalized: set[str] = set()
+    for item in stack:
+        n = _normalize_text(item)
+        normalized.add(n)
+        # Expand synonyms so that e.g. profile "Go" matches signals extracted as "Golang"
+        if n in TECH_NAME_SYNONYMS:
+            normalized.add(TECH_NAME_SYNONYMS[n])
     return stack, normalized
 
 
@@ -708,6 +850,10 @@ def _score_seniority(profile_years: float | None, signals: dict) -> tuple[float,
         return (14 if profile_years >= 2 else 8), notes, blockers
     if seniority == "junior":
         return 15, notes, blockers
+    # No explicit seniority or years: reward experienced profiles slightly
+    if profile_years is not None and profile_years >= 4:
+        notes.append("Experiencia solida para una oferta sin requisito de seniority explicito")
+        return 11, notes, blockers
     return 8, notes, blockers
 
 
@@ -995,7 +1141,7 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
     if blockers:
         score = min(score, 44)
         result = "NO_ENCAJA"
-    elif score >= 78:
+    elif score >= 73:
         result = "APLICA"
     elif score >= 52:
         result = "QUIZÁ"
@@ -1006,6 +1152,51 @@ def _evaluate_offer_match(profile: dict, offer: dict, signals: dict) -> dict:
         result = "QUIZÁ"
         score = min(score, 74)
         gaps.append("La descripcion no confirma suficiente cobertura de skills obligatorias")
+
+    # Ghost-QUIZÁ suppression: score reached QUIZÁ threshold but no tech skill evidence at all.
+    # This catches non-tech offers (operations, finance, sales) that drift into QUIZÁ territory
+    # purely via role/seniority/language partial scores when the signals extractor found nothing.
+    if (
+        result == "QUIZÁ"
+        and not matched_skills
+        and not missing_skills
+        and not signals.get("required_skills")
+        and not signals.get("preferred_skills")
+    ):
+        result = "NO_ENCAJA"
+        score = min(score, 49)
+        gaps.append("Sin evidencia de skills tecnologicas en la oferta")
+        print(f"[MATCH_FILTER] Ghost-QUIZA suprimido: '{offer.get('titulo', '')}' (score={score})")
+
+    # Zero-match suppression: QUIZÁ but profile matches 0 out of 2+ required skills.
+    # Prevents domain-mismatched offers (e.g., Data Science offer for a Go/Rust profile)
+    # from appearing as QUIZÁ purely via seniority/language/location partial scores.
+    # Guard: only fires when required_skills are real (Claude extracted them), not the soft path.
+    if (
+        result == "QUIZÁ"
+        and not matched_skills
+        and len(missing_skills) >= 2
+        and signals.get("required_skills")
+        and not blockers
+    ):
+        result = "NO_ENCAJA"
+        score = min(score, 49)
+        gaps.append("No cumples ninguna de las skills requeridas principales")
+        print(f"[MATCH_FILTER] Zero-match QUIZA suprimido: '{offer.get('titulo', '')}' (score={score})")
+
+    # Data-domain mismatch: APLICA on a data/ML offer but profile has no data-specific tools.
+    # Catches cases like Cybersecurity or QA engineers scoring APLICA on DS roles purely via
+    # generic skills (Python + SQL), when they lack any genuine data tooling (pandas, TF, etc.).
+    # Guard: only demotes APLICA, not QUIZÁ — a generic Python profile at QUIZÁ for DS is fine.
+    if (
+        result == "APLICA"
+        and _normalize_text(signals.get("normalized_role") or "") == "data"
+        and not any(d in profile_stack_norm for d in DATA_SPECIFIC_SKILLS)
+    ):
+        result = "QUIZÁ"
+        score = min(score, 69)
+        gaps.append("Oferta de dominio Data/ML pero tu stack no incluye herramientas especializadas de datos")
+        print(f"[MATCH_FILTER] Data-domain mismatch: '{offer.get('titulo', '')}' degradado a QUIZA (score={score})")
 
     strengths = _dedupe_keep_order(strengths)[:4]
     gaps = _dedupe_keep_order(gaps)[:4]
@@ -1079,9 +1270,18 @@ def match_profile_with_offers(
     user_id: int | None = None,
 ) -> list:
     del profile_hash
-    signals_by_id = _extract_offer_signals(offers, api_key, db=db, user_id=user_id)
+
+    # Pre-filter: skip offers with no detectable tech relevance in title+description.
+    # This removes ops/finance/sales roles from Greenhouse boards before they reach
+    # the signal extractor and the scorer, avoiding ghost-QUIZÁ results.
+    tech_offers = [o for o in offers if _is_tech_offer(o)]
+    filtered_count = len(offers) - len(tech_offers)
+    if filtered_count:
+        print(f"[MATCH_FILTER] {filtered_count}/{len(offers)} ofertas descartadas (sin indicadores tech)")
+
+    signals_by_id = _extract_offer_signals(tech_offers, api_key, db=db, user_id=user_id)
     results = []
-    for offer in offers:
+    for offer in tech_offers:
         signals = signals_by_id.get(offer["id"], _heuristic_offer_signals(offer))
         results.append(_evaluate_offer_match(profile, offer, signals))
 

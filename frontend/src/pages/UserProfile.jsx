@@ -1,1510 +1,1197 @@
-import { useState, useEffect } from "react";
-import { getUserProfile, updateUserProfile, changePassword, deleteAccount } from "../services/api";
-import { getMyAlert, upsertMyAlert, deleteMyAlert } from "../services/api";
-import { typography, transition } from "../constants/theme";
+import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  getUserProfile, updateUserProfile, changePassword, deleteAccount,
+  getMyAlert, upsertMyAlert, deleteMyAlert,
+} from "../services/api";
 
-const TEAL = "#00758A";
 const DELETE_ACCOUNT_CONFIRMATION = "ELIMINAR";
 
-// ── SVG Icons ────────────────────────────────────────────────────────────────
-const UserIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-  </svg>
-);
-const TerminalIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-  </svg>
-);
-const BriefcaseIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-  </svg>
-);
-const SlidersIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/>
-    <line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
-    <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
-  </svg>
-);
-const ShieldIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-  </svg>
-);
-const PinIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
-  </svg>
-);
-const MailIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
-  </svg>
-);
-const EditIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-  </svg>
-);
-const BellIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-  </svg>
-);
+/* ---------------------------------------------------------------------------
+ * Tokens
+ * ------------------------------------------------------------------------- */
+function useTokens(darkMode, density) {
+  return useMemo(() => {
+    const dm = !!darkMode;
+    const compact = density === "compacta";
+    return {
+      bg:       dm ? "#0a1120" : "#f8f9fc",
+      surface:  dm ? "#0f172a" : "#ffffff",
+      surface2: dm ? "#111c30" : "#fbfbfd",
+      text:     dm ? "#e6edf7" : "#0b1220",
+      textSub:  dm ? "#94a3b8" : "#475569",
+      textMute: dm ? "#64748b" : "#94a3b8",
+      border:   dm ? "#1e293b" : "#e8ebf2",
+      borderSt: dm ? "#27364d" : "#d8dde7",
+      teal:     "#00758A",
+      tealSoft: dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.08)",
+      tealLine: dm ? "rgba(0,117,138,0.40)" : "rgba(0,117,138,0.25)",
+      purple:   "#7c3aed",
+      purpleSoft: dm ? "rgba(124,58,237,0.18)" : "rgba(124,58,237,0.08)",
+      green:    "#10b981",
+      greenSoft: dm ? "rgba(16,185,129,0.18)" : "rgba(16,185,129,0.10)",
+      red:      "#ef4444",
+      redSoft:  dm ? "rgba(239,68,68,0.18)" : "rgba(239,68,68,0.08)",
+      shadow:   dm
+        ? "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)"
+        : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.10)",
+      gap:      compact ? 12 : 18,
+      gapLg:    compact ? 16 : 24,
+      pad:      compact ? 16 : 22,
+      padLg:    compact ? 20 : 28,
+      radius:   12,
+      radiusSm: 8,
+      font:     '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      _dm: dm,
+    };
+  }, [darkMode, density]);
+}
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const CITY_OPTIONS = [
-  "Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao",
-  "Málaga", "Zaragoza", "Murcia", "Alicante", "Valladolid",
-  "A Coruña", "Granada", "Toda España",
-];
+function useHover() {
+  const [h, s] = useState(false);
+  return [h, { onMouseEnter: () => s(true), onMouseLeave: () => s(false) }];
+}
 
-const MODALIDAD_OPTIONS = [
-  { value: "Presencial", emoji: "🏢", color: "#06b6d4" },
-  { value: "Híbrido",    emoji: "💻", color: "#3b82f6" },
-  { value: "Remoto",     emoji: "🏠", color: "#22c55e" },
-];
-
-const LANGUAGE_PRESETS = [
-  "Español", "Inglés", "Francés", "Alemán", "Italiano",
-  "Portugués", "Chino", "Japonés", "Árabe", "Ruso",
-];
-
-const TECH_OPTIONS = [
-  "JavaScript", "TypeScript", "Python", "React", "Vue", "Angular", "Node.js",
-  "Express", "FastAPI", "Django", "Flask", "SQL", "PostgreSQL", "MongoDB",
-  "Redis", "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Git", "GraphQL",
-  "REST APIs", "Java", "C#", "PHP", "Ruby", "Swift", "Kotlin", "Rust", "Go",
-];
-
-const LEVEL_OPTIONS = [
-  { value: "basico",     label: "Básico" },
-  { value: "intermedio", label: "Intermedio" },
-  { value: "avanzado",   label: "Avanzado" },
-  { value: "nativo",     label: "Nativo" },
-];
-
-const SIDEBAR_ITEMS = [
-  { key: "info",        label: "Información personal",   Icon: UserIcon },
-  { key: "stack",       label: "Stack Tecnológico",      Icon: TerminalIcon },
-  { key: "experience",  label: "Experiencia e Idiomas",  Icon: BriefcaseIcon },
-  { key: "preferences", label: "Preferencias de Trabajo", Icon: SlidersIcon },
-  { key: "alerts",      label: "Alertas de empleo",      Icon: BellIcon },
-  { key: "security",    label: "Seguridad",              Icon: ShieldIcon },
-];
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function getLangFlag(name) {
+/* ---------------------------------------------------------------------------
+ * Helpers
+ * ------------------------------------------------------------------------- */
+function getLangCode(name) {
   const n = (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (n.includes("ingl"))                      return "🇬🇧";
-  if (n.includes("espa") || n.includes("cast")) return "🇪🇸";
-  if (n.includes("franc"))                     return "🇫🇷";
-  if (n.includes("alem"))                      return "🇩🇪";
-  if (n.includes("ital"))                      return "🇮🇹";
-  if (n.includes("port"))                      return "🇵🇹";
-  if (n.includes("chin") || n.includes("mand")) return "🇨🇳";
-  if (n.includes("japon"))                     return "🇯🇵";
-  if (n.includes("arab"))                      return "🇸🇦";
-  if (n.includes("ruso") || n.includes("rus")) return "🇷🇺";
-  return "🌐";
+  if (n.includes("ingl"))                       return "EN";
+  if (n.includes("espa") || n.includes("cast")) return "ES";
+  if (n.includes("franc"))                      return "FR";
+  if (n.includes("alem"))                       return "DE";
+  if (n.includes("ital"))                       return "IT";
+  if (n.includes("port"))                       return "PT";
+  if (n.includes("chin") || n.includes("mand")) return "ZH";
+  if (n.includes("japon"))                      return "JA";
+  if (n.includes("arab"))                       return "AR";
+  if (n.includes("rus"))                        return "RU";
+  return (name || "??").slice(0, 2).toUpperCase();
 }
 
-function expToNum(val) {
-  if (val === "" || val == null) return null;
-  if (val === "10+") return 10;
-  const parsed = parseInt(val, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+function computeCompletion(p) {
+  if (!p) return 0;
+  return Math.round(
+    [
+      (p.stack || []).length > 0,
+      p.anos_experiencia != null && p.anos_experiencia !== "",
+      (p.idiomas || []).filter(l => l.idioma?.trim()).length > 0,
+      (p.ubicaciones || []).length > 0,
+      (p.modalidad || []).length > 0,
+    ].filter(Boolean).length / 5 * 100
+  );
 }
 
-function expFromNum(n) {
-  return n >= 10 ? "10+" : String(n);
+/* ---------------------------------------------------------------------------
+ * Iconos SVG
+ * ------------------------------------------------------------------------- */
+const Icon = ({ name, size = 16 }) => {
+  const c = {
+    width: size, height: size, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.6,
+    strokeLinecap: "round", strokeLinejoin: "round",
+    style: { display: "block", flexShrink: 0 },
+  };
+  switch (name) {
+    case "user":      return <svg {...c}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>;
+    case "code":      return <svg {...c}><path d="M8 6L2 12l6 6M16 6l6 6-6 6"/></svg>;
+    case "briefcase": return <svg {...c}><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg>;
+    case "sliders":   return <svg {...c}><path d="M4 6h12M4 12h6M4 18h10M19 4v4M14 10v4M17 16v4"/></svg>;
+    case "bell":      return <svg {...c}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>;
+    case "shield":    return <svg {...c}><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>;
+    case "pin":       return <svg {...c}><path d="M12 21s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>;
+    case "mail":      return <svg {...c}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>;
+    case "edit":      return <svg {...c}><path d="M14 4l6 6L10 20H4v-6L14 4z"/></svg>;
+    case "check":     return <svg {...c}><path d="M5 12l5 5 9-11"/></svg>;
+    case "plus":      return <svg {...c}><path d="M12 5v14M5 12h14"/></svg>;
+    case "x":         return <svg {...c}><path d="M6 6l12 12M18 6L6 18"/></svg>;
+    case "search":    return <svg {...c}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.5-3.5"/></svg>;
+    case "sparkle":   return <svg {...c}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.5 5.5l2.8 2.8M15.7 15.7l2.8 2.8M18.5 5.5l-2.8 2.8M8.3 15.7l-2.8 2.8"/></svg>;
+    case "home":      return <svg {...c}><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2v-9z"/></svg>;
+    case "building":  return <svg {...c}><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>;
+    case "laptop":    return <svg {...c}><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M2 21h20"/></svg>;
+    case "globe":     return <svg {...c}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
+    case "chevron":   return <svg {...c}><path d="M6 9l6 6 6-6"/></svg>;
+    case "arrow":     return <svg {...c}><path d="M5 12h14M13 6l6 6-6 6"/></svg>;
+    case "eye":       return <svg {...c}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+    case "eye-off":   return <svg {...c}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
+    case "trash":     return <svg {...c}><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg>;
+    default: return null;
+  }
+};
+
+/* ---------------------------------------------------------------------------
+ * Sidebar
+ * ------------------------------------------------------------------------- */
+const SIDEBAR_ITEMS = [
+  { id: "info",     label: "Información personal",    icon: "user" },
+  { id: "stack",    label: "Stack Tecnológico",       icon: "code" },
+  { id: "exp",      label: "Experiencia e Idiomas",   icon: "briefcase" },
+  { id: "prefs",    label: "Preferencias de Trabajo", icon: "sliders" },
+  { id: "alerts",   label: "Alertas de empleo",       icon: "bell" },
+  { id: "security", label: "Seguridad",               icon: "shield" },
+];
+
+function Sidebar({ t, active, onSelect }) {
+  return (
+    <nav style={{
+      position: "sticky", top: 76, alignSelf: "start",
+      display: "flex", flexDirection: "column", gap: 2,
+      padding: 8, background: t.surface, border: `1px solid ${t.border}`,
+      borderRadius: t.radius, fontFamily: t.font,
+    }}>
+      {SIDEBAR_ITEMS.map(it => (
+        <SidebarItem key={it.id} t={t} item={it} active={active === it.id}
+          onClick={() => onSelect(it.id)}/>
+      ))}
+    </nav>
+  );
 }
 
-function getLevelLabel(val) {
-  const opt = LEVEL_OPTIONS.find(o => o.value === val);
-  return opt ? opt.label.toUpperCase() : val?.toUpperCase() || "";
+function SidebarItem({ t, item, active, onClick }) {
+  const [hover, hp] = useHover();
+  return (
+    <button type="button" onClick={onClick} {...hp} style={{
+      all: "unset", cursor: "pointer",
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "9px 11px", borderRadius: 8,
+      fontSize: 13, fontWeight: active ? 700 : 500,
+      color: active ? t.teal : (hover ? t.text : t.textSub),
+      background: active ? t.tealSoft : (hover ? t.surface2 : "transparent"),
+      transition: "background .12s, color .12s", fontFamily: t.font,
+    }}>
+      <Icon name={item.icon} size={15}/>
+      <span style={{ flex: 1 }}>{item.label}</span>
+      {active && <span style={{ width: 4, height: 4, borderRadius: 999, background: t.teal }}/>}
+    </button>
+  );
 }
 
-// ── Global CSS ───────────────────────────────────────────────────────────────
-if (typeof document !== "undefined" && !document.getElementById("user-profile-styles")) {
-  const s = document.createElement("style");
-  s.id = "user-profile-styles";
-  s.innerHTML = `
-    @keyframes upSpin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
-    }
-    .up-spinner { animation: upSpin 0.8s linear infinite; }
-    .tech-chip { transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
-    .tech-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .location-pill { transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
-    .location-pill:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .modality-card { transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
-    .modality-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-    .sidebar-item { transition: all 0.2s ease; }
-    .sidebar-item:hover { background: #fff !important; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .profile-card-hover { transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
-    .section-card-hover { transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
-    .section-card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.06) !important; }
-    .save-btn-main { transition: all 0.25s ease; }
-    .save-btn-main:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); box-shadow: 0 8px 24px ${TEAL}50 !important; }
-    .save-btn-main:disabled { opacity: 0.6; cursor: not-allowed; }
-    .skip-link:hover { color: ${TEAL} !important; }
-    .lang-entry { transition: all 0.2s ease; }
-    .lang-entry:hover { background: #f8fafc !important; }
-    input[type=range] {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 6px;
-      border-radius: 3px;
-      outline: none;
-      cursor: pointer;
-    }
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: ${TEAL};
-      cursor: pointer;
-      box-shadow: 0 2px 8px ${TEAL}60;
-      border: 3px solid #fff;
-      transition: box-shadow 0.2s ease, transform 0.2s ease;
-    }
-    input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 4px 14px ${TEAL}80; transform: scale(1.1); }
-    input[type=range]::-moz-range-thumb {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: ${TEAL};
-      cursor: pointer;
-      box-shadow: 0 2px 8px ${TEAL}60;
-      border: 3px solid #fff;
-    }
-    @media (max-width: 768px) {
-      .profile-sidebar { display: none !important; }
-      .profile-layout { padding: 20px 16px !important; gap: 0 !important; }
-    }
-    @media (max-width: 480px) {
-      .profile-layout { padding: 16px 12px !important; }
-    }
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
-  `;
-  document.head.appendChild(s);
+/* ---------------------------------------------------------------------------
+ * ProfileHeader
+ * ------------------------------------------------------------------------- */
+function ProfileHeader({ t, profile }) {
+  const initial = (profile.alias || "?").slice(0, 1).toUpperCase();
+  const completion = profile.completion ?? 0;
+  return (
+    <section style={{
+      background: t.surface, border: `1px solid ${t.border}`, borderRadius: t.radius,
+      padding: t.padLg, display: "flex", flexDirection: "column", gap: 18, fontFamily: t.font,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 18 }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 999, flexShrink: 0,
+          background: "linear-gradient(135deg,#00758A 0%,#7c3aed 100%)",
+          color: "#fff", fontSize: 28, fontWeight: 800,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>{initial}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: t.text, letterSpacing: "-0.01em" }}>
+            {profile.alias}
+          </h2>
+          {profile.role && (
+            <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, fontWeight: 600 }}>
+              {profile.role}
+            </div>
+          )}
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12, color: t.textMute, fontWeight: 500 }}>
+            {profile.location && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <Icon name="pin" size={12}/>{profile.location}
+              </span>
+            )}
+            {profile.email && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <Icon name="mail" size={12}/>{profile.email}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          fontSize: 11, fontWeight: 700, marginBottom: 6,
+          letterSpacing: "0.06em", textTransform: "uppercase",
+        }}>
+          <span style={{ color: t.textMute }}>Perfil completado</span>
+          <span style={{ color: completion >= 100 ? t.green : t.teal }}>{completion}%</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 999, background: t.border, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", width: `${completion}%`,
+            background: completion >= 100 ? t.green : t.teal,
+            borderRadius: 999, transition: "width .4s ease",
+          }}/>
+        </div>
+        {completion >= 100 && (
+          <div style={{ marginTop: 10, fontSize: 12, color: t.green, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="check" size={13}/> Perfil completo — el análisis IA será más preciso.
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
-export default function UserProfile({ onProfileSaved, onSkip, onAccountDeleted, addToast, darkMode }) {
+/* ---------------------------------------------------------------------------
+ * SectionCard (anchorable)
+ * ------------------------------------------------------------------------- */
+function SectionCard({ t, id, title, eyebrow, action, children, anchor }) {
+  return (
+    <section ref={anchor} id={id} style={{
+      background: t.surface, border: `1px solid ${t.border}`, borderRadius: t.radius,
+      padding: t.padLg, fontFamily: t.font, scrollMarginTop: 80,
+    }}>
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 12, marginBottom: 16,
+      }}>
+        <div>
+          {eyebrow && <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+            color: t.textMute, textTransform: "uppercase", marginBottom: 4,
+          }}>{eyebrow}</div>}
+          <h3 style={{
+            margin: 0, fontSize: 15, fontWeight: 800, color: t.text,
+            letterSpacing: "-0.005em", display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span style={{ width: 3, height: 14, borderRadius: 2, background: t.teal }}/>
+            {title}
+          </h3>
+        </div>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * StackChip
+ * ------------------------------------------------------------------------- */
+function StackChip({ t, name, onRemove }) {
+  const [hover, hp] = useHover();
+  return (
+    <span {...hp} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "5px 5px 5px 11px", borderRadius: 999,
+      background: hover ? t.tealSoft : (t._dm ? "rgba(0,117,138,0.12)" : "#eaf6f8"),
+      border: `1px solid ${hover ? t.tealLine : (t._dm ? "rgba(0,117,138,0.22)" : "#cce6ec")}`,
+      fontSize: 12, fontWeight: 700, color: t.teal,
+      transition: "background .15s, border-color .15s",
+    }}>
+      {name}
+      {onRemove && (
+        <button type="button" onClick={onRemove} style={{
+          all: "unset", cursor: "pointer", width: 18, height: 18, borderRadius: 999,
+          color: t.teal, opacity: 0.7,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+        }}><Icon name="x" size={11}/></button>
+      )}
+    </span>
+  );
+}
+
+function SuggestChip({ t, name, selected, onClick }) {
+  const [hover, hp] = useHover();
+  return (
+    <button type="button" onClick={onClick} {...hp} style={{
+      all: "unset", cursor: "pointer",
+      padding: "5px 11px", borderRadius: 999,
+      background: selected ? t.tealSoft : (hover ? t.surface2 : "transparent"),
+      border: `1px solid ${selected ? t.tealLine : t.border}`,
+      fontSize: 12, fontWeight: selected ? 700 : 600,
+      color: selected ? t.teal : t.text,
+      transition: "background .12s, border-color .12s",
+    }}>{name}</button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * ModalityCard
+ * ------------------------------------------------------------------------- */
+function ModalityCard({ t, icon, label, selected, onClick }) {
+  const [hover, hp] = useHover();
+  return (
+    <button type="button" onClick={onClick} {...hp} style={{
+      all: "unset", cursor: "pointer", flex: 1, minWidth: 140,
+      padding: "20px 16px", borderRadius: t.radius, textAlign: "center",
+      background: selected ? t.teal : (hover ? t.surface2 : t.surface),
+      border: `1.5px solid ${selected ? t.teal : t.border}`,
+      color: selected ? "#fff" : t.text,
+      transition: "background .15s, border-color .15s, transform .15s",
+      transform: hover && !selected ? "translateY(-1px)" : "none",
+      fontFamily: t.font, display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+    }}>
+      <Icon name={icon} size={20}/>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>{label}</div>
+      {selected && (
+        <div style={{
+          fontSize: 10, fontWeight: 700, opacity: 0.85, letterSpacing: "0.06em",
+          textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4,
+        }}>
+          <Icon name="check" size={11}/> Seleccionado
+        </div>
+      )}
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * LocationPill
+ * ------------------------------------------------------------------------- */
+function LocationPill({ t, name, selected, onClick }) {
+  const [hover, hp] = useHover();
+  return (
+    <button type="button" onClick={onClick} {...hp} style={{
+      all: "unset", cursor: "pointer",
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: "6px 12px", borderRadius: 999,
+      background: selected ? t.tealSoft : (hover ? t.surface2 : t.surface),
+      border: `1px solid ${selected ? t.tealLine : t.border}`,
+      fontSize: 12, fontWeight: selected ? 700 : 600,
+      color: selected ? t.teal : t.text,
+      transition: "background .12s, border-color .12s", fontFamily: t.font,
+    }}>
+      <Icon name="pin" size={11}/>{name}
+      {selected && <Icon name="check" size={11}/>}
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Toggle Switch
+ * ------------------------------------------------------------------------- */
+function Switch({ t, value, onChange }) {
+  return (
+    <button type="button" onClick={() => onChange(!value)} aria-pressed={value} style={{
+      all: "unset", cursor: "pointer",
+      width: 38, height: 22, borderRadius: 999, position: "relative",
+      background: value ? t.teal : (t._dm ? "#334155" : "#cbd5e1"),
+      transition: "background .2s", flexShrink: 0,
+    }}>
+      <span style={{
+        position: "absolute", top: 2, left: value ? 18 : 2,
+        width: 18, height: 18, borderRadius: 999, background: "#fff",
+        transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+      }}/>
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * PasswordField
+ * ------------------------------------------------------------------------- */
+function PasswordField({ t, placeholder, value, onChange }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type={show ? "text" : "password"}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%", padding: "10px 40px 10px 12px", boxSizing: "border-box",
+          background: t.surface, border: `1px solid ${t.border}`,
+          borderRadius: 8, fontSize: 13, color: t.text, fontWeight: 500,
+          outline: "none", fontFamily: t.font,
+        }}
+      />
+      <button type="button" onClick={() => setShow(s => !s)} style={{
+        all: "unset", cursor: "pointer", position: "absolute", right: 10, top: "50%",
+        transform: "translateY(-50%)", color: t.textMute, display: "flex",
+      }}>
+        <Icon name={show ? "eye-off" : "eye"} size={14}/>
+      </button>
+    </div>
+  );
+}
+
+/* ===========================================================================
+ * MAIN — UserProfile (MiPerfil)
+ * ========================================================================= */
+export default function UserProfile({
+  onProfileSaved,
+  onAccountDeleted,
+  onSkip,
+  addToast = () => {},
+  darkMode = false,
+  density = "normal",
+}) {
+  const t = useTokens(darkMode, density);
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+  const [pageLoading, setPageLoading] = useState(true);
+
+  // ── Core profile fields (match API format exactly) ─────────────────────────
   const [email,      setEmail]      = useState("");
   const [alias,      setAlias]      = useState("");
   const [stack,      setStack]      = useState([]);
-  const [experience, setExperience] = useState("");
-  const [idiomas,    setIdiomas]    = useState([{ idioma: "Inglés", nivel: "intermedio" }]);
+  const [stackYears, setStackYears] = useState({});
+  const [experience, setExperience] = useState(0);
+  const [idiomas,    setIdiomas]    = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [modalidad,  setModalidad]  = useState([]);
-  const [search,     setSearch]     = useState("");
-  const [customTech, setCustomTech] = useState("");
-  const [animatingTech, setAnimatingTech] = useState(null);
-  const [loading,    setLoading]    = useState(true);
   const [saving,     setSaving]     = useState(false);
-  const [error,      setError]      = useState(null);
-  const [success,    setSuccess]    = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
+
+  // ── Stack search ──────────────────────────────────────────────────────────
+  const [stackQuery, setStackQuery] = useState("");
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+  const [alertActive,    setAlertActive]    = useState(false);
+  const [alertThreshold, setAlertThreshold] = useState(70);
+  const [alertFrequency, setAlertFrequency] = useState("daily");
+  const [alertSaving,    setAlertSaving]    = useState(false);
+
+  // ── Password change ────────────────────────────────────────────────────────
+  const [pwOpen,      setPwOpen]      = useState(false);
+  const [currentPw,   setCurrentPw]   = useState("");
+  const [newPw,       setNewPw]       = useState("");
+  const [confirmPw,   setConfirmPw]   = useState("");
+  const [pwLoading,   setPwLoading]   = useState(false);
+  const [pwError,     setPwError]     = useState(null);
+
+  // ── Account deletion ──────────────────────────────────────────────────────
+  const [deleteOpen,        setDeleteOpen]        = useState(false);
+  const [deleteCurrentPw,   setDeleteCurrentPw]   = useState("");
+  const [deleteConfirm,     setDeleteConfirm]     = useState("");
+  const [deleteLoading,     setDeleteLoading]     = useState(false);
+  const [deleteError,       setDeleteError]       = useState(null);
+
+  // ── Sidebar scroll tracking ───────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState("info");
+  const refs = {
+    info:     useRef(null),
+    stack:    useRef(null),
+    exp:      useRef(null),
+    prefs:    useRef(null),
+    alerts:   useRef(null),
+    security: useRef(null),
+  };
 
-  // Password state
-  const [pwOpen,       setPwOpen]       = useState(false);
-  const [currentPw,    setCurrentPw]    = useState("");
-  const [newPw,        setNewPw]        = useState("");
-  const [confirmPw,    setConfirmPw]    = useState("");
-  const [pwLoading,    setPwLoading]    = useState(false);
-  const [pwError,      setPwError]      = useState(null);
-  const [pwSuccess,    setPwSuccess]    = useState(false);
-  const [showCurrentPw, setShowCurrentPw] = useState(false);
-  const [showNewPw,     setShowNewPw]     = useState(false);
-
-  // Account deletion state
-  const [deleteOpen,           setDeleteOpen]           = useState(false);
-  const [deleteCurrentPw,      setDeleteCurrentPw]      = useState("");
-  const [deleteConfirmation,   setDeleteConfirmation]   = useState("");
-  const [deleteLoading,        setDeleteLoading]        = useState(false);
-  const [deleteError,          setDeleteError]          = useState(null);
-  const [deleteSuccess,        setDeleteSuccess]        = useState(false);
-
-  // Alert state
-  const [alertData,       setAlertData]       = useState(null);
-  const [alertLoading,    setAlertLoading]    = useState(false);
-  const [alertSaving,     setAlertSaving]     = useState(false);
-  const [alertThreshold,  setAlertThreshold]  = useState(70);
-  const [alertFrequency,  setAlertFrequency]  = useState("daily");
-  const [alertActive,     setAlertActive]     = useState(false);
-
-  const initial = (alias || email).charAt(0).toUpperCase() || "?";
-
-  // Load profile
+  // ── Load profile ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    async function loadProfile() {
+    async function load() {
       try {
-        const data = await getUserProfile();
+        const [data, alertResp] = await Promise.allSettled([
+          getUserProfile(),
+          getMyAlert(),
+        ]);
         if (cancelled) return;
-        setEmail(data.email || "");
-        setAlias(data.alias || data.email?.split("@")[0] || "");
-        if (data.stack?.length)       setStack(data.stack);
-        if (data.anos_experiencia !== undefined && data.anos_experiencia !== null) {
-          setExperience(String(data.anos_experiencia));
+        if (data.status === "fulfilled") {
+          const d = data.value;
+          setEmail(d.email || "");
+          setAlias(d.alias || d.email?.split("@")[0] || "");
+          if (d.stack?.length)       setStack(d.stack);
+          if (d.stack_years)         setStackYears(d.stack_years);
+          if (d.anos_experiencia != null) setExperience(Number(d.anos_experiencia) || 0);
+          if (d.idiomas?.length)     setIdiomas(d.idiomas);
+          if (d.ubicaciones?.length) setUbicaciones(d.ubicaciones);
+          if (d.modalidad?.length)   setModalidad(d.modalidad);
         }
-        if (data.idiomas?.length)     setIdiomas(data.idiomas);
-        if (data.ubicaciones?.length) setUbicaciones(data.ubicaciones);
-        if (data.modalidad?.length)   setModalidad(data.modalidad);
-      } catch {
-        // new user — keep defaults
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          // Load alert config
-          try {
-            const al = await import('../services/api').then(m => m.getMyAlert());
-            if (al?.alert) {
-              setAlertData(al.alert);
-              setAlertThreshold(al.alert.min_score_threshold);
-              setAlertFrequency(al.alert.email_frequency);
-              setAlertActive(al.alert.is_active);
-            }
-          } catch { /* ignore */ }
+        if (alertResp.status === "fulfilled" && alertResp.value?.alert) {
+          const al = alertResp.value.alert;
+          setAlertActive(al.is_active || false);
+          setAlertThreshold(al.min_score_threshold || 70);
+          setAlertFrequency(al.email_frequency || "daily");
         }
+      } catch { /* keep defaults */ }
+      finally {
+        if (!cancelled) setPageLoading(false);
       }
     }
-    loadProfile();
+    load();
     return () => { cancelled = true; };
   }, []);
 
-  // Track active section on scroll
+  // ── Scroll tracking ───────────────────────────────────────────────────────
   useEffect(() => {
-    function handleScroll() {
-      const keys = ["info", "stack", "experience", "preferences", "security"];
-      let active = "info";
-      for (const key of keys) {
-        const el = document.getElementById(`section-${key}`);
-        if (el && el.getBoundingClientRect().top <= 120) active = key;
+    const onScroll = () => {
+      const y = window.scrollY + 120;
+      const order = ["security", "alerts", "prefs", "exp", "stack", "info"];
+      for (const id of order) {
+        const el = refs[id].current;
+        if (el && el.offsetTop <= y) { setActiveSection(id); break; }
       }
-      setActiveSection(prev => prev === active ? prev : active);
-    }
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Completion
-  const completionFields = [
-    { done: stack.length > 0,                              label: "Stack tecnológico" },
-    { done: experience !== "",                             label: "Años de experiencia" },
-    { done: idiomas.filter(l => l.idioma.trim()).length > 0, label: "Idiomas" },
-    { done: ubicaciones.length > 0,                        label: "Ubicaciones" },
-    { done: modalidad.length > 0,                          label: "Modalidad" },
+  function scrollTo(id) {
+    setActiveSection(id);
+    const el = refs[id].current;
+    if (el) window.scrollTo({ top: el.offsetTop - 76, behavior: "smooth" });
+  }
+
+  // ── Derived profile data ──────────────────────────────────────────────────
+  const completion = useMemo(() => computeCompletion({
+    stack, anos_experiencia: experience || null,
+    idiomas, ubicaciones, modalidad,
+  }), [stack, experience, idiomas, ubicaciones, modalidad]);
+
+  const profileHeader = {
+    alias,
+    email,
+    role: stack.slice(0, 3).join(" · ") || "",
+    location: ubicaciones[0] ? `${ubicaciones[0]}, España` : "España",
+    completion,
+  };
+
+  // ── Modalidad helpers ─────────────────────────────────────────────────────
+  const modality = {
+    presencial: modalidad.some(m => m.toLowerCase() === "presencial"),
+    hibrido:    modalidad.some(m => ["híbrido","hibrido"].includes(m.toLowerCase())),
+    remoto:     modalidad.some(m => m.toLowerCase() === "remoto"),
+  };
+
+  function toggleModality(key) {
+    const labels = { presencial: "Presencial", hibrido: "Híbrido", remoto: "Remoto" };
+    const label = labels[key];
+    if (modalidad.some(m => m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") === label.normalize("NFD").replace(/[\u0300-\u036f]/g,""))) {
+      setModalidad(prev => prev.filter(m => m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") !== label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")));
+    } else {
+      setModalidad(prev => [...prev, label]);
+    }
+  }
+
+  // ── Stack helpers ─────────────────────────────────────────────────────────
+  const SUGGESTIONS = [
+    "JavaScript","TypeScript","Python","React","Vue","Angular","Node.js",
+    "Express","FastAPI","Django","Flask","PostgreSQL","MongoDB","Redis",
+    "Docker","Kubernetes","AWS","Azure","GCP","Git","GraphQL","REST APIs",
+    "Java","C#","PHP","Ruby","Swift","Kotlin","Rust","Go","SQL","Power BI",
   ];
-  const completion = Math.round(completionFields.filter(f => f.done).length / completionFields.length * 100);
-  const missingFields = completionFields.filter(f => !f.done);
+  const filteredSugg = useMemo(() => {
+    const q = stackQuery.toLowerCase();
+    return SUGGESTIONS.filter(s => !stack.includes(s) && (q === "" || s.toLowerCase().includes(q)));
+  }, [stackQuery, stack]);
 
-  // Handlers
-  function toggleTech(tech) {
-    setAnimatingTech(tech);
-    setStack(prev => prev.includes(tech) ? prev.filter(t => t !== tech) : [...prev, tech]);
-    setHasChanges(true);
-    setTimeout(() => setAnimatingTech(null), 300);
-  }
-
-  function toggleCiudad(city) {
-    setUbicaciones(prev => prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city]);
-    setHasChanges(true);
-  }
-
-  function toggleModalidad(mod) {
-    setModalidad(prev => prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]);
-    setHasChanges(true);
-  }
-
-  function addCustomTech() {
-    const t = customTech.trim();
-    if (t && !stack.includes(t)) {
-      setAnimatingTech(t);
-      setStack(prev => [...prev, t]);
-      setHasChanges(true);
-      setTimeout(() => setAnimatingTech(null), 300);
-    }
-    setCustomTech("");
-  }
-
-  function addIdioma() {
-    setIdiomas(prev => [...prev, { idioma: "", nivel: "intermedio" }]);
-    setHasChanges(true);
-  }
-
-  function updateIdioma(index, field, value) {
-    setIdiomas(prev => prev.map((lang, i) => i === index ? { ...lang, [field]: value } : lang));
-    setHasChanges(true);
-  }
-
-  function removeIdioma(index) {
-    setIdiomas(prev => prev.filter((_, i) => i !== index));
-    setHasChanges(true);
-  }
-
-  async function handleChangePassword(e) {
-    e.preventDefault();
-    setPwError(null);
-    if (newPw.length < 8) { setPwError("La nueva contraseña debe tener al menos 8 caracteres"); return; }
-    if (newPw !== confirmPw) { setPwError("Las contraseñas no coinciden"); return; }
-    if (newPw === currentPw) { setPwError("La nueva contraseña debe ser diferente a la actual"); return; }
-    setPwLoading(true);
-    try {
-      await changePassword(currentPw, newPw);
-      setPwSuccess(true);
-      setCurrentPw(""); setNewPw(""); setConfirmPw("");
-      addToast?.("Contraseña actualizada correctamente", "success");
-      setTimeout(() => { setPwSuccess(false); setPwOpen(false); }, 2500);
-    } catch (err) {
-      setPwError(err.message);
-    } finally {
-      setPwLoading(false);
+  function toggleStack(name) {
+    const has = stack.includes(name);
+    if (has) {
+      setStack(prev => prev.filter(s => s !== name));
+      setStackYears(prev => { const n = { ...prev }; delete n[name]; return n; });
+    } else {
+      setStack(prev => [...prev, name]);
+      setStackYears(prev => prev[name] != null ? prev : { ...prev, [name]: 1 });
     }
   }
 
+  function setStackYear(name, v) {
+    setStackYears(prev => ({ ...prev, [name]: Number(v) }));
+  }
+
+  // ── Idiomas helpers ────────────────────────────────────────────────────────
+  const languages = useMemo(() => idiomas.map(l => ({
+    code:  getLangCode(l.idioma),
+    name:  l.idioma,
+    level: (l.nivel || "intermedio").toUpperCase(),
+    raw:   l,
+  })), [idiomas]);
+
+  function addLanguage() {
+    setIdiomas(prev => [...prev, { idioma: "Inglés", nivel: "intermedio" }]);
+  }
+
+  function removeLanguage(i) {
+    setIdiomas(prev => prev.filter((_, j) => j !== i));
+  }
+
+  // ── Locations ─────────────────────────────────────────────────────────────
+  const ALL_LOCATIONS = [
+    "Madrid","Barcelona","Valencia","Sevilla","Bilbao",
+    "Málaga","Zaragoza","Murcia","Alicante","Valladolid","A Coruña","Granada",
+  ];
+  const SPAIN = "Toda España";
+
+  function toggleLocation(loc) {
+    if (loc === SPAIN) {
+      setUbicaciones(prev => prev.includes(SPAIN) ? [] : [SPAIN]);
+      return;
+    }
+    setUbicaciones(prev =>
+      prev.includes(loc)
+        ? prev.filter(x => x !== loc)
+        : [...prev.filter(x => x !== SPAIN), loc]
+    );
+  }
+
+  // ── Save profile ──────────────────────────────────────────────────────────
   async function handleSave() {
-    setSaving(true); setError(null);
+    setSaving(true);
     try {
       await updateUserProfile({
         stack,
-        anos_experiencia: experience,
-        idiomas: idiomas.filter(l => l.idioma.trim()),
+        anos_experiencia: String(experience),
+        idiomas: idiomas.filter(l => l.idioma?.trim()),
         ubicaciones,
         modalidad,
+        stack_years: stackYears,
       });
-      setSuccess(true); setHasChanges(false);
       addToast?.("Perfil actualizado correctamente", "success");
-      setTimeout(() => onProfileSaved(), 900);
+      setTimeout(() => onProfileSaved?.(), 900);
     } catch (err) {
-      setError(err.message);
+      addToast?.(err.message || "Error al guardar el perfil", "error");
     } finally {
       setSaving(false);
     }
   }
 
+  // ── Save alerts ───────────────────────────────────────────────────────────
+  async function handleSaveAlert() {
+    setAlertSaving(true);
+    try {
+      if (alertActive) {
+        await upsertMyAlert({ min_score_threshold: alertThreshold, email_frequency: alertFrequency, is_active: true });
+        addToast?.("Alerta guardada correctamente", "success");
+      } else {
+        await deleteMyAlert();
+        addToast?.("Alerta desactivada", "info");
+      }
+    } catch {
+      addToast?.("No se pudo guardar la alerta", "error");
+    } finally {
+      setAlertSaving(false);
+    }
+  }
+
+  // ── Change password ───────────────────────────────────────────────────────
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setPwError(null);
+    if (newPw.length < 8)      { setPwError("Mínimo 8 caracteres"); return; }
+    if (newPw !== confirmPw)   { setPwError("Las contraseñas no coinciden"); return; }
+    if (newPw === currentPw)   { setPwError("La nueva contraseña debe ser diferente"); return; }
+    setPwLoading(true);
+    try {
+      await changePassword(currentPw, newPw);
+      addToast?.("Contraseña actualizada correctamente", "success");
+      setCurrentPw(""); setNewPw(""); setConfirmPw("");
+      setPwOpen(false);
+    } catch (err) {
+      setPwError(err.message || "Error al cambiar contraseña");
+    } finally {
+      setPwLoading(false);
+    }
+  }
+
+  // ── Delete account ────────────────────────────────────────────────────────
   async function handleDeleteAccount(e) {
     e.preventDefault();
     setDeleteError(null);
-
     if (!deleteCurrentPw.trim()) {
       setDeleteError("Introduce tu contraseña actual para confirmar");
       return;
     }
-
-    if (deleteConfirmation.trim().toUpperCase() !== DELETE_ACCOUNT_CONFIRMATION) {
-      setDeleteError(`Debes escribir '${DELETE_ACCOUNT_CONFIRMATION}' para confirmar`);
+    if (deleteConfirm.trim().toUpperCase() !== DELETE_ACCOUNT_CONFIRMATION) {
+      setDeleteError(`Escribe '${DELETE_ACCOUNT_CONFIRMATION}' para confirmar`);
       return;
     }
-
     setDeleteLoading(true);
     try {
-      await deleteAccount(deleteCurrentPw, deleteConfirmation.trim());
-      setDeleteSuccess(true);
+      await deleteAccount(deleteCurrentPw, deleteConfirm.trim());
       addToast?.("Cuenta eliminada correctamente", "success");
       setTimeout(() => onAccountDeleted?.(), 700);
     } catch (err) {
-      setDeleteError(err.message);
+      setDeleteError(err.message || "Error al eliminar la cuenta");
     } finally {
       setDeleteLoading(false);
     }
   }
 
-  function scrollToSection(key) {
-    setActiveSection(key);
-    const el = document.getElementById(`section-${key}`);
-    if (el) {
-      const top = el.getBoundingClientRect().top + window.scrollY - 80;
-      window.scrollTo({ top, behavior: "smooth" });
-    }
-  }
-
-  // Derived
-  const filteredTechs   = TECH_OPTIONS.filter(t => t.toLowerCase().includes(search.toLowerCase()));
-  const unselectedTechs = filteredTechs.filter(t => !stack.includes(t));
-  const sliderNum       = expToNum(experience);
-  const sliderPct       = sliderNum == null ? 0 : (sliderNum / 10) * 100;
-  const sliderBg        = `linear-gradient(to right, ${TEAL} ${sliderPct}%, #e5e7eb ${sliderPct}%)`;
-
-  const dm = darkMode;
-  const dmBg     = dm ? "#1e293b" : "#fff";
-  const dmBorder = dm ? "rgba(255,255,255,0.06)" : "#e8ecf1";
-  const dmText   = dm ? "#f1f5f9" : "#111827";
-  const dmSub    = dm ? "#94a3b8" : "#6b7280";
-  const dmHint   = dm ? "#64748b" : "#9ca3af";
-  const dmInput  = dm ? "#0f172a" : "#fff";
-
-  // Loading
-  if (loading) {
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (pageLoading) {
     return (
-      <div style={{ ...S.page, ...(dm ? { background: "#0f172a" } : {}), display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{
+        minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center",
+        background: t.bg, fontFamily: t.font,
+      }}>
+        <style>{`@keyframes jm-spin{to{transform:rotate(360deg)}}`}</style>
         <div style={{ textAlign: "center" }}>
-          <div className="up-spinner" style={{ width: 36, height: 36, border: "3px solid #e5e7eb", borderTop: `3px solid ${TEAL}`, borderRadius: "50%", margin: "0 auto 16px" }} />
-          <p style={{ fontSize: 15, color: dmSub, margin: 0, fontFamily: typography.family }}>Cargando perfil...</p>
+          <div style={{
+            width: 36, height: 36, borderRadius: "50%",
+            border: `3px solid ${t.border}`, borderTopColor: t.teal,
+            animation: "jm-spin 0.8s linear infinite", margin: "0 auto 16px",
+          }}/>
+          <p style={{ fontSize: 13, color: t.textSub, margin: 0 }}>Cargando perfil…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ ...S.page, ...(dm ? { background: "#0f172a" } : {}) }}>
-      <div className="profile-layout" style={S.layout}>
+    <div style={{
+      minHeight: "100vh", background: t.bg, color: t.text,
+      fontFamily: t.font,
+      WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
+    }}>
+      <main style={{
+        maxWidth: 1280, margin: "0 auto",
+        padding: `${density === "compacta" ? 24 : 36}px 28px ${density === "compacta" ? 36 : 64}px`,
+      }}>
+        {/* HERO */}
+        <section style={{ marginBottom: density === "compacta" ? 20 : 28 }}>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em", color: t.text, lineHeight: 1.15 }}>
+            Mi perfil
+          </h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: t.textSub, fontWeight: 500 }}>
+            Configura tu stack, preferencias y alertas para que el matching IA sea más preciso.
+          </p>
+        </section>
 
-        {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-        <aside className="profile-sidebar" style={S.sidebar}>
-          <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {SIDEBAR_ITEMS.map(({ key, label, Icon }) => {
-              const isActive = activeSection === key;
-              return (
-                <button
-                  key={key}
-                  className="sidebar-item"
-                  onClick={() => scrollToSection(key)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 12,
-                    padding: "12px 16px", borderRadius: 12,
-                    border: "1px solid transparent",
-                    fontSize: 14, fontWeight: isActive ? 600 : 500,
-                    cursor: "pointer", fontFamily: typography.family,
-                    textAlign: "left", width: "100%",
-                    background: isActive ? (dm ? "#1e293b" : "#fff") : "transparent",
-                    color: isActive ? TEAL : (dm ? "#94a3b8" : "#6b7280"),
-                    boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
-                    borderColor: isActive ? (dm ? "rgba(255,255,255,0.06)" : "#e8ecf1") : "transparent",
-                    borderLeft: isActive ? `4px solid ${TEAL}` : "4px solid transparent",
-                  }}
-                >
-                  <Icon /> {label}
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
+        {/* GRID: sidebar + contenido */}
+        <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: t.gapLg, alignItems: "start" }}>
+          <Sidebar t={t} active={activeSection} onSelect={scrollTo}/>
 
-        {/* ── Content ──────────────────────────────────────────────────────── */}
-        <section className="custom-scrollbar" style={S.content}>
+          <div style={{ display: "flex", flexDirection: "column", gap: t.gapLg }}>
 
-          {/* ── Profile Header Card ────────────────────────────────────────── */}
-          <div
-            id="section-info"
-            className="profile-card-hover"
-            style={{
-              ...S.card,
-              backgroundColor: dmBg, borderColor: dmBorder,
-              padding: "28px 32px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-              {/* Avatar */}
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <div style={{
-                  width: 100, height: 100, borderRadius: "50%",
-                  border: "4px solid #fed7aa",
-                  background: dm ? "#44403c" : "#fff7ed",
-                  color: dm ? "#fdba74" : "#ea580c",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 40, fontWeight: 800, fontFamily: typography.family,
-                  userSelect: "none",
-                }}>
-                  {initial}
-                </div>
-                <button style={{
-                  position: "absolute", bottom: 0, right: 0,
-                  width: 30, height: 30, borderRadius: "50%",
-                  background: TEAL, color: "#fff",
-                  border: "2px solid #fff", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                }} title="Editar avatar">
-                  <EditIcon />
-                </button>
-              </div>
-
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: dmText, fontFamily: typography.family, letterSpacing: "-0.02em" }}>
-                  {alias || email.split("@")[0]}
-                </h1>
-                {stack.length > 0 && (
-                  <p style={{ margin: "4px 0 0", fontSize: 16, fontWeight: 600, color: TEAL, fontFamily: typography.family }}>
-                    {stack.slice(0, 3).join(" · ")} Developer
-                  </p>
-                )}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 14, fontSize: 14, fontWeight: 500, color: dmSub }}>
-                  {ubicaciones.length > 0 && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: dmHint }}><PinIcon /></span>
-                      {ubicaciones[0]}, España
-                    </span>
-                  )}
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ color: dmHint }}><MailIcon /></span>
-                    {email}
-                  </span>
-                </div>
-              </div>
+            {/* ── Información personal ───────────────────────────────── */}
+            <div ref={refs.info} id="info" style={{ scrollMarginTop: 80 }}>
+              <ProfileHeader t={t} profile={profileHeader}/>
             </div>
 
-            {/* Completion bar */}
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${dmBorder}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ flex: 1, height: 6, background: dm ? "#334155" : "#e5e7eb", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${completion}%`, background: TEAL, borderRadius: 3, transition: "width 0.5s ease" }} />
-                </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: TEAL, whiteSpace: "nowrap", fontFamily: typography.family }}>
-                  {completion}% completado
-                </span>
-              </div>
-              {completion < 100 && missingFields.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  {missingFields.map(f => (
-                    <span key={f.label} style={{
-                      fontSize: 11, fontWeight: 500, color: dmHint,
-                      background: dm ? "#334155" : "#f1f5f9",
-                      padding: "2px 10px", borderRadius: 10,
-                    }}>
-                      {f.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {completion === 100 && (
-                <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 600, color: "#10b981", fontFamily: typography.family }}>
-                  ✓ Perfil completo — el análisis IA será más preciso
-                </p>
-              )}
-            </div>
-          </div>
+            {/* ── Stack Tecnológico ───────────────────────────────────── */}
+            <SectionCard t={t} title="Stack Tecnológico" eyebrow="Skills &amp; tools"
+              anchor={refs.stack}
+              action={<span style={{
+                fontSize: 11, color: t.textMute, fontWeight: 700,
+                letterSpacing: "0.06em", textTransform: "uppercase",
+              }}>{stack.length} tecnologías</span>}>
 
-          {error   && <div style={{ ...S.feedbackBox, backgroundColor: "#fee2e2", color: "#991b1b", borderColor: "#fecaca" }}>{error}</div>}
-          {success && <div style={{ ...S.feedbackBox, backgroundColor: "#dcfce7", color: "#15803d", borderColor: "#22c55e" }}>✓ Perfil guardado — redirigiendo...</div>}
-
-          {/* ── Stack Tecnológico ───────────────────────────────────────────── */}
-          <div id="section-stack" style={{ marginTop: 32 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
-              <h2 style={{ ...S.sectionTitle, color: dmText }}>Stack Tecnológico</h2>
-              <span style={{ fontSize: 11, fontWeight: 700, color: dmHint, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                SKILLS & TOOLS
-              </span>
-            </div>
-
-            <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24 }}>
-              {/* Selected chips */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
-                {stack.map(tech => (
-                  <span
-                    key={tech}
-                    className="tech-chip"
-                    onClick={() => toggleTech(tech)}
-                    style={{
-                      padding: "8px 16px", borderRadius: 50, fontSize: 13, fontWeight: 600,
-                      background: dm ? "rgba(167,243,208,0.15)" : "rgba(167,243,208,0.4)",
-                      color: dm ? "#34d399" : "#047857",
-                      border: `1px solid ${dm ? "rgba(52,211,153,0.2)" : "rgba(52,211,153,0.3)"}`,
-                      cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8,
-                      fontFamily: typography.family,
-                    }}
-                  >
-                    {tech}
-                    <span style={{ opacity: 0.6, fontSize: 16, lineHeight: 1 }}>×</span>
-                  </span>
+              {/* Current stack chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                {stack.map(s => (
+                  <StackChip key={s} t={t} name={s} onRemove={() => toggleStack(s)}/>
                 ))}
-                <button
-                  onClick={() => document.getElementById("tech-search-input")?.focus()}
-                  style={{
-                    padding: "8px 16px", borderRadius: 50, fontSize: 13, fontWeight: 500,
-                    background: "transparent",
-                    border: `1.5px dashed ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
-                    color: dmSub, cursor: "pointer",
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    fontFamily: typography.family,
-                  }}
-                >
-                  + Añadir tecnología
-                </button>
+                {stack.length === 0 && (
+                  <span style={{
+                    fontSize: 12, color: t.textMute, fontStyle: "italic",
+                  }}>Añade tecnologías usando los chips de abajo</span>
+                )}
               </div>
 
-              {/* Search */}
-              <input
-                id="tech-search-input"
-                type="text"
-                placeholder="Busca React, Python, Node..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ ...S.input, backgroundColor: dmInput, color: dmText, borderColor: dm ? "rgba(255,255,255,0.1)" : "#d1d5db" }}
-              />
+              {/* Search suggestions */}
+              <div style={{ position: "relative", marginBottom: 12 }}>
+                <span style={{
+                  position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",
+                  color: t.textMute, display: "flex",
+                }}><Icon name="search" size={14}/></span>
+                <input type="search" value={stackQuery} onChange={(e) => setStackQuery(e.target.value)}
+                  placeholder="Busca React, Python, Node…"
+                  style={{
+                    width: "100%", padding: "10px 12px 10px 34px", boxSizing: "border-box",
+                    background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8,
+                    fontSize: 13, color: t.text, fontWeight: 500, outline: "none", fontFamily: t.font,
+                  }}/>
+              </div>
 
-              {/* Available techs grid */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, maxHeight: 145, overflowY: "auto", padding: "4px 0" }}>
-                {unselectedTechs.map(tech => (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {filteredSugg.slice(0, 24).map(s => (
+                  <SuggestChip key={s} t={t} name={s}
+                    selected={stack.includes(s)} onClick={() => toggleStack(s)}/>
+                ))}
+                {stackQuery.trim() &&
+                  !stack.includes(stackQuery.trim()) &&
+                  !SUGGESTIONS.some(s => s.toLowerCase() === stackQuery.trim().toLowerCase()) && (
                   <button
-                    key={tech}
-                    className="tech-chip"
-                    onClick={() => toggleTech(tech)}
+                    onClick={() => { toggleStack(stackQuery.trim()); setStackQuery(""); }}
                     style={{
-                      padding: "6px 14px", borderRadius: 50, fontSize: 13, fontWeight: 500,
-                      background: dm ? "#1e293b" : "#fff",
-                      border: `1.5px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
-                      color: dm ? "#94a3b8" : "#6b7280",
-                      cursor: "pointer", fontFamily: typography.family,
+                      padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+                      border: `1.5px dashed ${t.teal}`, background: "transparent", color: t.teal,
+                      cursor: "pointer", fontFamily: t.font, transition: "all 0.15s ease",
                     }}
                   >
-                    {tech}
+                    + Añadir "{stackQuery.trim()}"
                   </button>
-                ))}
-                {search && unselectedTechs.length === 0 && (
-                  <span style={{ fontSize: 13, color: dmHint, fontStyle: "italic", padding: "6px 0" }}>No encontrado — añádelo abajo</span>
                 )}
               </div>
 
-              {/* Custom tech */}
-              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-                <input
-                  type="text"
-                  placeholder="Otra tecnología..."
-                  value={customTech}
-                  onChange={e => setCustomTech(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCustomTech(); } }}
-                  style={{ ...S.input, flex: 1, marginBottom: 0, backgroundColor: dmInput, color: dmText, borderColor: dm ? "rgba(255,255,255,0.1)" : "#d1d5db" }}
-                />
-                <button onClick={addCustomTech} style={{
-                  padding: "10px 20px", fontSize: 13, fontWeight: 600, color: "#fff",
-                  background: TEAL, border: "none", borderRadius: 50,
-                  cursor: "pointer", fontFamily: typography.family, whiteSpace: "nowrap",
-                }}>
-                  + Añadir
-                </button>
+              {/* IA suggestion (purple) */}
+              <div style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "12px 14px", background: t.purpleSoft,
+                border: `1px solid ${t._dm ? "rgba(124,58,237,0.30)" : "rgba(124,58,237,0.18)"}`,
+                borderRadius: t.radiusSm, fontSize: 12, color: t.text, lineHeight: 1.5,
+              }}>
+                <span style={{ color: "#7c3aed", marginTop: 1, display: "flex" }}>
+                  <Icon name="sparkle" size={14}/>
+                </span>
+                <div>
+                  <strong style={{ color: "#7c3aed", fontWeight: 800 }}>Sugerencia IA · </strong>
+                  Añade habilidades complementarias a tu stack para mejorar tu compatibilidad con más ofertas.
+                </div>
               </div>
+            </SectionCard>
 
-              {/* IA Suggestion */}
-              {stack.length >= 2 && (
+            {/* ── Experiencia + Idiomas (2 cols) ───────────────────────── */}
+            <div ref={refs.exp} id="exp" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: t.gapLg, scrollMarginTop: 80 }}>
+
+              {/* Años de experiencia */}
+              <SectionCard t={t} title="Años de experiencia"
+                action={<span style={{
+                  fontSize: 11, color: t.textMute, fontWeight: 700,
+                  letterSpacing: "0.06em", textTransform: "uppercase",
+                }}>Total + por stack</span>}>
+
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+                  <div style={{
+                    fontSize: 48, fontWeight: 800, color: t.teal,
+                    letterSpacing: "-0.04em", lineHeight: 1,
+                  }}>{experience}</div>
+                  <div style={{
+                    fontSize: 12, color: t.textMute, fontWeight: 700,
+                    letterSpacing: "0.06em", textTransform: "uppercase",
+                  }}>{experience === 1 ? "año total" : "años totales"}</div>
+                </div>
+                <input type="range" min="0" max="20" value={experience}
+                  onChange={(e) => setExperience(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: t.teal }}/>
                 <div style={{
-                  background: dm ? "#0f172a" : "#f8fafc",
-                  border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e2e8f0"}`,
-                  borderRadius: 12, padding: 16, display: "flex", alignItems: "flex-start", gap: 12,
+                  display: "flex", justifyContent: "space-between",
+                  marginTop: 6, fontSize: 11, color: t.textMute, fontWeight: 600,
                 }}>
-                  <span style={{ color: TEAL, fontWeight: 700, whiteSpace: "nowrap", fontSize: 13, fontFamily: typography.family }}>IA Suggestion:</span>
-                  <p style={{ margin: 0, fontSize: 13, color: dmSub, lineHeight: 1.5, fontFamily: typography.family }}>
-                    Basado en tu perfil, considera añadir{" "}
-                    <strong style={{ color: dmText }}>Docker</strong> o{" "}
-                    <strong style={{ color: dmText }}>Kubernetes</strong>{" "}
-                    para mejorar tu tasa de compatibilidad en un 15%.
-                  </p>
+                  <span>0</span><span>10</span><span>20+</span>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* ── Experience + Languages Grid ─────────────────────────────────── */}
-          <div id="section-experience" style={{ marginTop: 32, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
-            {/* Experience */}
-            <div>
-              <h2 style={{ ...S.sectionTitle, color: dmText, marginBottom: 16 }}>Años de Experiencia</h2>
-              <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24, minHeight: 180, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-                  <span style={{ fontSize: 48, fontWeight: 800, color: TEAL, lineHeight: 1, letterSpacing: "-2px", fontFamily: typography.family }}>
-                    {sliderNum ?? "—"}
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: dmSub, paddingBottom: 4, fontFamily: typography.family }}>
-                    Años totales
-                  </span>
+                {/* Por tecnología */}
+                <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px dashed ${t.border}` }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    marginBottom: 10,
+                  }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                      color: t.textMute, textTransform: "uppercase",
+                    }}>Por tecnología</div>
+                    <div style={{ fontSize: 11, color: t.textMute, fontWeight: 600 }}>
+                      {stack.length} en tu stack
+                    </div>
+                  </div>
+                  {stack.length === 0 ? (
+                    <div style={{ fontSize: 12, color: t.textMute, fontStyle: "italic", padding: "10px 0" }}>
+                      Añade tecnologías al Stack para indicar tu experiencia con cada una.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
+                      {stack.map(name => {
+                        const v = (stackYears[name] ?? 0);
+                        return (
+                          <div key={name} style={{
+                            display: "grid", gridTemplateColumns: "90px 1fr 50px", gap: 10,
+                            alignItems: "center", padding: "6px 10px",
+                            background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8,
+                          }}>
+                            <span style={{
+                              fontSize: 12, fontWeight: 700, color: t.text,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            }}>{name}</span>
+                            <input type="range" min="0" max="20" value={v}
+                              onChange={(e) => setStackYear(name, e.target.value)}
+                              style={{ width: "100%", accentColor: t.teal }}/>
+                            <span style={{
+                              fontSize: 12, fontWeight: 800, color: t.teal,
+                              textAlign: "right", fontVariantNumeric: "tabular-nums",
+                            }}>{v}{v >= 20 ? "+" : ""} {v === 1 ? "año" : "años"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={10}
-                  value={sliderNum ?? 0}
-                  onChange={e => { setExperience(expFromNum(Number(e.target.value))); setHasChanges(true); }}
-                  style={{ display: "block", width: "100%", marginBottom: 8, background: sliderBg }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: dmHint, fontWeight: 500, fontFamily: typography.family }}>
-                  <span>0</span>
-                  <span>10+</span>
-                </div>
-              </div>
-            </div>
+              </SectionCard>
 
-            {/* Languages */}
-            <div>
-              <h2 style={{ ...S.sectionTitle, color: dmText, marginBottom: 16 }}>Idiomas</h2>
-              <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24, minHeight: 180, display: "flex", flexDirection: "column" }}>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
-                  {idiomas.map((lang, i) => (
-                    <div
-                      key={i}
-                      className="lang-entry"
-                      style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        padding: 12, borderRadius: 10,
-                        background: dm ? "#0f172a" : "#f8fafc",
-                        border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e8ecf1"}`,
-                      }}
-                    >
-                      <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{getLangFlag(lang.idioma)}</span>
+              {/* Idiomas */}
+              <SectionCard t={t} title="Idiomas"
+                action={
+                  <button type="button" onClick={addLanguage} style={{
+                    all: "unset", cursor: "pointer", fontSize: 11, fontWeight: 700,
+                    color: t.teal, letterSpacing: "0.04em", textTransform: "uppercase",
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                  }}><Icon name="plus" size={12}/>Añadir</button>
+                }>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {languages.map((lang, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "10px 12px", background: t.surface2,
+                      border: `1px solid ${t.border}`, borderRadius: 8,
+                    }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, color: t.textMute,
+                        letterSpacing: "0.06em", minWidth: 18,
+                      }}>{lang.code}</span>
                       <select
-                        value={LANGUAGE_PRESETS.includes(lang.idioma) ? lang.idioma : "Otro"}
-                        onChange={e => {
-                          const val = e.target.value;
-                          updateIdioma(i, "idioma", val === "Otro" ? "" : val);
+                        value={lang.name}
+                        onChange={(e) => {
+                          setIdiomas(prev => prev.map((l, j) => j === i ? { ...l, idioma: e.target.value } : l));
                         }}
                         style={{
-                          flex: 1, padding: "4px 8px", fontSize: 14, fontWeight: 600,
-                          border: "none", background: "transparent",
-                          color: dmText, fontFamily: typography.family,
-                          cursor: "pointer", outline: "none", minWidth: 0,
+                          flex: 1, background: "transparent", border: "none", outline: "none",
+                          fontSize: 13, fontWeight: 700, color: t.text, fontFamily: t.font, cursor: "pointer",
                         }}
                       >
-                        {LANGUAGE_PRESETS.map(l => <option key={l} value={l}>{l}</option>)}
-                        <option value="Otro">Otro…</option>
-                      </select>
-                      {!LANGUAGE_PRESETS.includes(lang.idioma) && (
-                        <input
-                          type="text"
-                          placeholder="Nombre"
-                          value={lang.idioma}
-                          onChange={e => updateIdioma(i, "idioma", e.target.value)}
-                          style={{
-                            flex: 1, padding: "4px 8px", fontSize: 13,
-                            border: "none", borderBottom: `1.5px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
-                            background: "transparent", color: dmText, fontFamily: "inherit", outline: "none",
-                          }}
-                        />
-                      )}
-                      <select
-                        value={lang.nivel}
-                        onChange={e => updateIdioma(i, "nivel", e.target.value)}
-                        style={{
-                          padding: "4px 10px", fontSize: 11, fontWeight: 700,
-                          borderRadius: 6, border: "none",
-                          background: dm ? "rgba(186,230,253,0.1)" : "rgba(186,230,253,0.4)",
-                          color: dm ? "#7dd3fc" : "#0369a1",
-                          fontFamily: typography.family, cursor: "pointer",
-                          letterSpacing: "0.03em", textTransform: "uppercase",
-                        }}
-                      >
-                        {LEVEL_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {["Español","Inglés","Francés","Alemán","Italiano","Portugués","Chino","Japonés","Árabe","Ruso"].map(l => (
+                          <option key={l} value={l}>{l}</option>
                         ))}
                       </select>
-                      {idiomas.length > 1 && (
-                        <button
-                          onClick={() => removeIdioma(i)}
-                          style={{
-                            width: 24, height: 24, borderRadius: "50%",
-                            background: dm ? "#334155" : "#e5e7eb",
-                            color: dm ? "#94a3b8" : "#6b7280",
-                            border: "none", cursor: "pointer",
-                            fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
-                            flexShrink: 0, lineHeight: 1,
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
+                      <select
+                        value={lang.raw.nivel}
+                        onChange={(e) => {
+                          setIdiomas(prev => prev.map((l, j) => j === i ? { ...l, nivel: e.target.value } : l));
+                        }}
+                        style={{
+                          background: t.tealSoft, border: `1px solid ${t.tealLine}`, borderRadius: 999,
+                          padding: "3px 8px", fontSize: 10, fontWeight: 800, color: t.teal,
+                          fontFamily: t.font, outline: "none", cursor: "pointer", letterSpacing: "0.04em",
+                        }}
+                      >
+                        {[["basico","BÁSICO"],["intermedio","INTERMEDIO"],["avanzado","AVANZADO"],["nativo","NATIVO"]].map(([v,l]) => (
+                          <option key={v} value={v}>{l}</option>
+                        ))}
+                      </select>
+                      <button type="button" onClick={() => removeLanguage(i)} style={{
+                        all: "unset", cursor: "pointer", color: t.textMute, padding: 2, display: "inline-flex",
+                      }}><Icon name="x" size={12}/></button>
                     </div>
                   ))}
-                </div>
-                <button
-                  onClick={addIdioma}
-                  style={{
-                    width: "100%", marginTop: 12, padding: "10px 0",
-                    background: "transparent", border: "none",
-                    color: TEAL, fontSize: 13, fontWeight: 700,
-                    letterSpacing: "0.05em", cursor: "pointer",
-                    fontFamily: typography.family,
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    borderRadius: 8,
-                  }}
-                  className="skip-link"
-                >
-                  + AÑADIR IDIOMA
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Preferencias de Trabajo ─────────────────────────────────────── */}
-          <div id="section-preferences" style={{ marginTop: 32 }}>
-            <h2 style={{ ...S.sectionTitle, color: dmText, marginBottom: 16 }}>Preferencias de Trabajo</h2>
-
-            <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: "28px 28px 32px" }}>
-              {/* Modality */}
-              <h3 style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: dmHint, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
-                Modalidad de Contrato
-              </h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 32 }}>
-                {MODALIDAD_OPTIONS.map(({ value, emoji, color }) => {
-                  const isOn = modalidad.includes(value);
-                  return (
-                    <div
-                      key={value}
-                      className="modality-card"
-                      onClick={() => toggleModalidad(value)}
-                      style={{
-                        padding: "20px 16px", borderRadius: 12,
-                        border: `2px solid ${isOn ? TEAL : (dm ? "rgba(255,255,255,0.06)" : "#e8ecf1")}`,
-                        background: isOn ? TEAL : (dm ? "#0f172a" : "#fff"),
-                        color: isOn ? "#fff" : (dm ? "#94a3b8" : "#6b7280"),
-                        cursor: "pointer", textAlign: "center",
-                        display: "flex", flexDirection: "column", alignItems: "center",
-                        justifyContent: "center", gap: 10, minHeight: 120,
-                        boxShadow: isOn ? `0 4px 16px ${TEAL}40` : "none",
-                      }}
-                    >
-                      <span style={{ fontSize: 32 }}>{emoji}</span>
-                      <span style={{ fontWeight: 700, fontSize: 15, fontFamily: typography.family }}>{value}</span>
-                      {isOn && (
-                        <span style={{ fontSize: 11, opacity: 0.8, fontFamily: typography.family }}>✓ Seleccionado</span>
-                      )}
+                  {languages.length === 0 && (
+                    <div style={{ fontSize: 12, color: t.textMute, fontStyle: "italic" }}>
+                      Pulsa "Añadir" para incluir tus idiomas.
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Location */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <h3 style={{ margin: 0, fontSize: 11, fontWeight: 700, color: dmHint, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: typography.family }}>
-                  Ubicación Preferida
-                </h3>
-                {ubicaciones.length > 0 && (
-                  <button
-                    onClick={() => { setUbicaciones([]); setHasChanges(true); }}
-                    style={{ fontSize: 12, color: "#ef4444", fontWeight: 500, background: "none", border: "none", cursor: "pointer", fontFamily: typography.family }}
-                  >
-                    Limpiar
-                  </button>
-                )}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {CITY_OPTIONS.map(city => {
-                  const isOn = ubicaciones.includes(city);
-                  return (
-                    <button
-                      key={city}
-                      className="location-pill"
-                      onClick={() => toggleCiudad(city)}
-                      style={{
-                        padding: "8px 16px", borderRadius: 50,
-                        fontSize: 13, fontWeight: 500,
-                        border: `1.5px solid ${isOn ? TEAL : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db")}`,
-                        background: isOn ? TEAL : (dm ? "#0f172a" : "#fff"),
-                        color: isOn ? "#fff" : (dm ? "#94a3b8" : "#374151"),
-                        cursor: "pointer", fontFamily: typography.family,
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        boxShadow: isOn ? `0 2px 8px ${TEAL}30` : "none",
-                      }}
-                    >
-                      <span style={{ color: isOn ? "rgba(255,255,255,0.7)" : (city === "Toda España" ? undefined : "#ef4444"), fontSize: 13 }}>
-                        {city === "Toda España" ? "🇪🇸" : "📍"}
-                      </span>
-                      {city}
-                      {isOn && <span style={{ marginLeft: 2, fontSize: 11 }}>✓</span>}
-                    </button>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              </SectionCard>
             </div>
-          </div>
 
-          {/* ── Seguridad ──────────────────────────────────────────────────── */}
-          {/* ── Alertas de empleo ───────────────────────────────────────────── */}
-          <div id="section-alerts" style={{ marginTop: 32 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
-              <h2 style={{ ...S.sectionTitle, color: dmText }}>Alertas de empleo</h2>
-              <span style={{ fontSize: 11, fontWeight: 700, color: dmHint, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                NOTIFICACIONES
-              </span>
-            </div>
-            <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24 }}>
+            {/* ── Preferencias de Trabajo ─────────────────────────────── */}
+            <SectionCard t={t} title="Preferencias de Trabajo" anchor={refs.prefs}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                color: t.textMute, textTransform: "uppercase", marginBottom: 10,
+              }}>Modalidad de contrato</div>
+              <div style={{ display: "flex", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+                <ModalityCard t={t} icon="building" label="Presencial"
+                  selected={modality.presencial} onClick={() => toggleModality("presencial")}/>
+                <ModalityCard t={t} icon="laptop" label="Híbrido"
+                  selected={modality.hibrido} onClick={() => toggleModality("hibrido")}/>
+                <ModalityCard t={t} icon="home" label="Remoto"
+                  selected={modality.remoto} onClick={() => toggleModality("remoto")}/>
+              </div>
 
-              {/* Toggle on/off */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: t.textMute, textTransform: "uppercase" }}>
+                  Ubicación preferida
+                </span>
+                <button type="button" onClick={() => setUbicaciones([])} style={{
+                  all: "unset", cursor: "pointer", fontSize: 11, fontWeight: 700,
+                  color: t.teal, letterSpacing: "0.04em", textTransform: "uppercase",
+                }}>Limpiar</button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {ALL_LOCATIONS.map(loc => (
+                  <LocationPill key={loc} t={t} name={loc}
+                    selected={ubicaciones.includes(loc)}
+                    onClick={() => toggleLocation(loc)}/>
+                ))}
+                <span style={{ width: 1, alignSelf: "stretch", background: t.border, margin: "0 4px" }}/>
+                <LocationPill t={t} name="Toda España"
+                  selected={ubicaciones.includes(SPAIN)}
+                  onClick={() => toggleLocation(SPAIN)}/>
+              </div>
+            </SectionCard>
+
+            {/* ── Alertas de empleo ────────────────────────────────────── */}
+            <SectionCard t={t} title="Alertas de empleo" eyebrow="Notificaciones" anchor={refs.alerts}>
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
+                padding: "6px 0", marginBottom: 16,
+              }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: dmText, fontFamily: typography.family }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 2 }}>
                     Recibir alertas por email
                   </div>
-                  <div style={{ fontSize: 12, color: dmSub, marginTop: 3, fontFamily: typography.family }}>
-                    Te avisamos cuando aparecen nuevas ofertas que encajan con tu perfil
+                  <div style={{ fontSize: 12, color: t.textMute, fontWeight: 500 }}>
+                    Te avisamos cuando aparezcan nuevas ofertas que encajen con tu perfil.
                   </div>
                 </div>
-                <button
-                  onClick={() => setAlertActive(prev => !prev)}
-                  style={{
-                    width: 52, height: 28, borderRadius: 14,
-                    background: alertActive ? TEAL : (dm ? "#334155" : "#d1d5db"),
-                    border: "none", cursor: "pointer", position: "relative",
-                    transition: "background 0.25s ease", flexShrink: 0,
-                  }}
-                >
-                  <span style={{
-                    position: "absolute", top: 3,
-                    left: alertActive ? 26 : 3,
-                    width: 22, height: 22, borderRadius: "50%",
-                    background: "#fff",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-                    transition: "left 0.25s ease",
-                  }} />
-                </button>
+                <Switch t={t} value={alertActive} onChange={setAlertActive}/>
               </div>
 
               {alertActive && (
-                <>
-                  {/* Threshold slider */}
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <label style={{ fontSize: 13, fontWeight: 700, color: dmText, fontFamily: typography.family }}>
-                        Compatibilidad mínima
-                      </label>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: TEAL, fontFamily: typography.family }}>
-                        {alertThreshold}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={30}
-                      max={95}
-                      step={5}
-                      value={alertThreshold}
-                      onChange={e => setAlertThreshold(Number(e.target.value))}
-                      style={{
-                        display: "block", width: "100%", marginBottom: 6,
-                        background: `linear-gradient(to right, ${TEAL} ${((alertThreshold - 30) / 65) * 100}%, #e5e7eb ${((alertThreshold - 30) / 65) * 100}%)`,
-                      }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: dmHint, fontFamily: typography.family }}>
-                      <span>30% — Más ofertas</span>
-                      <span>95% — Solo las mejores</span>
-                    </div>
-                    <div style={{
-                      marginTop: 10, padding: "8px 12px", borderRadius: 8,
-                      background: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
-                      border: `1px solid ${dm ? "rgba(0,117,138,0.25)" : "rgba(0,117,138,0.15)"}`,
-                      fontSize: 12, color: dm ? "#5eead4" : TEAL, fontFamily: typography.family,
-                    }}>
-                      💡 Solo recibirás emails cuando las nuevas ofertas superen el {alertThreshold}% de compatibilidad con tu perfil.
-                    </div>
-                  </div>
-
-                  {/* Frequency selector */}
-                  <div style={{ marginBottom: 20 }}>
-                    <label style={{ fontSize: 13, fontWeight: 700, color: dmText, display: "block", marginBottom: 8, fontFamily: typography.family }}>
-                      Frecuencia de emails
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: t.textSub, minWidth: 120 }}>
+                      Compatibilidad mín.
                     </label>
-                    <div style={{ display: "flex", gap: 10 }}>
-                      {[
-                        { value: "daily",  label: "📅 Diaria",  desc: "Una vez al día" },
-                        { value: "weekly", label: "📆 Semanal", desc: "Una vez a la semana" },
-                      ].map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setAlertFrequency(opt.value)}
-                          style={{
-                            flex: 1, padding: "12px 14px", borderRadius: 10, cursor: "pointer",
-                            border: `2px solid ${alertFrequency === opt.value ? TEAL : (dm ? "rgba(255,255,255,0.1)" : "#e5e7eb")}`,
-                            background: alertFrequency === opt.value
-                              ? (dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.06)")
-                              : (dm ? "#1e293b" : "#fff"),
-                            textAlign: "center", fontFamily: typography.family,
-                          }}
-                        >
-                          <div style={{ fontSize: 14, fontWeight: 700, color: alertFrequency === opt.value ? TEAL : dmText }}>
-                            {opt.label}
-                          </div>
-                          <div style={{ fontSize: 11, color: dmSub, marginTop: 2 }}>{opt.desc}</div>
-                        </button>
-                      ))}
-                    </div>
+                    <input type="range" min="50" max="95" step="5" value={alertThreshold}
+                      onChange={(e) => setAlertThreshold(Number(e.target.value))}
+                      style={{ flex: 1, accentColor: t.teal }}/>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: t.teal, minWidth: 38, textAlign: "right" }}>
+                      {alertThreshold}%
+                    </span>
                   </div>
-                </>
-              )}
-
-              {/* Last triggered info */}
-              {alertData?.last_triggered_at && (
-                <div style={{ fontSize: 12, color: dmSub, marginBottom: 16, fontFamily: typography.family }}>
-                  Última alerta enviada: {new Date(alertData.last_triggered_at).toLocaleDateString("es-ES", {
-                    day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"
-                  })}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: t.textSub, minWidth: 120 }}>
+                      Frecuencia
+                    </label>
+                    <select value={alertFrequency} onChange={(e) => setAlertFrequency(e.target.value)} style={{
+                      flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8,
+                      padding: "8px 10px", fontSize: 12, fontWeight: 600, color: t.text,
+                      fontFamily: t.font, outline: "none", cursor: "pointer",
+                    }}>
+                      <option value="daily">Diario</option>
+                      <option value="weekly">Semanal</option>
+                    </select>
+                  </div>
                 </div>
               )}
 
-              {/* Save button */}
-              <button
-                onClick={async () => {
-                  setAlertSaving(true);
-                  try {
-                    const res = await upsertMyAlert({
-                      min_score_threshold: alertThreshold,
-                      email_frequency: alertFrequency,
-                      is_active: alertActive,
-                    });
-                    setAlertData(res.alert);
-                    addToast?.("Alerta de empleo guardada", "success");
-                  } catch {
-                    addToast?.("Error al guardar la alerta", "error");
-                  } finally {
-                    setAlertSaving(false);
-                  }
-                }}
-                disabled={alertSaving}
-                className="save-btn-main"
-                style={{
-                  width: "100%", padding: "13px 0", borderRadius: 50,
-                  background: alertSaving ? "#94a3b8" : `linear-gradient(135deg, ${TEAL}, #2563eb)`,
-                  color: "#fff", border: "none", cursor: alertSaving ? "not-allowed" : "pointer",
-                  fontSize: 14, fontWeight: 700, fontFamily: typography.family,
-                  boxShadow: alertSaving ? "none" : `0 4px 14px ${TEAL}50`,
-                }}
-              >
-                {alertSaving ? "Guardando..." : alertActive ? "Guardar alerta" : "Desactivar alertas"}
+              <button type="button" onClick={handleSaveAlert} disabled={alertSaving} style={{
+                all: "unset", cursor: alertSaving ? "default" : "pointer",
+                width: "100%", boxSizing: "border-box",
+                padding: "12px 16px", textAlign: "center", borderRadius: 8,
+                background: alertSaving ? t.border : t.teal, color: alertSaving ? t.textMute : "#fff",
+                fontSize: 13, fontWeight: 700, fontFamily: t.font, transition: "background .15s",
+              }}>
+                {alertSaving ? "Guardando…" : alertActive ? "Guardar alerta" : "Guardar cambios"}
               </button>
-            </div>
-          </div>
+            </SectionCard>
 
+            {/* ── Seguridad ────────────────────────────────────────────── */}
+            <SectionCard t={t} title="Seguridad" anchor={refs.security}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-          <div id="section-security" style={{ marginTop: 32 }}>
-            <h2 style={{ ...S.sectionTitle, color: dmText, marginBottom: 16 }}>Seguridad</h2>
-
-            <div className="section-card-hover" style={{ ...S.card, backgroundColor: dmBg, borderColor: dmBorder, padding: 24 }}>
-              <button
-                type="button"
-                onClick={() => { setPwOpen(o => !o); setPwError(null); setPwSuccess(false); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", background: "none", border: "none",
-                  cursor: "pointer", padding: 0, textAlign: "left",
-                }}
-              >
-                <span style={{ color: TEAL }}><ShieldIcon /></span>
-                <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: dmText, fontFamily: typography.family }}>
-                  Cambiar contraseña
-                </span>
-                <span style={{
-                  fontSize: 11, fontWeight: 600, color: dmHint,
-                  transform: pwOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.25s ease", display: "inline-block",
-                }}>▼</span>
-              </button>
-
-              {pwOpen && (
-                <form onSubmit={handleChangePassword} style={{ marginTop: 20 }}>
-                  {pwError && (
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 8, marginBottom: 14,
-                      backgroundColor: dm ? "#3b1515" : "#ffe4e6",
-                      border: `1px solid ${dm ? "#7f1d1d" : "#fecdd3"}`,
-                      color: dm ? "#fca5a5" : "#be123c", fontSize: 13, fontWeight: 500,
-                    }}>
-                      {pwError}
-                    </div>
-                  )}
-                  {pwSuccess && (
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 8, marginBottom: 14,
-                      backgroundColor: dm ? "#052e16" : "#d1fae5",
-                      border: `1px solid ${dm ? "#166534" : "#6ee7b7"}`,
-                      color: dm ? "#86efac" : "#065f46", fontSize: 13, fontWeight: 600,
-                    }}>
-                      ✓ Contraseña actualizada correctamente
-                    </div>
-                  )}
-
-                  {/* Current password */}
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: dmHint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, fontFamily: typography.family }}>
-                      Contraseña actual
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        type={showCurrentPw ? "text" : "password"}
-                        value={currentPw}
-                        onChange={e => setCurrentPw(e.target.value)}
-                        placeholder="Tu contraseña actual"
-                        required
-                        autoComplete="current-password"
-                        style={{ ...S.input, marginBottom: 0, paddingRight: 44, backgroundColor: dmInput, color: dmText, borderColor: dm ? "rgba(255,255,255,0.1)" : "#d1d5db" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowCurrentPw(v => !v)}
-                        style={{
-                          position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
-                          background: "none", border: "none", cursor: "pointer",
-                          fontSize: 16, color: dmHint, padding: 0,
-                        }}
-                      >
-                        {showCurrentPw ? "🙈" : "👁"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* New password */}
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: dmHint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, fontFamily: typography.family }}>
-                      Nueva contraseña
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        type={showNewPw ? "text" : "password"}
-                        value={newPw}
-                        onChange={e => setNewPw(e.target.value)}
-                        placeholder="Mínimo 8 caracteres"
-                        required
-                        autoComplete="new-password"
-                        style={{ ...S.input, marginBottom: 0, paddingRight: 44, backgroundColor: dmInput, color: dmText, borderColor: dm ? "rgba(255,255,255,0.1)" : "#d1d5db" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPw(v => !v)}
-                        style={{
-                          position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
-                          background: "none", border: "none", cursor: "pointer",
-                          fontSize: 16, color: dmHint, padding: 0,
-                        }}
-                      >
-                        {showNewPw ? "🙈" : "👁"}
-                      </button>
-                    </div>
-                    {newPw.length > 0 && (
-                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: dm ? "#334155" : "#e5e7eb", overflow: "hidden" }}>
-                          <div style={{
-                            height: "100%", borderRadius: 2, transition: "width 0.3s ease, background 0.3s ease",
-                            width: newPw.length >= 12 ? "100%" : newPw.length >= 8 ? "60%" : "30%",
-                            backgroundColor: newPw.length >= 12 ? "#10b981" : newPw.length >= 8 ? "#f59e0b" : "#f43f5e",
-                          }} />
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 600, color: newPw.length >= 12 ? "#10b981" : newPw.length >= 8 ? "#d97706" : "#e11d48" }}>
-                          {newPw.length >= 12 ? "Fuerte" : newPw.length >= 8 ? "Aceptable" : "Débil"}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Confirm password */}
-                  <div style={{ marginBottom: 20 }}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: dmHint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, fontFamily: typography.family }}>
-                      Confirmar nueva contraseña
-                    </label>
-                    <input
-                      type="password"
-                      value={confirmPw}
-                      onChange={e => setConfirmPw(e.target.value)}
-                      placeholder="Repite la nueva contraseña"
-                      required
-                      autoComplete="new-password"
-                      style={{
-                        ...S.input, marginBottom: 0,
-                        backgroundColor: dmInput, color: dmText,
-                        borderColor: confirmPw.length > 0
-                          ? (confirmPw === newPw ? "#10b981" : "#f43f5e")
-                          : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db"),
-                      }}
-                    />
-                    {confirmPw.length > 0 && confirmPw !== newPw && (
-                      <p style={{ margin: "4px 0 0", fontSize: 11, color: "#e11d48" }}>Las contraseñas no coinciden</p>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={pwLoading || pwSuccess}
-                    style={{
-                      width: "100%", padding: "12px 0", borderRadius: 10,
-                      border: "none", color: "#fff", fontSize: 14, fontWeight: 700,
-                      background: pwSuccess ? "#10b981" : TEAL,
-                      cursor: pwLoading || pwSuccess ? "not-allowed" : "pointer",
-                      opacity: pwLoading ? 0.7 : 1, transition: "all 0.25s ease",
-                      fontFamily: typography.family,
-                    }}
-                  >
-                    {pwLoading ? "Actualizando..." : pwSuccess ? "✓ Actualizada" : "Actualizar contraseña"}
-                  </button>
-                </form>
-              )}
-            </div>
-
-            <div
-              className="section-card-hover"
-              style={{
-                ...S.card,
-                marginTop: 18,
-                padding: 24,
-                backgroundColor: dm ? "rgba(127,29,29,0.16)" : "#fff7f7",
-                borderColor: dm ? "rgba(248,113,113,0.28)" : "#fecaca",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteOpen(o => !o);
-                  setDeleteError(null);
-                  setDeleteSuccess(false);
-                }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", background: "none", border: "none",
-                  cursor: "pointer", padding: 0, textAlign: "left",
-                }}
-              >
-                <span style={{ color: "#dc2626" }}><ShieldIcon /></span>
-                <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: dm ? "#fecaca" : "#991b1b", fontFamily: typography.family }}>
-                  Eliminar cuenta
-                </span>
-                <span style={{
-                  fontSize: 11, fontWeight: 600, color: dm ? "#fca5a5" : "#b91c1c",
-                  transform: deleteOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.25s ease", display: "inline-block",
-                }}>▼</span>
-              </button>
-
-              <p style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.6, color: dm ? "#fca5a5" : "#7f1d1d", fontFamily: typography.family }}>
-                Esta acción elimina tu cuenta y también tus favoritas, historial y candidaturas guardadas. No se puede deshacer.
-              </p>
-
-              {deleteOpen && (
-                <form onSubmit={handleDeleteAccount} style={{ marginTop: 18 }}>
-                  <div style={{
-                    padding: "12px 14px",
-                    borderRadius: 10,
-                    marginBottom: 14,
-                    backgroundColor: dm ? "rgba(15,23,42,0.45)" : "#fff",
-                    border: `1px solid ${dm ? "rgba(248,113,113,0.18)" : "#fecaca"}`,
+                {/* Cambiar contraseña */}
+                <div style={{
+                  border: `1px solid ${t.border}`, borderRadius: t.radius, overflow: "hidden",
+                }}>
+                  <button type="button" onClick={() => setPwOpen(o => !o)} style={{
+                    all: "unset", cursor: "pointer", width: "100%",
+                    padding: "14px 18px", display: "flex", alignItems: "center",
+                    justifyContent: "space-between", boxSizing: "border-box", fontFamily: t.font,
                   }}>
-                    <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: dm ? "#fecaca" : "#991b1b", letterSpacing: "0.03em", textTransform: "uppercase", fontFamily: typography.family }}>
-                      Confirmación requerida
-                    </p>
-                    <p style={{ margin: "0 0 6px", fontSize: 13, color: dm ? "#fca5a5" : "#7f1d1d", fontFamily: typography.family }}>
-                      1. Escribe tu contraseña actual.
-                    </p>
-                    <p style={{ margin: 0, fontSize: 13, color: dm ? "#fca5a5" : "#7f1d1d", fontFamily: typography.family }}>
-                      2. Escribe <strong>{DELETE_ACCOUNT_CONFIRMATION}</strong> para confirmar la eliminación.
-                    </p>
-                  </div>
-
-                  {deleteError && (
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 8, marginBottom: 14,
-                      backgroundColor: dm ? "#3b1515" : "#ffe4e6",
-                      border: `1px solid ${dm ? "#7f1d1d" : "#fecdd3"}`,
-                      color: dm ? "#fca5a5" : "#be123c", fontSize: 13, fontWeight: 500,
-                    }}>
-                      {deleteError}
-                    </div>
-                  )}
-
-                  {deleteSuccess && (
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 8, marginBottom: 14,
-                      backgroundColor: dm ? "#052e16" : "#d1fae5",
-                      border: `1px solid ${dm ? "#166534" : "#6ee7b7"}`,
-                      color: dm ? "#86efac" : "#065f46", fontSize: 13, fontWeight: 600,
-                    }}>
-                      ✓ Cuenta eliminada. Cerrando sesión...
-                    </div>
-                  )}
-
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: dmHint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, fontFamily: typography.family }}>
-                      Contraseña actual
-                    </label>
-                    <input
-                      type="password"
-                      value={deleteCurrentPw}
-                      onChange={e => setDeleteCurrentPw(e.target.value)}
-                      placeholder="Introduce tu contraseña"
-                      autoComplete="current-password"
-                      style={{
-                        ...S.input, marginBottom: 0,
-                        backgroundColor: dmInput, color: dmText,
-                        borderColor: dm ? "rgba(255,255,255,0.1)" : "#d1d5db",
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: 18 }}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: dmHint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, fontFamily: typography.family }}>
-                      Escribe {DELETE_ACCOUNT_CONFIRMATION}
-                    </label>
-                    <input
-                      type="text"
-                      value={deleteConfirmation}
-                      onChange={e => setDeleteConfirmation(e.target.value.toUpperCase())}
-                      placeholder={DELETE_ACCOUNT_CONFIRMATION}
-                      style={{
-                        ...S.input, marginBottom: 0,
-                        backgroundColor: dmInput, color: dmText,
-                        borderColor: deleteConfirmation.length > 0
-                          ? (deleteConfirmation === DELETE_ACCOUNT_CONFIRMATION ? "#dc2626" : "#f59e0b")
-                          : (dm ? "rgba(255,255,255,0.1)" : "#d1d5db"),
-                      }}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={deleteLoading || deleteSuccess}
-                    style={{
-                      width: "100%", padding: "12px 0", borderRadius: 10,
-                      border: "none", color: "#fff", fontSize: 14, fontWeight: 700,
-                      background: deleteSuccess ? "#10b981" : "#dc2626",
-                      cursor: deleteLoading || deleteSuccess ? "not-allowed" : "pointer",
-                      opacity: deleteLoading ? 0.75 : 1, transition: "all 0.25s ease",
-                      fontFamily: typography.family,
-                      boxShadow: deleteSuccess ? "none" : "0 10px 24px rgba(220,38,38,0.24)",
-                    }}
-                  >
-                    {deleteLoading ? "Eliminando cuenta..." : deleteSuccess ? "Cuenta eliminada" : "Eliminar mi cuenta"}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 700, color: t.text }}>
+                      <Icon name="shield" size={15}/>Cambiar contraseña
+                    </span>
+                    <span style={{ color: t.textMute, transform: pwOpen ? "rotate(180deg)" : "none", transition: "transform .2s", display: "inline-flex" }}>
+                      <Icon name="chevron" size={14}/>
+                    </span>
                   </button>
-                </form>
-              )}
+                  {pwOpen && (
+                    <form onSubmit={handleChangePassword} style={{ padding: "0 18px 16px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                        <PasswordField t={t} placeholder="Contraseña actual" value={currentPw} onChange={setCurrentPw}/>
+                        <PasswordField t={t} placeholder="Nueva contraseña" value={newPw} onChange={setNewPw}/>
+                        <PasswordField t={t} placeholder="Confirmar contraseña" value={confirmPw} onChange={setConfirmPw}/>
+                        {pwError && (
+                          <p style={{ margin: 0, fontSize: 12, color: t.red, fontWeight: 600 }}>{pwError}</p>
+                        )}
+                        <button type="submit" disabled={pwLoading} style={{
+                          all: "unset", cursor: pwLoading ? "default" : "pointer",
+                          alignSelf: "flex-start", marginTop: 4,
+                          padding: "8px 16px", borderRadius: 8,
+                          background: pwLoading ? t.border : t.teal, color: pwLoading ? t.textMute : "#fff",
+                          fontSize: 12, fontWeight: 700, fontFamily: t.font,
+                        }}>
+                          {pwLoading ? "Actualizando…" : "Actualizar contraseña"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                {/* Eliminar cuenta */}
+                <div style={{
+                  border: `1px solid ${t._dm ? "rgba(239,68,68,0.30)" : "#fecaca"}`,
+                  borderRadius: t.radius, background: t.redSoft, overflow: "hidden",
+                }}>
+                  <button type="button" onClick={() => setDeleteOpen(o => !o)} style={{
+                    all: "unset", cursor: "pointer", width: "100%",
+                    padding: "14px 18px", display: "flex", alignItems: "center",
+                    justifyContent: "space-between", boxSizing: "border-box", fontFamily: t.font,
+                  }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 700, color: t.red }}>
+                      <Icon name="trash" size={15}/>Eliminar cuenta
+                    </span>
+                    <span style={{ color: t.red, transform: deleteOpen ? "rotate(180deg)" : "none", transition: "transform .2s", display: "inline-flex" }}>
+                      <Icon name="chevron" size={14}/>
+                    </span>
+                  </button>
+                  {deleteOpen && (
+                    <form onSubmit={handleDeleteAccount} style={{ padding: "0 18px 16px", fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>
+                      <p style={{ margin: "6px 0 12px" }}>
+                        Esta acción elimina tu cuenta y también tus favoritos, historial y candidaturas.{" "}
+                        <strong style={{ color: t.text }}>No se puede deshacer.</strong>
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <PasswordField t={t} placeholder="Contraseña actual" value={deleteCurrentPw} onChange={setDeleteCurrentPw}/>
+                        <input
+                          type="text"
+                          placeholder={`Escribe ${DELETE_ACCOUNT_CONFIRMATION} para confirmar`}
+                          value={deleteConfirm}
+                          onChange={(e) => setDeleteConfirm(e.target.value)}
+                          style={{
+                            padding: "10px 12px", background: t.surface, border: `1px solid ${t.border}`,
+                            borderRadius: 8, fontSize: 13, color: t.text, fontWeight: 500,
+                            outline: "none", fontFamily: t.font,
+                          }}
+                        />
+                        {deleteError && (
+                          <p style={{ margin: 0, fontSize: 12, color: t.red, fontWeight: 600 }}>{deleteError}</p>
+                        )}
+                        <button type="submit" disabled={deleteLoading} style={{
+                          all: "unset", cursor: deleteLoading ? "default" : "pointer",
+                          alignSelf: "flex-start",
+                          padding: "8px 16px", borderRadius: 8,
+                          background: deleteLoading ? t.border : t.red, color: deleteLoading ? t.textMute : "#fff",
+                          fontSize: 12, fontWeight: 700, fontFamily: t.font,
+                        }}>
+                          {deleteLoading ? "Eliminando…" : "Eliminar mi cuenta"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* ── Footer actions ────────────────────────────────────────── */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "4px 4px 12px",
+            }}>
+              <button type="button" onClick={() => onSkip?.() || (window.location.hash = "dashboard")} style={{
+                all: "unset", cursor: "pointer", fontSize: 12, fontWeight: 600, color: t.textSub,
+              }}>← Volver al inicio</button>
+              <button type="button" onClick={handleSave} disabled={saving} style={{
+                all: "unset", cursor: saving ? "default" : "pointer",
+                padding: "12px 24px", borderRadius: 8,
+                background: saving ? t.border : t.teal, color: saving ? t.textMute : "#fff",
+                fontSize: 13, fontWeight: 700, fontFamily: t.font,
+                display: "inline-flex", alignItems: "center", gap: 6,
+                transition: "background .15s",
+              }}>
+                {saving ? "Guardando…" : "Guardar perfil"} {!saving && <Icon name="arrow" size={13}/>}
+              </button>
             </div>
+
           </div>
-
-          {/* ── Actions ────────────────────────────────────────────────────── */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, paddingBottom: 80 }}>
-            <button
-              onClick={onSkip}
-              className="skip-link"
-              style={{
-                background: "none", border: "none", cursor: "pointer",
-                fontSize: 14, color: dmSub, fontFamily: typography.family,
-                fontWeight: 500, padding: 0,
-              }}
-            >
-              Completar después →
-            </button>
-            <button
-              className="save-btn-main"
-              onClick={handleSave}
-              disabled={saving || success}
-              style={{
-                padding: "14px 40px", fontSize: 15, fontWeight: 700,
-                color: "#fff", background: TEAL,
-                border: "none", borderRadius: 12,
-                cursor: "pointer", fontFamily: typography.family,
-                boxShadow: `0 4px 14px ${TEAL}40`,
-                minWidth: 180,
-              }}
-            >
-              {saving ? "Guardando..." : success ? "✓ Guardado" : "Guardar perfil"}
-            </button>
-          </div>
-
-        </section>
-      </div>
-
-      {/* ── Floating save bar ────────────────────────────────────────────── */}
-      {hasChanges && !success && (
-        <div style={{
-          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
-          backgroundColor: dm ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.95)",
-          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-          border: `1px solid ${dmBorder}`,
-          borderRadius: 14, padding: "10px 24px",
-          display: "flex", alignItems: "center", gap: 16,
-          zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.14)", whiteSpace: "nowrap",
-        }}>
-          <span style={{ fontSize: 13, color: "#d97706", fontWeight: 600, fontFamily: typography.family }}>
-            ● Cambios sin guardar
-          </span>
-          <button
-            className="save-btn-main"
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: "8px 28px", fontSize: 14, fontWeight: 700,
-              color: "#fff", background: TEAL,
-              border: "none", borderRadius: 50,
-              cursor: "pointer", fontFamily: typography.family,
-              boxShadow: `0 2px 10px ${TEAL}40`,
-            }}
-          >
-            Guardar perfil
-          </button>
         </div>
-      )}
+      </main>
+
+      <style>{`
+        @media (max-width: 900px) {
+          .profile-sidebar-col { display: none !important; }
+          .profile-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .exp-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-const S = {
-  page: {
-    minHeight: "100vh",
-    background: "#f8f9fc",
-    fontFamily: typography.family,
-  },
-  layout: {
-    display: "flex",
-    gap: 32,
-    maxWidth: 1200,
-    margin: "0 auto",
-    padding: "32px 24px",
-    alignItems: "flex-start",
-  },
-  sidebar: {
-    width: 260,
-    flexShrink: 0,
-    position: "sticky",
-    top: 80,
-    alignSelf: "flex-start",
-  },
-  content: {
-    flex: 1,
-    minWidth: 0,
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    border: "1px solid #e8ecf1",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-    padding: 24,
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 800,
-    borderLeft: `4px solid ${TEAL}`,
-    paddingLeft: 12,
-    fontFamily: typography.family,
-    letterSpacing: "-0.01em",
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "10px 14px",
-    fontSize: 14,
-    borderRadius: 10,
-    border: "1.5px solid #d1d5db",
-    backgroundColor: "#fff",
-    fontFamily: "inherit",
-    color: "#111827",
-    outline: "none",
-    marginBottom: 12,
-    transition: `border-color ${transition.fast}`,
-  },
-  feedbackBox: {
-    padding: "10px 16px",
-    borderRadius: 10,
-    fontSize: 13,
-    fontWeight: 600,
-    marginTop: 16,
-    border: "1px solid",
-    fontFamily: typography.family,
-  },
-};

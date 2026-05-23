@@ -1,187 +1,451 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getUserProfile, getFavorites, getApplications, getHistory, getAiQuota,
+  getMyAlert, getMarketAnalysis,
 } from "../services/api";
-import { getMyAlert } from "../services/api";
-import { typography, transition } from "../constants/theme";
 
-const TEAL = "#00758A";
-
-function StatCard({ icon, value, label, sub, color, darkMode }) {
-  const dm = darkMode;
-  return (
-    <div style={{
-      background: dm ? "#1e293b" : "#fff",
-      border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
-      borderRadius: 16,
-      padding: "20px 22px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 6,
-      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-    }}>
-      <div style={{ fontSize: 26 }}>{icon}</div>
-      <div style={{
-        fontSize: 32, fontWeight: 800,
-        color: color || (dm ? "#f1f5f9" : "#111827"),
-        lineHeight: 1,
-        fontFamily: typography.family,
-      }}>{value ?? "—"}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#94a3b8" : "#374151", fontFamily: typography.family }}>
-        {label}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af", fontFamily: typography.family }}>{sub}</div>
-      )}
-    </div>
-  );
+/* ---------------------------------------------------------------------------
+ * Tokens — único sitio donde se calculan colores y espacios reactivos
+ * ------------------------------------------------------------------------- */
+function useTokens(darkMode, density) {
+  return useMemo(() => {
+    const dm = !!darkMode;
+    const compact = density === "compacta";
+    return {
+      bg:         dm ? "#0a1120" : "#f8f9fc",
+      surface:    dm ? "#0f172a" : "#ffffff",
+      surface2:   dm ? "#111c30" : "#fbfbfd",
+      text:       dm ? "#e6edf7" : "#0b1220",
+      textSub:    dm ? "#94a3b8" : "#475569",
+      textMute:   dm ? "#64748b" : "#94a3b8",
+      border:     dm ? "#1e293b" : "#e8ebf2",
+      borderSt:   dm ? "#27364d" : "#d8dde7",
+      teal:       "#00758A",
+      tealSoft:   dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.08)",
+      tealLine:   dm ? "rgba(0,117,138,0.40)" : "rgba(0,117,138,0.25)",
+      purple:     "#7c3aed",
+      purpleSoft: dm ? "rgba(124,58,237,0.18)" : "rgba(124,58,237,0.08)",
+      blue:       "#2563eb",
+      green:      "#10b981",
+      greenSoft:  dm ? "rgba(16,185,129,0.16)" : "rgba(16,185,129,0.10)",
+      amber:      "#f59e0b",
+      amberSoft:  dm ? "rgba(245,158,11,0.16)" : "rgba(245,158,11,0.10)",
+      red:        "#ef4444",
+      redSoft:    dm ? "rgba(239,68,68,0.16)" : "rgba(239,68,68,0.08)",
+      shadow:     dm
+        ? "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)"
+        : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.10)",
+      gap:      compact ? 12 : 18,
+      gapLg:    compact ? 16 : 24,
+      pad:      compact ? 16 : 22,
+      padLg:    compact ? 20 : 28,
+      radius:   12,
+      radiusSm: 8,
+      font:     '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      _dm: dm,
+    };
+  }, [darkMode, density]);
 }
 
-function QuickAction({ icon, label, desc, onClick, accent, darkMode }) {
-  const dm = darkMode;
-  const [hovered, setHovered] = useState(false);
+function useHover() {
+  const [hover, setHover] = useState(false);
+  return [hover, {
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+  }];
+}
+
+/* ---------------------------------------------------------------------------
+ * Iconos SVG (1.6px stroke, currentColor)
+ * ------------------------------------------------------------------------- */
+const Icon = ({ name, size = 16, color = "currentColor" }) => {
+  const c = {
+    width: size, height: size, viewBox: "0 0 24 24",
+    fill: "none", stroke: color, strokeWidth: 1.6,
+    strokeLinecap: "round", strokeLinejoin: "round",
+    style: { display: "block", flexShrink: 0 },
+  };
+  switch (name) {
+    case "star":    return <svg {...c}><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.5 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/></svg>;
+    case "clip":    return <svg {...c}><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4v2h6V4M8 10h8M8 14h6"/></svg>;
+    case "search":  return <svg {...c}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.5-3.5"/></svg>;
+    case "sparkle": return <svg {...c}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.5 5.5l2.8 2.8M15.7 15.7l2.8 2.8M18.5 5.5l-2.8 2.8M8.3 15.7l-2.8 2.8"/></svg>;
+    case "doc":     return <svg {...c}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>;
+    case "bell":    return <svg {...c}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>;
+    case "user":    return <svg {...c}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>;
+    case "arrow":   return <svg {...c}><path d="M5 12h14M13 6l6 6-6 6"/></svg>;
+    case "chart":   return <svg {...c}><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>;
+    case "plus":    return <svg {...c}><path d="M12 5v14M5 12h14"/></svg>;
+    case "bulb":    return <svg {...c}><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg>;
+    case "check":   return <svg {...c}><path d="M5 12l5 5 9-11"/></svg>;
+    case "mic":     return <svg {...c}><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10a7 7 0 0 1-14 0M12 19v3M9 22h6"/></svg>;
+    default:        return null;
+  }
+};
+
+/* ---------------------------------------------------------------------------
+ * MetricCard
+ * ------------------------------------------------------------------------- */
+function MetricCard({ t, value, label, sub, icon, accent = "teal", onClick }) {
+  const [hover, hoverProps] = useHover();
+  const accentColor = t[accent] || t.teal;
   return (
     <button
+      type="button"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      {...hoverProps}
       style={{
-        display: "flex", alignItems: "center", gap: 16,
-        padding: "16px 20px",
-        background: hovered
-          ? (dm ? "rgba(255,255,255,0.07)" : "#f8fafc")
-          : (dm ? "#1e293b" : "#fff"),
-        border: `1px solid ${hovered ? accent : (dm ? "rgba(255,255,255,0.07)" : "#e5e7eb")}`,
-        borderRadius: 14, cursor: "pointer", textAlign: "left", width: "100%",
-        transition: `all ${transition.smooth}`,
-        boxShadow: hovered ? "0 4px 16px rgba(0,0,0,0.08)" : "0 1px 3px rgba(0,0,0,0.04)",
+        all: "unset", cursor: onClick ? "pointer" : "default",
+        display: "block",
+        background: t.surface,
+        border: `1px solid ${hover ? t.borderSt : t.border}`,
+        borderRadius: t.radius,
+        padding: t.pad,
+        transition: "border-color .15s, transform .15s, box-shadow .15s",
+        boxShadow: hover ? t.shadow : "none",
+        transform: hover ? "translateY(-1px)" : "none",
+        fontFamily: t.font,
+        textAlign: "left",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       <div style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: `${accent}18`, display: "flex",
-        alignItems: "center", justifyContent: "center",
-        fontSize: 20, flexShrink: 0,
-      }}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 12, color: dm ? "#94a3b8" : "#6b7280", marginTop: 2, fontFamily: typography.family }}>
-          {desc}
-        </div>
+        position: "absolute", top: t.pad, right: t.pad,
+        width: 28, height: 28, borderRadius: 6,
+        background: accent === "purple" ? t.purpleSoft : t.tealSoft,
+        color: accentColor,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Icon name={icon} size={14} color={accentColor}/>
       </div>
-      <span style={{ color: accent, fontSize: 18, flexShrink: 0 }}>→</span>
+      <div style={{
+        fontSize: 28, fontWeight: 800, color: t.text,
+        letterSpacing: "-0.02em", lineHeight: 1, marginBottom: 12,
+      }}>{value}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: t.textMute, fontWeight: 500 }}>{sub}</div>
     </button>
   );
 }
 
-function RecentHistory({ history, darkMode }) {
-  const dm = darkMode;
-  if (!history?.length) return null;
+/* ---------------------------------------------------------------------------
+ * SkillChip — skill faltante con botón "añadir al perfil" (purple = IA)
+ * ------------------------------------------------------------------------- */
+function SkillChip({ t, name, pct, onAdd }) {
+  const [hover, hoverProps] = useHover();
+  return (
+    <span {...hoverProps} style={{
+      display: "inline-flex", alignItems: "center", gap: 8,
+      padding: "5px 5px 5px 11px", borderRadius: 999,
+      background: hover ? t.purpleSoft : (t._dm ? "rgba(124,58,237,0.10)" : "#faf7ff"),
+      border: `1px solid ${hover ? "rgba(124,58,237,0.35)" : (t._dm ? "rgba(124,58,237,0.25)" : "#ede4ff")}`,
+      fontSize: 12, fontWeight: 600, color: t.text,
+      transition: "background .15s, border-color .15s",
+    }}>
+      <span>{name}</span>
+      <span style={{ color: t.textSub, fontWeight: 500 }}>{pct}%</span>
+      <button type="button" onClick={onAdd} style={{
+        all: "unset", cursor: "pointer",
+        width: 20, height: 20, borderRadius: 999,
+        background: t.purple, color: "#fff",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Icon name="plus" size={11} color="#fff"/>
+      </button>
+    </span>
+  );
+}
 
-  const resultColors = {
-    APLICA: "#10b981", QUIZÁ: "#64748b", NO_ENCAJA: "#ef4444",
-  };
-
+/* ---------------------------------------------------------------------------
+ * SkillBar — barra horizontal de demanda de skills
+ * ------------------------------------------------------------------------- */
+function SkillBar({ t, name, pct, owned }) {
   return (
     <div style={{
-      background: dm ? "#1e293b" : "#fff",
-      border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
-      borderRadius: 16, padding: "20px 22px",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+      display: "grid",
+      gridTemplateColumns: "90px 1fr 40px",
+      alignItems: "center", gap: 12, padding: "6px 0",
     }}>
-      <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em",
-        color: dm ? "#64748b" : "#9ca3af", marginBottom: 14, fontFamily: typography.family }}>
-        Últimas búsquedas
+      <div style={{
+        fontSize: 13, fontWeight: owned ? 700 : 500,
+        color: owned ? t.teal : t.textSub,
+        display: "flex", alignItems: "center", gap: 6,
+      }}>
+        {owned && (
+          <span style={{
+            width: 14, height: 14, borderRadius: 999,
+            background: t.tealSoft, color: t.teal,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: 9,
+          }}>✓</span>
+        )}
+        {name}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {history.slice(0, 5).map((h, i) => {
-          const stack = (() => { try { return JSON.parse(h.stack || "[]"); } catch { return []; } })();
-          const aplica = h.num_aplica || 0;
-          const quiza = h.num_quiza || 0;
-          const date = h.created_at
-            ? new Date(h.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })
-            : "";
-          return (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
-              background: dm ? "rgba(255,255,255,0.03)" : "#f8fafc",
-              borderRadius: 10, border: `1px solid ${dm ? "rgba(255,255,255,0.05)" : "#f1f3f5"}`,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: dm ? "#f1f5f9" : "#111827",
-                  fontFamily: typography.family, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {stack.slice(0, 3).join(" · ") || "Búsqueda general"}
-                </div>
-                <div style={{ fontSize: 11, color: dm ? "#64748b" : "#9ca3af", marginTop: 2, fontFamily: typography.family }}>
-                  {date}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {aplica > 0 && (
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
-                    background: "#d1fae5", color: "#15803d" }}>
-                    {aplica} aplica
-                  </span>
-                )}
-                {quiza > 0 && (
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
-                    background: dm ? "rgba(255,255,255,0.08)" : "#f1f5f9", color: dm ? "#94a3b8" : "#6b7280" }}>
-                    {quiza} quizá
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div style={{ height: 6, borderRadius: 999, background: t.border, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${pct}%`,
+          background: owned ? t.teal : (t._dm ? "#334155" : "#cbd5e1"),
+          borderRadius: 999, transition: "width .4s ease",
+        }}/>
       </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: t.textSub, textAlign: "right" }}>{pct}%</div>
     </div>
   );
 }
 
-function AlertBanner({ alert, onManage, darkMode }) {
-  const dm = darkMode;
-  if (!alert || !alert.is_active) return null;
+/* ---------------------------------------------------------------------------
+ * QuickAction — fila de acción rápida
+ * ------------------------------------------------------------------------- */
+function QuickAction({ t, icon, title, sub, onClick, accent = "teal" }) {
+  const [hover, hoverProps] = useHover();
+  const accentColor = accent === "purple" ? t.purple : t.teal;
+  const accentSoft  = accent === "purple" ? t.purpleSoft : t.tealSoft;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      {...hoverProps}
+      style={{
+        all: "unset", cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 12,
+        padding: t.pad - 4,
+        background: t.surface,
+        border: `1px solid ${hover ? t.borderSt : t.border}`,
+        borderRadius: t.radius,
+        transition: "border-color .15s, background .15s, transform .15s",
+        transform: hover ? "translateX(2px)" : "none",
+        fontFamily: t.font,
+      }}
+    >
+      <div style={{
+        width: 34, height: 34, borderRadius: 8,
+        background: accentSoft, color: accentColor,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+      }}>
+        <Icon name={icon} size={16} color={accentColor}/>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 2 }}>{title}</div>
+        <div style={{
+          fontSize: 11, color: t.textMute, fontWeight: 500,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>{sub}</div>
+      </div>
+      <div style={{
+        color: hover ? accentColor : t.textMute,
+        transition: "color .15s, transform .15s",
+        transform: hover ? "translateX(2px)" : "none",
+      }}>
+        <Icon name="arrow" size={14}/>
+      </div>
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * SearchHistoryRow — fila de últimas búsquedas
+ * ------------------------------------------------------------------------- */
+function SearchHistoryRow({ t, item, onClick }) {
+  const [hover, hoverProps] = useHover();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      {...hoverProps}
+      style={{
+        all: "unset", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
+        padding: "14px 16px",
+        background: hover ? t.surface2 : "transparent",
+        borderTop: `1px solid ${t.border}`,
+        transition: "background .12s",
+        fontFamily: t.font,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 2 }}>{item.title}</div>
+        <div style={{ fontSize: 11, color: t.textMute, fontWeight: 500 }}>{item.date}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {item.aplica > 0 && <Pill t={t} variant="green">{item.aplica} aplica</Pill>}
+        {item.quiza  > 0 && <Pill t={t} variant="amber">{item.quiza} quizá</Pill>}
+        {item.no     > 0 && <Pill t={t} variant="red">{item.no} no encaja</Pill>}
+      </div>
+    </button>
+  );
+}
+
+function Pill({ t, variant, children }) {
+  const map = {
+    green: { bg: t.greenSoft, fg: "#047857" },
+    amber: { bg: t.amberSoft, fg: "#b45309" },
+    red:   { bg: t.redSoft,   fg: "#b91c1c" },
+  };
+  const c = map[variant] || map.green;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "3px 9px", borderRadius: 999,
+      background: c.bg, color: t._dm ? "#fff" : c.fg,
+      fontSize: 11, fontWeight: 700, letterSpacing: "0.01em",
+    }}>{children}</span>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Section — card con título y borde
+ * ------------------------------------------------------------------------- */
+function Section({ t, title, eyebrow, action, children, padding = true }) {
+  return (
+    <section style={{
+      background: t.surface,
+      border: `1px solid ${t.border}`,
+      borderRadius: t.radius,
+      overflow: "hidden",
+    }}>
+      {(title || eyebrow) && (
+        <header style={{
+          padding: `${t.pad}px ${t.padLg}px`,
+          borderBottom: padding ? `1px solid ${t.border}` : "none",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        }}>
+          <div>
+            {eyebrow && <div style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+              color: t.textMute, textTransform: "uppercase", marginBottom: 4,
+            }}>{eyebrow}</div>}
+            {title && <div style={{
+              fontSize: 15, fontWeight: 800, color: t.text, letterSpacing: "-0.005em",
+            }}>{title}</div>}
+          </div>
+          {action}
+        </header>
+      )}
+      <div style={padding ? { padding: t.padLg } : null}>{children}</div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * AlertBanner — alerta de empleo activa
+ * ------------------------------------------------------------------------- */
+function AlertBanner({ t, alert, onManage }) {
+  if (!alert?.is_active) return null;
   return (
     <div style={{
-      background: dm ? "rgba(0,117,138,0.15)" : "rgba(0,117,138,0.06)",
-      border: `1px solid ${dm ? "rgba(0,117,138,0.3)" : "rgba(0,117,138,0.2)"}`,
-      borderRadius: 12, padding: "12px 16px",
       display: "flex", alignItems: "center", gap: 12,
+      padding: "10px 16px",
+      background: t.tealSoft, border: `1px solid ${t.tealLine}`,
+      borderRadius: t.radiusSm, marginBottom: t.gapLg,
+      fontFamily: t.font,
     }}>
-      <span style={{ fontSize: 20 }}>🔔</span>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#5eead4" : TEAL, fontFamily: typography.family }}>
-          Alerta activa — Compatibilidad ≥ {alert.min_score_threshold}%
-        </div>
-        <div style={{ fontSize: 11, color: dm ? "#94a3b8" : "#6b7280", fontFamily: typography.family }}>
-          Frecuencia: {alert.email_frequency === "daily" ? "diaria" : "semanal"} ·{" "}
+      <span style={{ color: t.teal, display: "flex" }}><Icon name="bell" size={14} color={t.teal}/></span>
+      <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: t.text }}>
+        Alerta activa — Compatibilidad ≥ {alert.min_score_threshold}%
+        <span style={{ color: t.textMute, fontWeight: 500 }}>
+          {" · "}{alert.email_frequency === "daily" ? "Email diario" : "Email semanal"}
           {alert.last_triggered_at
-            ? `Última alerta: ${new Date(alert.last_triggered_at).toLocaleDateString("es-ES")}`
-            : "Aún sin disparar"}
-        </div>
+            ? ` · Última: ${new Date(alert.last_triggered_at).toLocaleDateString("es-ES")}`
+            : ""}
+        </span>
       </div>
       <button onClick={onManage} style={{
-        background: "none", border: `1px solid ${dm ? "rgba(94,234,212,0.3)" : "rgba(0,117,138,0.3)"}`,
-        borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-        fontSize: 11, fontWeight: 700, color: dm ? "#5eead4" : TEAL, fontFamily: typography.family,
-      }}>
-        Gestionar
-      </button>
+        all: "unset", cursor: "pointer",
+        fontSize: 11, fontWeight: 700, color: t.teal,
+        padding: "4px 10px", borderRadius: 6,
+        border: `1px solid ${t.tealLine}`,
+      }}>Gestionar</button>
     </div>
   );
 }
 
-export default function Dashboard({ darkMode, onNavigate }) {
-  const dm = darkMode;
-  const [profile, setProfile] = useState(null);
-  const [favorites, setFavorites] = useState([]);
+/* ---------------------------------------------------------------------------
+ * InterviewBanner — card destacada de la feature de entrevista
+ * ------------------------------------------------------------------------- */
+function InterviewBanner({ t, onClick }) {
+  const [hover, hoverProps] = useHover();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      {...hoverProps}
+      style={{
+        all: "unset", cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 20,
+        padding: `${t.pad}px ${t.padLg}px`,
+        marginBottom: t.gapLg,
+        borderRadius: t.radius,
+        background: t._dm
+          ? `linear-gradient(135deg, rgba(124,58,237,0.22) 0%, rgba(109,40,217,0.12) 100%)`
+          : `linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)`,
+        border: `1px solid ${hover
+          ? (t._dm ? "rgba(124,58,237,0.55)" : "rgba(124,58,237,0.40)")
+          : (t._dm ? "rgba(124,58,237,0.30)" : "rgba(124,58,237,0.22)")}`,
+        boxShadow: hover
+          ? (t._dm ? "0 4px 24px rgba(124,58,237,0.18)" : "0 4px 20px rgba(124,58,237,0.12)")
+          : "none",
+        transition: "border-color .15s, box-shadow .15s, transform .15s",
+        transform: hover ? "translateY(-1px)" : "none",
+        fontFamily: t.font,
+        textAlign: "left",
+        width: "100%", boxSizing: "border-box",
+      }}
+    >
+      {/* Icono */}
+      <div style={{
+        width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+        background: t._dm ? "rgba(124,58,237,0.25)" : "rgba(124,58,237,0.12)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Icon name="mic" size={22} color={t.purple}/>
+      </div>
+
+      {/* Texto */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: t._dm ? "#c4b5fd" : "#5b21b6" }}>
+            Simula tu entrevista con IA
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+            padding: "2px 7px", borderRadius: 999,
+            background: t.purple, color: "#fff",
+          }}>NUEVO</span>
+        </div>
+        <div style={{ fontSize: 12, color: t._dm ? "#a78bfa" : "#7c3aed", fontWeight: 500, opacity: 0.85 }}>
+          Practica con un entrevistador IA personalizado para cada candidatura. Responde en voz o texto y recibe feedback real.
+        </div>
+      </div>
+
+      {/* Flecha */}
+      <div style={{
+        color: hover ? t.purple : t.textMute,
+        transition: "color .15s, transform .15s",
+        transform: hover ? "translateX(3px)" : "none",
+        flexShrink: 0,
+      }}>
+        <Icon name="arrow" size={16}/>
+      </div>
+    </button>
+  );
+}
+
+/* ===========================================================================
+ * MAIN — Dashboard
+ * ========================================================================= */
+export default function Dashboard({ darkMode = false, addToast = () => {}, onNavigate = () => {}, onRepeatSearch = null, density = "normal" }) {
+  const t = useTokens(darkMode, density);
+
+  const [profile,      setProfile]      = useState(null);
+  const [favorites,    setFavorites]    = useState([]);
   const [applications, setApplications] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [quota, setQuota] = useState(null);
-  const [alert, setAlert] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [history,      setHistory]      = useState([]);
+  const [quota,        setQuota]        = useState(null);
+  const [alert,        setAlert]        = useState(null);
+  const [market,       setMarket]       = useState(null);
+  const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
     Promise.allSettled([
@@ -191,222 +455,414 @@ export default function Dashboard({ darkMode, onNavigate }) {
       getHistory(),
       getAiQuota(),
       getMyAlert(),
-    ]).then(([p, f, a, h, q, al]) => {
-      if (p.status === "fulfilled") setProfile(p.value);
-      if (f.status === "fulfilled") setFavorites(f.value || []);
-      if (a.status === "fulfilled") setApplications(a.value || []);
-      if (h.status === "fulfilled") setHistory(h.value || []);
-      if (q.status === "fulfilled") setQuota(q.value);
+      getMarketAnalysis(),
+    ]).then(([p, f, a, h, q, al, mk]) => {
+      if (p.status  === "fulfilled") setProfile(p.value);
+      if (f.status  === "fulfilled") setFavorites(f.value || []);
+      if (a.status  === "fulfilled") setApplications(a.value || []);
+      if (h.status  === "fulfilled") setHistory(h.value || []);
+      if (q.status  === "fulfilled") setQuota(q.value);
       if (al.status === "fulfilled") setAlert(al.value?.alert);
+      if (mk.status === "fulfilled") setMarket(mk.value);
       setLoading(false);
     });
   }, []);
 
   const stack = profile?.stack || [];
-  const completion = (() => {
+  const userStackLower = Array.isArray(stack) ? stack.map(s => s.toLowerCase()) : [];
+
+  const completion = useMemo(() => {
     const fields = [
-      stack.length > 0,
-      profile?.anos_experiencia != null,
-      profile?.idiomas?.length > 0,
-      profile?.ubicaciones?.length > 0,
-      profile?.modalidad?.length > 0,
+      Array.isArray(stack) ? stack.length > 0 : false,
+      profile?.anos_experiencia != null && profile.anos_experiencia !== "",
+      (profile?.idiomas || []).filter(l => l.idioma?.trim()).length > 0,
+      (profile?.ubicaciones || []).length > 0,
+      (profile?.modalidad || []).length > 0,
     ];
     return Math.round(fields.filter(Boolean).length / fields.length * 100);
-  })();
+  }, [profile, stack]);
 
-  const quotaUsed = quota?.used ?? 0;
-  const quotaLimit = quota?.daily_limit ?? 0;
-  const quotaRemaining = quota?.remaining ?? 0;
+  // Map real market data → design format
+  const marketData = useMemo(() => {
+    if (!market) return null;
+    return {
+      totalOfertas: market.total_offers || 0,
+      missing: (market.skill_gaps || []).map(g => ({ name: g.skill, pct: g.pct })),
+      demand:  (market.skills_demand || []).slice(0, 8).map(s => ({
+        name:  s.skill,
+        pct:   s.pct,
+        owned: userStackLower.some(u =>
+          s.skill.toLowerCase().includes(u) || u.includes(s.skill.toLowerCase())
+        ),
+      })),
+    };
+  }, [market, userStackLower]);
+
+  // Map real history → design format
+  const historyItems = useMemo(() => history.slice(0, 5).map(h => {
+    const st = (() => { try { return JSON.parse(h.stack || "[]"); } catch { return []; } })();
+    const date = h.created_at
+      ? new Date(h.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })
+      : "";
+    return {
+      id:    h.id,
+      title: st.slice(0, 3).join(" · ") || "Búsqueda general",
+      date,
+      aplica: h.num_aplica || 0,
+      quiza:  h.num_quiza  || 0,
+      no:     h.num_no_encaja || 0,
+    };
+  }), [history]);
+
+  // Follow-up reminders (next 7 days + overdue)
+  const upcomingFollowUps = useMemo(() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    return applications
+      .filter(a => a.follow_up_date)
+      .map(a => {
+        const d = new Date(a.follow_up_date + "T00:00:00");
+        const diff = Math.round((d - today) / (1000 * 60 * 60 * 24));
+        return { ...a, diff };
+      })
+      .filter(a => a.diff <= 7)
+      .sort((a, b) => a.diff - b.diff)
+      .slice(0, 5);
+  }, [applications]);
+
+  const metrics = {
+    favoritos:     favorites.length,
+    candidaturas:  applications.length,
+    busquedas:     history.length,
+    restantes:     quota?.remaining ?? 0,
+    cuota:         quota?.daily_limit ?? 0,
+  };
 
   if (loading) {
+    const sk = { background: t._dm ? "rgba(255,255,255,0.06)" : "#e8ecf1", borderRadius: 8 };
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: "50%",
-          border: `3px solid ${dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"}`,
-          borderTopColor: TEAL,
-          animation: "spin 0.8s linear infinite",
-        }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ minHeight: "100vh", background: t.bg, fontFamily: t.font }}>
+        <style>{`@keyframes sk-pulse{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
+        <main style={{
+          maxWidth: 1280, margin: "0 auto",
+          padding: `${density === "compacta" ? 24 : 36}px 28px 64px`,
+          animation: "sk-pulse 1.6s ease-in-out infinite",
+        }}>
+          {/* Hero skeleton */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ ...sk, width: 260, height: 32, marginBottom: 12 }}/>
+            <div style={{ ...sk, width: 380, height: 16 }}/>
+          </div>
+          {/* Metrics row */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: t.gap, marginBottom: t.gapLg }}>
+            {[1,2,3,4].map(i => (
+              <div key={i} style={{
+                ...sk, borderRadius: t.radius, height: 110,
+                background: t._dm ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+              }}/>
+            ))}
+          </div>
+          {/* Two-column layout */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: t.gap }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: t.gap }}>
+              {[140, 100, 160].map((h, i) => (
+                <div key={i} style={{
+                  ...sk, borderRadius: t.radius, height: h,
+                  background: t._dm ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+                }}/>
+              ))}
+            </div>
+            <div style={{
+              ...sk, borderRadius: t.radius, height: 360,
+              background: t._dm ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+            }}/>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: dm ? "#0f172a" : "#f8fafc",
-      fontFamily: typography.family,
+      minHeight: "100vh", background: t.bg, color: t.text,
+      fontFamily: t.font,
+      WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
     }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 60px" }}>
-
-        {/* Header */}
-        <div style={{ marginBottom: 28 }}>
+      <main style={{
+        maxWidth: 1280, margin: "0 auto",
+        padding: `${density === "compacta" ? 24 : 36}px 28px ${density === "compacta" ? 36 : 64}px`,
+      }}>
+        {/* HERO */}
+        <section style={{ marginBottom: density === "compacta" ? 20 : 28 }}>
           <h1 style={{
-            margin: 0, fontSize: 28, fontWeight: 800,
-            color: dm ? "#f1f5f9" : "#111827",
-            letterSpacing: "-0.02em",
-          }}>
-            Hola{profile?.alias ? `, ${profile.alias}` : ""} 👋
-          </h1>
-          <p style={{ margin: "6px 0 0", fontSize: 15, color: dm ? "#94a3b8" : "#6b7280" }}>
-            Aquí tienes un resumen de tu actividad en JobMatch IA
+            margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em",
+            color: t.text, lineHeight: 1.15,
+          }}>Hola{profile?.alias ? `, ${profile.alias}` : ""}</h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: t.textSub, fontWeight: 500 }}>
+            Resumen de tu actividad en JobMatch IA
+            {" · "}{new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}
           </p>
-        </div>
+        </section>
 
-        {/* Alert banner */}
-        <div style={{ marginBottom: 20 }}>
-          <AlertBanner
-            alert={alert}
-            onManage={() => onNavigate?.("perfil")}
-            darkMode={dm}
-          />
-        </div>
+        {/* Alerta activa */}
+        <AlertBanner t={t} alert={alert} onManage={() => onNavigate?.("user-profile")}/>
 
-        {/* Stats grid */}
+        {/* Perfil incompleto */}
+        {completion < 100 && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 16,
+            padding: "14px 18px", marginBottom: t.gapLg,
+            background: t.surface, border: `1px solid ${t.border}`,
+            borderRadius: t.radius, fontFamily: t.font,
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 4 }}>
+                Completa tu perfil — {completion}%
+              </div>
+              <div style={{ height: 5, borderRadius: 999, background: t.border, overflow: "hidden" }}>
+                <div style={{
+                  width: `${completion}%`, height: "100%",
+                  background: t.teal, borderRadius: 999, transition: "width .5s ease",
+                }}/>
+              </div>
+            </div>
+            <button onClick={() => onNavigate?.("user-profile")} style={{
+              all: "unset", cursor: "pointer",
+              padding: "7px 14px", borderRadius: 7,
+              border: `1px solid ${t.tealLine}`, color: t.teal,
+              fontSize: 12, fontWeight: 700, flexShrink: 0,
+            }}>Completar →</button>
+          </div>
+        )}
+
+        {/* MÉTRICAS */}
+        <section style={{
+          display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+          gap: t.gap, marginBottom: t.gapLg,
+        }}>
+          <MetricCard t={t} value={metrics.favoritos}
+            label="Favoritos" sub="Ofertas guardadas" icon="star"
+            onClick={() => onNavigate?.("favoritos")}/>
+          <MetricCard t={t} value={metrics.candidaturas}
+            label="Candidaturas" sub="Procesos activos" icon="clip"
+            onClick={() => onNavigate?.("candidaturas")}/>
+          <MetricCard t={t} value={metrics.busquedas}
+            label="Búsquedas" sub="Análisis realizados" icon="search"
+            onClick={() => onNavigate?.("buscar")}/>
+          <MetricCard t={t} value={metrics.restantes}
+            label="Análisis restantes"
+            sub={metrics.cuota > 0 ? `${metrics.cuota - metrics.restantes}/${metrics.cuota} usados hoy` : "Sin límite"}
+            icon="sparkle" accent="purple"/>
+        </section>
+
+        {/* BANNER — Entrevista IA */}
+        <InterviewBanner t={t} onClick={() => onNavigate?.("candidaturas")}/>
+
+        {/* GRID PRINCIPAL: izquierda + sidebar derecho */}
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 16,
-          marginBottom: 28,
+          gridTemplateColumns: "minmax(0,1fr) 340px",
+          gap: t.gapLg, alignItems: "start",
         }}>
-          <StatCard
-            icon="⭐"
-            value={favorites.length}
-            label="Favoritos guardados"
-            sub="Ofertas marcadas"
-            color={dm ? "#fbbf24" : "#b45309"}
-            darkMode={dm}
-          />
-          <StatCard
-            icon="📋"
-            value={applications.length}
-            label="Candidaturas"
-            sub="Procesos activos"
-            color={dm ? "#60a5fa" : "#1d4ed8"}
-            darkMode={dm}
-          />
-          <StatCard
-            icon="🔍"
-            value={history.length}
-            label="Búsquedas realizadas"
-            sub="Análisis IA completados"
-            color={dm ? "#a78bfa" : "#7c3aed"}
-            darkMode={dm}
-          />
-          <StatCard
-            icon="🤖"
-            value={quotaRemaining > 0 ? quotaRemaining : (quotaLimit > 0 ? "0" : "—")}
-            label="Análisis restantes"
-            sub={quotaLimit > 0 ? `${quotaUsed}/${quotaLimit} usados hoy` : "Cuota disponible"}
-            color={quotaRemaining === 0 && quotaLimit > 0 ? "#ef4444" : TEAL}
-            darkMode={dm}
-          />
-        </div>
+          {/* ---- COLUMNA IZQUIERDA ---- */}
+          <div style={{ display: "flex", flexDirection: "column", gap: t.gapLg }}>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" }}>
-
-          {/* Left column */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-            {/* Profile completion */}
-            {completion < 100 && (
-              <div style={{
-                background: dm ? "#1e293b" : "#fff",
-                border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`,
-                borderRadius: 16, padding: "20px 22px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>
-                    Completa tu perfil
+            {/* Análisis del mercado */}
+            {marketData && (
+              <Section
+                t={t}
+                eyebrow="Powered by IA"
+                title="Análisis del mercado"
+                action={<span style={{ fontSize: 11, color: t.textMute, fontWeight: 600 }}>
+                  Basado en {marketData.totalOfertas.toLocaleString()} ofertas activas
+                </span>}
+              >
+                {marketData.missing.length > 0 && (
+                  <div style={{ marginBottom: 18 }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                      color: t.textMute, textTransform: "uppercase", marginBottom: 10,
+                    }}>Skills con alta demanda que no tienes</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {marketData.missing.map(s => (
+                        <SkillChip key={s.name} t={t} name={s.name} pct={s.pct}
+                          onAdd={() => {
+                            addToast?.(`Añade ${s.name} desde Mi perfil`, "info");
+                            onNavigate?.("user-profile");
+                          }}/>
+                      ))}
+                    </div>
+                    <div style={{
+                      marginTop: 12,
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "10px 12px",
+                      background: t.purpleSoft,
+                      border: `1px solid ${t._dm ? "rgba(124,58,237,0.25)" : "rgba(124,58,237,0.15)"}`,
+                      borderRadius: t.radiusSm,
+                      fontSize: 12, color: t.text, fontWeight: 500,
+                    }}>
+                      <span style={{ color: t.purple, display: "flex" }}><Icon name="bulb" size={14} color={t.purple}/></span>
+                      Añadir estas skills a tu perfil podría abrirte un{" "}
+                      <strong style={{ fontWeight: 700, color: t.purple }}>
+                        {marketData.missing.reduce((max, s) => Math.max(max, s.pct), 0)}%
+                      </strong>{" "}más de ofertas.
+                    </div>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: TEAL }}>{completion}%</span>
+                )}
+
+                <div style={{
+                  fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                  color: t.textMute, textTransform: "uppercase", marginBottom: 8,
+                }}>Demanda de skills en el mercado</div>
+                <div>
+                  {marketData.demand.map(s => <SkillBar key={s.name} t={t} {...s}/>)}
                 </div>
-                <div style={{ height: 8, borderRadius: 999, background: dm ? "#334155" : "#e5e7eb", overflow: "hidden" }}>
-                  <div style={{
-                    width: `${completion}%`, height: "100%", borderRadius: 999,
-                    background: `linear-gradient(90deg, ${TEAL}, #2563eb)`,
-                    transition: "width 0.5s ease",
-                  }} />
-                </div>
-                <p style={{ margin: "10px 0 0", fontSize: 12, color: dm ? "#94a3b8" : "#6b7280", fontFamily: typography.family }}>
-                  Un perfil completo mejora la precisión del análisis IA hasta un 40%.
-                </p>
-                <button
-                  onClick={() => onNavigate?.("configuracion")}
-                  style={{
-                    marginTop: 12, padding: "8px 16px", borderRadius: 50,
-                    background: "none", border: `1.5px solid ${TEAL}`,
-                    color: TEAL, fontWeight: 700, fontSize: 12,
-                    cursor: "pointer", fontFamily: typography.family,
-                  }}
-                >
-                  Completar perfil →
-                </button>
-              </div>
+              </Section>
             )}
 
-            {/* Recent history */}
-            <RecentHistory history={history} darkMode={dm} />
+            {/* Recordatorios próximos */}
+            {upcomingFollowUps.length > 0 && (
+              <Section t={t} eyebrow="Recordatorios" title={null} padding={true}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {upcomingFollowUps.map(a => {
+                    const overdue = a.diff < 0;
+                    const today   = a.diff === 0;
+                    const color   = overdue ? t.red : today ? t.amber : t.teal;
+                    const bg      = overdue ? t.redSoft : today ? t.amberSoft : t.tealSoft;
+                    return (
+                      <button
+                        key={a.id} type="button"
+                        onClick={() => onNavigate?.("candidaturas")}
+                        style={{
+                          all: "unset", cursor: "pointer",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          gap: 12, padding: "10px 14px", borderRadius: t.radiusSm,
+                          background: bg, border: `1px solid ${color}22`,
+                          fontFamily: t.font,
+                        }}
+                      >
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: t.text,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {a.titulo || "Candidatura"}
+                          </span>
+                          <span style={{ fontSize: 11, color: t.textSub }}>{a.empresa || ""}</span>
+                        </div>
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, padding: "3px 10px",
+                          borderRadius: 999, background: color, color: "#fff",
+                          whiteSpace: "nowrap", flexShrink: 0,
+                        }}>
+                          {overdue ? `Vencido ${Math.abs(a.diff)}d` : today ? "Hoy" : `En ${a.diff}d`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Section>
+            )}
+
+            {/* Últimas búsquedas */}
+            {historyItems.length > 0 && (
+              <Section t={t} eyebrow="Últimas búsquedas" title={null} padding={false}>
+                <div>
+                  {historyItems.map(h => (
+                    <SearchHistoryRow key={h.id} t={t} item={h}
+                      onClick={() => onRepeatSearch ? onRepeatSearch() : onNavigate?.("buscar")}/>
+                  ))}
+                </div>
+                {/* Mini trend: aplica evolution */}
+                {historyItems.length >= 2 && (
+                  <div style={{ marginTop: 16, padding: "12px 16px", borderRadius: t.radiusSm,
+                    background: t.surface2, border: `1px solid ${t.border}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textMute,
+                      textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+                      Evolución de encajes
+                    </div>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 40 }}>
+                      {[...historyItems].reverse().map((h) => {
+                        const total = (h.aplica + h.quiza + h.no) || 1;
+                        const pct = Math.round((h.aplica / total) * 100);
+                        return (
+                          <div key={h.id} style={{ flex: 1, display: "flex", flexDirection: "column",
+                            alignItems: "center", gap: 3 }}>
+                            <span style={{ fontSize: 9, color: t.textMute, fontWeight: 600 }}>{pct}%</span>
+                            <div style={{ width: "100%", borderRadius: 3, overflow: "hidden",
+                              height: 24, background: t.border, position: "relative" }}>
+                              <div style={{
+                                position: "absolute", bottom: 0, width: "100%",
+                                height: `${Math.max(8, pct)}%`,
+                                background: pct >= 50 ? t.green : pct >= 25 ? t.amber : t.red,
+                                borderRadius: 3, transition: "height .4s ease",
+                              }}/>
+                            </div>
+                            <span style={{ fontSize: 9, color: t.textMute }}>{h.date}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 10, color: t.textMute, marginTop: 6 }}>
+                      % de ofertas "Aplica" por búsqueda (últimas {historyItems.length})
+                    </div>
+                  </div>
+                )}
+              </Section>
+            )}
+
           </div>
 
-          {/* Right column: Quick actions */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em",
-              color: dm ? "#64748b" : "#9ca3af", marginBottom: 4, fontFamily: typography.family }}>
-              Acciones rápidas
+          {/* ---- COLUMNA DERECHA ---- */}
+          <aside style={{ display: "flex", flexDirection: "column", gap: t.gap, position: "sticky", top: 76 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+              color: t.textMute, textTransform: "uppercase", padding: "0 4px",
+            }}>Acciones rápidas</div>
+
+            <QuickAction t={t} icon="search" title="Buscar por perfil"
+              sub="Matching IA con tu stack" onClick={() => onNavigate?.("buscar")}/>
+            <QuickAction t={t} icon="doc" title="Buscar subiendo CV"
+              sub="Extracción automática + matching" accent="purple"
+              onClick={() => onNavigate?.("cv-buscar")}/>
+            <QuickAction t={t} icon="star" title="Mis favoritos"
+              sub={`${metrics.favoritos} ${metrics.favoritos === 1 ? "oferta guardada" : "ofertas guardadas"}`}
+              onClick={() => onNavigate?.("favoritos")}/>
+            <QuickAction t={t} icon="clip" title="Mis candidaturas"
+              sub="Ver pipeline de estados" onClick={() => onNavigate?.("candidaturas")}/>
+            <QuickAction t={t} icon="mic" title="Simular entrevista IA"
+              sub="Practica para una candidatura real" accent="purple"
+              onClick={() => onNavigate?.("candidaturas")}/>
+            <QuickAction t={t} icon="bell" title="Alertas de empleo"
+              sub={alert?.is_active ? `Activa ≥ ${alert.min_score_threshold}%` : "Sin alerta configurada"}
+              onClick={() => onNavigate?.("user-profile")}/>
+            <QuickAction t={t} icon="user" title="Mi perfil"
+              sub={`Completado ${completion}%`} onClick={() => onNavigate?.("user-profile")}/>
+
+            {/* Tip card */}
+            <div style={{
+              marginTop: 4, padding: t.pad, borderRadius: t.radius,
+              background: t.tealSoft, border: `1px solid ${t.tealLine}`,
+              fontFamily: t.font,
+            }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                fontSize: 11, fontWeight: 800, letterSpacing: "0.08em",
+                color: t.teal, textTransform: "uppercase", marginBottom: 8,
+              }}>
+                <Icon name="bulb" size={13} color={t.teal}/> Tip
+              </div>
+              <div style={{ fontSize: 13, color: t.text, lineHeight: 1.5, fontWeight: 500 }}>
+                Combina la búsqueda por CV + perfil manual para conseguir los mejores resultados del motor IA.
+              </div>
             </div>
-            <QuickAction
-              icon="🔍"
-              label="Buscar ofertas por perfil"
-              desc="Matching IA con tu stack"
-              onClick={() => onNavigate?.("buscar")}
-              accent={TEAL}
-              darkMode={dm}
-            />
-            <QuickAction
-              icon="📄"
-              label="Subir CV y buscar"
-              desc="Análisis ATS + matching"
-              onClick={() => onNavigate?.("cv")}
-              accent="#7c3aed"
-              darkMode={dm}
-            />
-            <QuickAction
-              icon="⭐"
-              label="Mis favoritos"
-              desc={`${favorites.length} ofertas guardadas`}
-              onClick={() => onNavigate?.("favoritos")}
-              accent="#f59e0b"
-              darkMode={dm}
-            />
-            <QuickAction
-              icon="📋"
-              label="Mis candidaturas"
-              desc={`${applications.length} procesos activos`}
-              onClick={() => onNavigate?.("candidaturas")}
-              accent="#3b82f6"
-              darkMode={dm}
-            />
-            <QuickAction
-              icon="🔔"
-              label="Alertas de empleo"
-              desc={alert?.is_active ? `Activa ≥ ${alert.min_score_threshold}%` : "Sin alerta configurada"}
-              onClick={() => onNavigate?.("perfil")}
-              accent={alert?.is_active ? "#10b981" : "#6b7280"}
-              darkMode={dm}
-            />
-          </div>
+          </aside>
         </div>
-      </div>
+      </main>
 
-      {/* Responsive */}
       <style>{`
-        @media (max-width: 768px) {
-          div[style*="grid-template-columns: 1fr 340px"] {
-            grid-template-columns: 1fr !important;
-          }
+        @media (max-width: 1024px) {
+          .dash-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .dash-metrics { grid-template-columns: repeat(2, 1fr) !important; }
         }
       `}</style>
     </div>

@@ -72,6 +72,12 @@ const MAX_FILE_MB = 5;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function decodeHtml(html) {
+  const txt = document.createElement("textarea");
+  txt.innerHTML = html;
+  return txt.value;
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -82,8 +88,18 @@ function tagColor(idx) {
   return TAG_COLORS[idx % TAG_COLORS.length];
 }
 
+function normalizeResultado(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+  if (normalized === "QUIZA") return "QUIZÁ";
+  return String(value || "").trim();
+}
+
 function ScoreBar({ score, resultado, dm }) {
-  const style = RESULT_STYLES[resultado] || RESULT_STYLES.NO_ENCAJA;
+  const style = RESULT_STYLES[normalizeResultado(resultado)] || RESULT_STYLES.NO_ENCAJA;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{
@@ -108,7 +124,7 @@ function ScoreBar({ score, resultado, dm }) {
 // ─── Componente: tarjeta de oferta ───────────────────────────────────────────
 
 function OfferCard({ offer, dm, onSelect }) {
-  const style = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+  const style = RESULT_STYLES[normalizeResultado(offer.resultado)] || RESULT_STYLES.NO_ENCAJA;
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -211,7 +227,7 @@ function OfferCard({ offer, dm, onSelect }) {
 // ─── Componente: modal de detalle de oferta ──────────────────────────────────
 
 function OfferModal({ offer, dm, onClose, onCreateVariant = null, creatingVariant = false }) {
-  const style = RESULT_STYLES[offer.resultado] || RESULT_STYLES.NO_ENCAJA;
+  const style = RESULT_STYLES[normalizeResultado(offer.resultado)] || RESULT_STYLES.NO_ENCAJA;
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -329,9 +345,10 @@ function OfferModal({ offer, dm, onClose, onCreateVariant = null, creatingVarian
         {/* Descripción */}
         {offer.descripcion && (
           <Section title="Descripción" dm={dm}>
-            <p style={{ fontSize: 13, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.7, margin: 0 }}>
-              {offer.descripcion.slice(0, 800)}{offer.descripcion.length > 800 ? "…" : ""}
-            </p>
+            <div
+              style={{ fontSize: 13, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.7 }}
+              dangerouslySetInnerHTML={{ __html: decodeHtml(offer.descripcion || "") }}
+            />
           </Section>
         )}
 
@@ -775,9 +792,9 @@ export default function CVSearch({ addToast, darkMode: dm }) {
   };
 
   const counts = result ? {
-    aplica: result.offers.filter(o => o.resultado === "APLICA").length,
-    quiza: result.offers.filter(o => o.resultado === "QUIZÁ").length,
-    noEncaja: result.offers.filter(o => o.resultado === "NO_ENCAJA").length,
+    aplica: result.offers.filter(o => normalizeResultado(o.resultado) === "APLICA").length,
+    quiza: result.offers.filter(o => normalizeResultado(o.resultado) === "QUIZÁ").length,
+    noEncaja: result.offers.filter(o => normalizeResultado(o.resultado) === "NO_ENCAJA").length,
   } : null;
 
   return (
@@ -938,6 +955,45 @@ export default function CVSearch({ addToast, darkMode: dm }) {
                 Analizar CV y buscar ofertas
               </button>
             )}
+          </div>
+        )}
+
+        {/* ── Cómo funciona (visible solo cuando no hay resultado ni archivo) ── */}
+        {!result && !file && !loading && (
+          <div style={{ maxWidth: 700, margin: "32px auto 0" }}>
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16,
+            }}>
+              {[
+                { icon: "📄", title: "Sube tu CV en PDF", desc: "Acepta cualquier CV en formato PDF de hasta 5 MB." },
+                { icon: "🤖", title: "La IA lo analiza", desc: "Claude extrae tus skills, experiencia y perfil automáticamente." },
+                { icon: "🎯", title: "Ofertas a tu medida", desc: "Recibes un ranking con APLICA / QUIZÁ / NO ENCAJA para cada oferta." },
+              ].map(step => (
+                <div key={step.title} style={{
+                  background: dm ? "rgba(255,255,255,0.04)" : "#fff",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.08)" : "#e8ecf1"}`,
+                  borderRadius: 16, padding: "20px 18px", textAlign: "center",
+                  boxShadow: dm ? "none" : "0 1px 6px rgba(0,0,0,0.05)",
+                }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>{step.icon}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", marginBottom: 6, fontFamily: typography.family }}>
+                    {step.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: dm ? "#64748b" : "#6b7280", lineHeight: 1.6, fontFamily: typography.family }}>
+                    {step.desc}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              marginTop: 16, padding: "12px 18px", borderRadius: 12,
+              background: dm ? "rgba(37,99,235,0.08)" : "rgba(37,99,235,0.05)",
+              border: `1px solid ${dm ? "rgba(37,99,235,0.2)" : "rgba(37,99,235,0.15)"}`,
+              fontSize: 13, color: dm ? "#93c5fd" : "#1d4ed8",
+              fontFamily: typography.family, textAlign: "center",
+            }}>
+              💡 <strong>Tip:</strong> Si tu CV está actualizado obtendrás mejores resultados que buscando solo por stack tecnológico.
+            </div>
           </div>
         )}
 

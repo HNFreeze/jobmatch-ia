@@ -306,6 +306,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ingesta-admin")} style={S.pillButton}>Ingesta</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
+              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("calidad-ia-admin")} style={S.pillButton}>Calidad IA</button>
               <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
               <a
                 href="https://clarity.microsoft.com"
@@ -886,6 +887,65 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 ))
               ) : (
                 <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavia no hay llamadas recientes registradas.</p>
+              )}
+            </div>
+          </div>
+
+          <div id="calidad-ia-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel), marginBottom: 24 }}>
+            <h2 style={{ ...S.sectionTitle, marginBottom: 4, color: dm ? "#f8fafc" : "#111827" }}>Calidad IA (Matching)</h2>
+            <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b", marginBottom: 20 }}>
+              Métricas basadas en el feedback de usuarios sobre los resultados del motor.
+            </p>
+            <div style={S.usageSummary}>
+              <SummaryLine label="Total feedbacks" value={matchingQuality?.total_feedbacks || 0} darkMode={dm} />
+              <SummaryLine label="Precisión" value={`${matchingQuality?.ratio_precision || 0}%`} darkMode={dm} />
+            </div>
+
+            <div style={{
+              marginTop: 14,
+              padding: "12px",
+              borderRadius: 8,
+              backgroundColor: matchingQuality?.interpretacion_level === "good"
+                ? (dm ? "rgba(16,185,129,0.1)" : "#dcfce7")
+                : matchingQuality?.interpretacion_level === "warning"
+                  ? (dm ? "rgba(245,158,11,0.1)" : "#fef3c7")
+                  : (dm ? "rgba(239,68,68,0.1)" : "#fee2e2"),
+              color: matchingQuality?.interpretacion_level === "good"
+                ? "#059669"
+                : matchingQuality?.interpretacion_level === "warning"
+                  ? "#d97706"
+                  : "#dc2626",
+              border: `1px solid ${matchingQuality?.interpretacion_level === "good" ? "rgba(16,185,129,0.2)" : matchingQuality?.interpretacion_level === "warning" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)"}`,
+              fontSize: 14,
+              fontWeight: 600
+            }}>
+              {matchingQuality?.interpretacion || "Sin datos suficientes"}
+            </div>
+
+            <div style={S.subblock}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 12 }}>Distribución por resultado IA</p>
+              {matchingQuality?.distribucion_por_resultado && Object.keys(matchingQuality.distribucion_por_resultado).length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {Object.entries(matchingQuality.distribucion_por_resultado).map(([key, count]) => {
+                    const total = matchingQuality.total_feedbacks || 1;
+                    const percent = Math.round((count / total) * 100);
+                    return (
+                      <div key={key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 90, fontSize: 12, color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>
+                          {key === "APLICA" ? "Aplica" : key === "QUIZA" ? "Quizá" : "No Encaja"}
+                        </div>
+                        <div style={{ flex: 1, height: 8, backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: `${percent}%`, height: "100%", backgroundColor: key === "APLICA" ? "#10b981" : key === "QUIZA" ? "#f59e0b" : "#ef4444" }} />
+                        </div>
+                        <div style={{ width: 40, textAlign: "right", fontSize: 12, color: dm ? "#94a3b8" : "#64748b" }}>
+                          {count}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay feedback de ofertas.</p>
               )}
             </div>
           </div>

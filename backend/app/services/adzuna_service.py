@@ -112,8 +112,9 @@ async def _query_adzuna(
     app_key: str,
     query: str,
     location: Optional[str] = None,
+    page: int = 1,
 ) -> Optional[list]:
-    url = "https://api.adzuna.com/v1/api/jobs/es/search/1"
+    url = f"https://api.adzuna.com/v1/api/jobs/es/search/{page}"
     params = {
         "app_id": app_id,
         "app_key": app_key,
@@ -189,7 +190,7 @@ async def fetch_offers_from_adzuna(
             for location in effective_locations:
                 location_label = location or "toda Espana"
                 for query in queries:
-                    offers = await _query_adzuna(client, app_id, app_key, query, location)
+                    offers = await _query_adzuna(client, app_id, app_key, query, location, page=1)
                     if not offers:
                         log_debug(f"[ADZUNA] sin resultados para '{query}' en '{location_label}', probando fallback")
                         continue
@@ -229,6 +230,63 @@ async def fetch_offers_from_adzuna(
 
     log_debug(f"[ADZUNA] TOTAL combinado: {len(combined)} ofertas ({len(db_offers)} BD + {len(adzuna_offers)} Adzuna)")
     return combined
+
+
+async def fetch_adzuna_page(
+    skills: list[str],
+    locations: Optional[list[str]] = None,
+    page: int = 2,
+) -> Optional[list]:
+    """Obtiene una página específica de Adzuna para 'cargar más' (sin caché DB)."""
+    app_id = os.getenv("ADZUNA_APP_ID")
+    app_key = os.getenv("ADZUNA_APP_KEY")
+    if not app_id or not app_key:
+        return None
+
+    if not locations:
+        effective_locations: list[Optional[str]] = ["Madrid"]
+    elif "Toda España" in locations or "Toda Espana" in locations:
+        effective_locations = [None]
+    else:
+        effective_locations = locations  # type: ignore[assignment]
+
+    queries: list[str] = []
+    if skills:
+        queries.append(" ".join(skills[:4]))
+        if len(skills) > 1:
+            queries.append(skills[0])
+    queries.append("developer")
+
+    seen: set[str] = set()
+    offers: list[dict] = []
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for location in effective_locations[:2]:
+                for query in queries[:2]:
+                    result = await _query_adzuna(client, app_id, app_key, query, location, page=page)
+                    if not result:
+                        continue
+                    for offer in result:
+                        key = (
+                            offer.get("adzuna_id")
+                            or offer.get("redirect_url")
+                            or f"{offer.get('titulo', '')}|{offer.get('empresa', '')}"
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        offers.append(offer)
+                    if offers:
+                        break
+                if offers:
+                    break
+    except Exception as exc:
+        log_debug(f"[ADZUNA] fetch_adzuna_page error (page={page}): {exc}")
+        return None
+
+    log_debug(f"[ADZUNA] fetch_adzuna_page page={page} -> {len(offers)} ofertas")
+    return offers or None
 
 
 def _map_adzuna_to_internal_format(adzuna_results: list) -> list:

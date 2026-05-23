@@ -1,0 +1,41 @@
+{
+  "name": "JobMatch IA",
+  "short_name": "JobMatch",
+  "description": "Matching inteligente de ofertas de empleo con IA — analiza tu perfil y encuentra las ofertas donde realmente encajas.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "lang": "es",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Buscar ofertas",
+      "short_name": "Buscar",
+      "description": "Ir directamente a la búsqueda de ofertas",
+      "url": "/buscar"
+    },
+    {
+      "name": "Mis candidaturas",
+      "short_name": "Candidaturas",
+      "description": "Ver el tablero Kanban de candidaturas",
+      "url": "/candidaturas"
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Ver el resumen de actividad",
+      "url": "/dashboard"
+    }
+  ]
+}
