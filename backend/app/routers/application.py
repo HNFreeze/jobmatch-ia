@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +23,7 @@ class ApplicationCreate(BaseModel):
 class ApplicationUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
+    follow_up_date: Optional[date] = None
 
 class ApplicationOut(BaseModel):
     id: int
@@ -33,6 +34,7 @@ class ApplicationOut(BaseModel):
     url: Optional[str] = ""
     status: str
     notes: Optional[str]
+    follow_up_date: Optional[date] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -49,6 +51,7 @@ def _serialize_app(db_app: Application) -> dict:
         "url": db_app.url or "",
         "status": db_app.status,
         "notes": db_app.notes,
+        "follow_up_date": db_app.follow_up_date.isoformat() if db_app.follow_up_date else None,
         "created_at": db_app.created_at.isoformat() if db_app.created_at else None,
         "updated_at": db_app.updated_at.isoformat() if db_app.updated_at else None,
     }
@@ -112,6 +115,8 @@ def update_application(
         db_app.status = app_data.status
     if app_data.notes is not None:
         db_app.notes = app_data.notes
+    if "follow_up_date" in app_data.model_fields_set:
+        db_app.follow_up_date = app_data.follow_up_date
         
     db_app.updated_at = datetime.utcnow()
     

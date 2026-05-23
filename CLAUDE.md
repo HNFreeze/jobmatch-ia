@@ -12,7 +12,7 @@ Full-stack TFM (Trabajo de Fin de Máster) app: AI-powered job matching and CV i
 
 ### Backend (`backend/`)
 - **FastAPI** + **SQLAlchemy** + **PostgreSQL** (psycopg2-binary)
-- **Alembic** for migrations — current head: `w0x2z4b6d8f0`
+- **Alembic** for migrations — current head: `e5f6a7b8c9d0`
 - **Anthropic SDK** (Claude API) — model: `claude-haiku-4-5-20251001` for most calls
 - **fpdf2** for PDF generation (Latin-1 encoding — preserve á,é,í,ó,ú,ñ)
 - Dependencies: `requirements.txt` (no pip-tools, no lockfile)
@@ -58,12 +58,28 @@ Full-stack TFM (Trabajo de Fin de Máster) app: AI-powered job matching and CV i
 - `sergiuswor@gmail.com` is super admin: unlimited quota, `is_super_admin=True`, `is_admin=False` (no admin panel)
 - Regular users: `daily_ai_quota` field, enforced per action type
 
+### Matching & Interview
+- Motor de matching: `MATCH_ENGINE_VERSION = "v8_synonyms"` — incrementar al modificar la lógica de scoring en `matching_service.py`.
+- Módulo de Interview (`app/routers/interview.py`, `app/services/interview_service.py`): gestiona simulaciones.
+- ElevenLabs: solo se usa en `interview_service.py` para TTS de la entrevista simulada.
+
+### Interview module (`app/routers/interview.py`, `app/services/interview_service.py`)
+- Simulates a voice interview with Claude as "Alex" (HR interviewer) and ElevenLabs for TTS
+- `InterviewSession` model: links to `application_id`, stores conversation history as JSON, status, feedback JSON
+- Flow: `POST /api/interview/start` → `POST /api/interview/{id}/message` → `POST /api/interview/{id}/end`
+- Claude uses `claude-haiku-4-5-20251001` for conversation + feedback generation
+- ElevenLabs `eleven_multilingual_v2` voice model, voice Adam — audio returned as base64 mp3
+- Quota: 1 interview per user per day, tracked in `AIDailyUsage` via `interview_count`
+- Web Speech API (`SpeechRecognition`) used on frontend for user voice input (Chrome/Edge only)
+
 ### Frontend patterns
 - Dark mode: `dm` boolean prop passed down from App
 - Colors: `#7c3aed` (purple primary), `#2563eb` (blue), `#10b981` (green), `#ef4444` (red)
 - Modals: `position: fixed, inset: 0, zIndex: 9999`, scroll container wrapping the card
 - No `alert()` for non-critical errors — use `addToast(msg, "error")`
 - API errors: `err?.detail || err?.message || fallback`
+- **Motor de matching**: `MATCH_ENGINE_VERSION = v8_synonyms` — incrementar al modificar la lógica de scoring
+- **ElevenLabs**: solo se usa en `interview_service.py` para TTS de la entrevista simulada; no invocar desde otros servicios
 
 ---
 
@@ -72,9 +88,15 @@ Full-stack TFM (Trabajo de Fin de Máster) app: AI-powered job matching and CV i
 df5d7554d95f → initial
 ...
 v9w1y3a5c7e9 → cv_module_upgrade
-w0x2z4b6d8f0 → cv_structured (CURRENT HEAD)
+w0x2z4b6d8f0 → cv_structured
+x1y3z5a7c9e1 → cv_offer_variants
+y2a4c6e8g0i2 → job_offer_source_metadata
+z3b5d7f9h1j3 → job_ingestion_runs
+a1b2c3d4e5f6 → add_alerts_and_feedback
+d4e5f6a7b8c9 → add_follow_up_date
+e5f6a7b8c9d0 → add_interview_feature (CURRENT HEAD)
 ```
-Next migration must set `down_revision = "w0x2z4b6d8f0"`.
+Next migration must set `down_revision = "e5f6a7b8c9d0"`.
 
 ---
 

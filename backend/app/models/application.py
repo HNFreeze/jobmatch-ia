@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, UniqueConstraint
 from app.database import Base
 
 class Application(Base):
@@ -13,7 +13,8 @@ class Application(Base):
     empresa     = Column(String(300))
     url         = Column(String(2000))
     status      = Column(String(50), default="guardada")  # guardada, aplicada, entrevista, oferta, descartada
-    notes       = Column(Text, nullable=True)
+    notes            = Column(Text, nullable=True)
+    follow_up_date   = Column(Date, nullable=True)
     created_at  = Column(DateTime, default=datetime.utcnow)
     updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

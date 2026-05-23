@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTheme } from "../context/ThemeContext";
 import {
   gradients,
   typography,
@@ -22,7 +23,13 @@ export default function Navbar({
   progressDone, profileComplete, hasSearched,
   profileCompletion = 0,
   isAdmin = false,
+  aiQuota = null,
+  unreadNotifications = 0,
+  onMarkAllNotificationsRead,
 }) {
+  const { darkMode: ctxDarkMode } = useTheme();
+  // Use prop if provided, otherwise fall back to context value
+  const resolvedDarkMode = darkMode !== undefined ? darkMode : ctxDarkMode;
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const navLinks = isAdmin
@@ -40,7 +47,7 @@ export default function Navbar({
     onNavigate(key);
   }
 
-  const dm = darkMode;
+  const dm = resolvedDarkMode;
 
   return (
     <>
@@ -109,6 +116,52 @@ export default function Navbar({
 
           {/* Right controls */}
           <div style={S.rightControls}>
+            {/* AI quota pill */}
+            {aiQuota != null && (
+              <div
+                title={`${aiQuota.used} de ${aiQuota.daily_limit} análisis IA usados hoy`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "4px 10px", borderRadius: 999,
+                  fontSize: 12, fontWeight: 700,
+                  background: dm ? "rgba(124,58,237,0.15)" : "rgba(124,58,237,0.08)",
+                  color: aiQuota.remaining === 0 ? "#ef4444" : "#7c3aed",
+                  border: `1px solid ${aiQuota.remaining === 0 ? "rgba(239,68,68,0.3)" : "rgba(124,58,237,0.2)"}`,
+                  cursor: "default", userSelect: "none",
+                  fontFamily: typography.family,
+                }}
+              >
+                <span style={{ fontSize: 11 }}>✦</span>
+                {aiQuota.remaining}/{aiQuota.daily_limit}
+              </div>
+            )}
+
+            {/* Notification bell */}
+            {unreadNotifications > 0 && (
+              <button
+                onClick={onMarkAllNotificationsRead}
+                title={`${unreadNotifications} notificación${unreadNotifications !== 1 ? "es" : ""} sin leer — clic para marcar como leídas`}
+                style={{
+                  ...S.darkToggle,
+                  background: dm ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
+                  color: dm ? "#f1f5f9" : "#374151",
+                  position: "relative",
+                }}
+              >
+                🔔
+                <span style={{
+                  position: "absolute", top: 2, right: 2,
+                  width: 16, height: 16, borderRadius: "50%",
+                  background: "#ef4444", color: "#fff",
+                  fontSize: 9, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  lineHeight: 1, fontFamily: typography.family,
+                }}>
+                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                </span>
+              </button>
+            )}
+
             <button
               style={{
                 ...S.darkToggle,

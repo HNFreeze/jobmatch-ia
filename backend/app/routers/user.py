@@ -65,6 +65,7 @@ class ProfileData(BaseModel):
     ubicaciones: Optional[List[str]] = None
     modalidad: Optional[List[str]] = None
     onboarding_completed: Optional[bool] = None
+    stack_years: Optional[dict] = None  # {"Python": 3, "React": 2}
 
 
 class ConsentRequest(BaseModel):
@@ -144,6 +145,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
                 "modalidad": json.loads(user.modalidad) if user.modalidad else [],
                 "onboarding_completed": bool(user.onboarding_completed),
                 "analytics_consent": user.analytics_consent,
+                "stack_years": json.loads(user.stack_years) if user.stack_years else {},
             },
             media_type="application/json; charset=utf-8",
         )
@@ -321,6 +323,8 @@ def update_profile(body: ProfileData, user_id: int = Depends(get_current_user_id
             user.modalidad = json.dumps(body.modalidad, ensure_ascii=False)
         if body.onboarding_completed is not None:
             user.onboarding_completed = body.onboarding_completed
+        if body.stack_years is not None:
+            user.stack_years = json.dumps(body.stack_years, ensure_ascii=False)
         db.commit()
         return JSONResponse(
             content={"detail": "Perfil guardado correctamente"},

@@ -19,6 +19,7 @@ class AIDailyUsage(Base):
     cover_letter_count = Column(Integer, nullable=False, default=0)
     cv_analysis_count = Column(Integer, nullable=False, default=0)
     cv_improve_count = Column(Integer, nullable=False, default=0)
+    interview_count = Column(Integer, nullable=True, default=0)
     total_units = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, onupdate=datetime.utcnow)

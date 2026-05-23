@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  matchOffers, getUserProfile,
+  matchOffers, loadMoreOffers, getUserProfile,
   getFavorites, addFavorite, removeFavorite,
   saveHistory, getHistory, generateCoverLetter, createApplication, getApplications, deleteApplication, getAiQuota,
-, submitMatchFeedback, getMatchFeedback } from "../services/api";
+  submitMatchFeedback, getMatchFeedback } from "../services/api";
 import {
   gradients,
   typography,
@@ -19,10 +19,14 @@ import {
   isVerifiedOffer,
   isJuniorFriendlyOffer,
 } from "../utils/jobTrust";
+import OfferCard from "./profile/OfferCard";
+import OfferFilters from "./profile/OfferFilters";
+
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
 const TEAL = "#00758A";
+const PAGE_SIZE = 15;
 
 const RESULT_STYLES = {
   APLICA:    { bg: "#ecfdf5", border: "#10b981", label: "APLICA",     icon: "✓", iconBg: "#d1fae5", iconColor: "#10b981" },
@@ -56,6 +60,18 @@ const TAG_COLORS = [
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
+
+function decodeHtml(html) {
+  const txt = document.createElement("textarea");
+  txt.innerHTML = html;
+  return txt.value;
+}
+
+function stripHtml(text) {
+  if (!text) return "";
+  const decoded = decodeHtml(String(text));
+  return decoded.replace(/<[^>]*>/g, " ").replace(/\s{2,}/g, " ").trim();
+}
 
 function getTechTagColor(tech) {
   const idx = tech.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % TAG_COLORS.length;
@@ -139,6 +155,29 @@ function detectWorkMode(offer) {
   if (/hybrid|hibrid|híbrido|hibrido|mixto/.test(text)) return "hibrido";
   if (/presencial|onsite/.test(text)) return "presencial";
   return "no_indicado";
+}
+
+function downloadCsv(offers) {
+  const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = ["Título", "Empresa", "Ubicación", "Resultado", "Salario", "Modalidad", "URL", "Fecha publicación"];
+  const rows = offers.map(o => [
+    escape(o.titulo),
+    escape(o.empresa),
+    escape(o.ubicacion),
+    escape(normalizeResultValue(o.resultado)),
+    escape(o.salario || ""),
+    escape(detectWorkMode(o)),
+    escape(o.url),
+    escape(o.fecha_publicacion ? new Date(o.fecha_publicacion).toLocaleDateString("es-ES") : ""),
+  ]);
+  const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `jobmatch_ofertas_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function extractTechTags(offer, userStack) {
@@ -536,7 +575,7 @@ function MatchInsightSummary({ offer, darkMode, compact = false }) {
 
       {getDecisionReason(offer) && (
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: dm ? "#94a3b8" : "#4b5563", fontFamily: typography.family }}>
-          {getDecisionReason(offer)}
+          {stripHtml(getDecisionReason(offer))}
         </p>
       )}
 
@@ -659,7 +698,7 @@ function MatchInsightSummary({ offer, darkMode, compact = false }) {
   );
 }
 
-export default function Profile({ analysisResults, setAnalysisResults, addToast, darkMode, forceAnalyze, onAnalyzeStarted }) {
+export default function Profile({ analysisResults, setAnalysisResults, addToast, darkMode, forceAnalyze, onAnalyzeStarted, onNavigate }) {
   const analyzeBtnRef = useRef(null);
   const [profile,             setProfile]             = useState(null);
   const [profileLoading,      setProfileLoading]      = useState(true);
@@ -692,21 +731,30 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     if (!analysisResults || Array.isArray(analysisResults)) return null;
     return analysisResults.skills_gap || null;
   });
-  // Sidebar filters
-  const [keywordFilter,       setKeywordFilter]       = useState("");
-  const [locationFilter,      setLocationFilter]      = useState("");
-  const [salaryMin,           setSalaryMin]           = useState("");
-  const [salaryMax,           setSalaryMax]           = useState("");
-  const [contractFilter,      setContractFilter]      = useState("todos");
-  const [workModeFilter,      setWorkModeFilter]      = useState("todos");
-  const [onlyVerified,        setOnlyVerified]        = useState(false);
-  const [onlyDirectSources,   setOnlyDirectSources]   = useState(false);
-  const [hideAggregators,     setHideAggregators]     = useState(false);
-  const [onlySalaryVisible,   setOnlySalaryVisible]   = useState(false);
-  const [onlyJuniorFriendly,  setOnlyJuniorFriendly]  = useState(false);
-  const [sortBy,              setSortBy]              = useState("relevancia");
+  // Sidebar filters — persisted to localStorage when results are loaded
+  const [savedFilters] = useState(() => {
+    if (!analysisResults) return {};
+    try { return JSON.parse(localStorage.getItem("jobmatch_result_filters") || "{}"); } catch { return {}; }
+  });
+  const [keywordFilter,       setKeywordFilter]       = useState(savedFilters.keywordFilter       ?? "");
+  const [locationFilter,      setLocationFilter]      = useState(savedFilters.locationFilter      ?? "");
+  const [salaryMin,           setSalaryMin]           = useState(savedFilters.salaryMin           ?? "");
+  const [salaryMax,           setSalaryMax]           = useState(savedFilters.salaryMax           ?? "");
+  const [contractFilter,      setContractFilter]      = useState(savedFilters.contractFilter      ?? "todos");
+  const [workModeFilter,      setWorkModeFilter]      = useState(savedFilters.workModeFilter      ?? "todos");
+  const [onlyVerified,        setOnlyVerified]        = useState(savedFilters.onlyVerified        ?? false);
+  const [onlyDirectSources,   setOnlyDirectSources]   = useState(savedFilters.onlyDirectSources   ?? false);
+  const [hideAggregators,     setHideAggregators]     = useState(savedFilters.hideAggregators     ?? false);
+  const [onlySalaryVisible,   setOnlySalaryVisible]   = useState(savedFilters.onlySalaryVisible   ?? false);
+  const [onlyJuniorFriendly,  setOnlyJuniorFriendly]  = useState(savedFilters.onlyJuniorFriendly  ?? false);
+  const [sortBy,              setSortBy]              = useState(savedFilters.sortBy              ?? "relevancia");
   const [showMobileFilters,   setShowMobileFilters]   = useState(false);
   const [isMobile,            setIsMobile]            = useState(() => typeof window !== "undefined" && window.innerWidth < 900);
+  const [compactCards,        setCompactCards]        = useState(savedFilters.compactCards        ?? false);
+  const [resultsPage,         setResultsPage]         = useState(1);
+  const [loadingMore,         setLoadingMore]         = useState(false);
+  const [hasMore,             setHasMore]             = useState(false);
+  const [nextAdzunaPage,      setNextAdzunaPage]      = useState(2);
 
   async function refreshAiQuota() {
     try {
@@ -770,6 +818,23 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       }, 0);
     }
   }, [forceAnalyze, profile, loading]);
+
+  // Persist sidebar filters to localStorage whenever they change (only while results are loaded)
+  const _hasResultsRef = useRef(Boolean(analysisResults));
+  useEffect(() => { _hasResultsRef.current = Boolean(analysisResults); }, [analysisResults]);
+  useEffect(() => {
+    if (!_hasResultsRef.current) return;
+    setResultsPage(1);
+    try {
+      localStorage.setItem("jobmatch_result_filters", JSON.stringify({
+        keywordFilter, locationFilter, salaryMin, salaryMax,
+        contractFilter, workModeFilter, onlyVerified, onlyDirectSources,
+        hideAggregators, onlySalaryVisible, onlyJuniorFriendly, sortBy, compactCards,
+      }));
+    } catch {}
+  }, [keywordFilter, locationFilter, salaryMin, salaryMax, contractFilter,
+      workModeFilter, onlyVerified, onlyDirectSources, hideAggregators,
+      onlySalaryVisible, onlyJuniorFriendly, sortBy, compactCards]);
 
   function calculateDaysAgo(dateString) {
     if (!dateString) return "";
@@ -913,6 +978,8 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
       const offersData = Array.isArray(data) ? data : (data.offers || []);
       const skillsGapData = Array.isArray(data) ? null : (data.skills_gap || null);
       setResults(offersData);
+      setHasMore(offersData.length >= 20);
+      setNextAdzunaPage(2);
       setSkillsGap(skillsGapData);
       setAnalysisResults(data);
       setAnalysisTime(Math.round((Date.now() - startTime) / 1000));
@@ -997,6 +1064,43 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
     setOnlySalaryVisible(false);
     setOnlyJuniorFriendly(false);
     setSortBy("relevancia");
+    setHasMore(false);
+    setNextAdzunaPage(2);
+  }
+
+  async function handleLoadMore() {
+    if (!profile || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const excludeIds = (results || []).map(r => r.adzuna_id).filter(Boolean);
+      const data = await loadMoreOffers({
+        experience:    profile.anos_experiencia,
+        stack:         profile.stack,
+        english:       getEnglishForMatch(profile.idiomas),
+        ubicaciones:   profile.ubicaciones || [],
+        modalidad:     profile.modalidad || [],
+        idiomas:       profile.idiomas || [],
+        exclude_ids:   excludeIds,
+        adzuna_page:   nextAdzunaPage,
+        results_count: (results || []).length,
+      });
+      const newOffers = data?.offers || [];
+      if (newOffers.length > 0) {
+        setResults(prev => {
+          const existing = prev || [];
+          const seenIds = new Set(existing.map(o => o.adzuna_id).filter(Boolean));
+          const unique = newOffers.filter(o => !o.adzuna_id || !seenIds.has(o.adzuna_id));
+          return [...existing, ...unique];
+        });
+      }
+      setHasMore(data?.has_more ?? false);
+      setNextAdzunaPage(data?.next_adzuna_page ?? nextAdzunaPage + 1);
+    } catch (err) {
+      addToast?.(err?.detail || err?.message || "Error cargando más ofertas", "error");
+    } finally {
+      setLoadingMore(false);
+      refreshAiQuota();
+    }
   }
 
   function handleShare() {
@@ -1174,194 +1278,58 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         {/* ── Two-column layout ────────────────────────────────────── */}
         <div style={S.twoCol}>
 
+
           {/* LEFT — Filter Panel */}
           {!isMobile && (
-            <div style={{ ...S.filterPanel, ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)" } : {}) }}>
-              <div style={{ marginBottom: 24 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", fontFamily: typography.family }}>
-                  Filtros Avanzados
-                </h2>
-                <p style={{ margin: "4px 0 0", fontSize: 12, color: dm ? "#475569" : "#9ca3af", fontFamily: typography.family }}>
-                  Refina tu búsqueda IA
-                </p>
-              </div>
-
-              {/* Keyword */}
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🔍 Palabra clave</label>
-                <input
-                  type="text"
-                  placeholder="Ej: React, Node, UX..."
-                  value={keywordFilter}
-                  onChange={e => setKeywordFilter(e.target.value)}
-                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
-                />
-              </div>
-
-              {/* Location */}
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📍 Ubicación</label>
-                <input
-                  type="text"
-                  placeholder="Madrid, Barcelona..."
-                  value={locationFilter}
-                  onChange={e => setLocationFilter(e.target.value)}
-                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}) }}
-                />
-              </div>
-
-              {/* Contract (as Modalidad) */}
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📄 Contrato</label>
-                <select
-                  value={contractFilter}
-                  onChange={e => setContractFilter(e.target.value)}
-                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
-                >
-                  <option value="todos">Cualquiera</option>
-                  <option value="indefinido">Indefinido</option>
-                  <option value="temporal">Temporal / Prácticas</option>
-                  <option value="freelance">Freelance</option>
-                </select>
-              </div>
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>🏡 Modo de trabajo</label>
-                <select
-                  value={workModeFilter}
-                  onChange={e => setWorkModeFilter(e.target.value)}
-                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
-                >
-                  <option value="todos">Cualquiera</option>
-                  <option value="remoto">Remoto</option>
-                  <option value="hibrido">Hibrido</option>
-                  <option value="presencial">Presencial</option>
-                </select>
-              </div>
-
-              {/* Sort (as Experiencia) */}
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>📊 Ordenar por</label>
-                <select
-                  value={sortBy}
-                  onChange={e => setSortBy(e.target.value)}
-                  style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), cursor: "pointer" }}
-                >
-                  <option value="relevancia">Relevancia</option>
-                  <option value="puntuacion">Puntuación</option>
-                  <option value="confianza">Confianza de la fuente</option>
-                  <option value="fecha">Más recientes</option>
-                  <option value="salario">Mayor salario</option>
-                </select>
-              </div>
-
-              {/* Salary */}
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>💰 Salario</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={salaryMin}
-                    onChange={e => setSalaryMin(e.target.value)}
-                    style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), flex: 1 }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={salaryMax}
-                    onChange={e => setSalaryMax(e.target.value)}
-                    style={{ ...S.filterInput, ...(dm ? S.filterInputDm : {}), flex: 1 }}
-                  />
-                </div>
-              </div>
-
-              <div style={S.filterGroup}>
-                <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>✨ Calidad de la oferta</label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[
-                    { checked: onlyVerified, onChange: setOnlyVerified, label: "Solo verificadas recientemente" },
-                    { checked: onlyDirectSources, onChange: setOnlyDirectSources, label: "Solo fuentes directas u oficiales" },
-                    { checked: hideAggregators, onChange: setHideAggregators, label: "Ocultar agregadas" },
-                    { checked: onlySalaryVisible, onChange: setOnlySalaryVisible, label: "Con salario visible" },
-                    { checked: onlyJuniorFriendly, onChange: setOnlyJuniorFriendly, label: "Junior o primer empleo" },
-                  ].map((item) => (
-                    <label
-                      key={item.label}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontSize: 12,
-                        color: dm ? "#cbd5e1" : "#374151",
-                        fontFamily: typography.family,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={item.checked}
-                        onChange={(e) => item.onChange(e.target.checked)}
-                        style={{ accentColor: TEAL, cursor: "pointer" }}
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tech Stack chips */}
-              {userStack.length > 0 && (
-                <div style={S.filterGroup}>
-                  <label style={{ ...S.filterLabel, color: dm ? "#94a3b8" : "#6b7280" }}>&lt;/&gt; Tech Stack</label>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {userStack.slice(0, 8).map(tech => (
-                      <span key={tech} style={{
-                        padding: "4px 12px", borderRadius: 20,
-                        fontSize: 12, fontWeight: 500,
-                        backgroundColor: dm ? "rgba(0,117,138,0.12)" : "rgba(0,117,138,0.06)",
-                        color: TEAL,
-                        border: `1px solid ${dm ? "rgba(0,117,138,0.25)" : "rgba(0,117,138,0.2)"}`,
-                        whiteSpace: "nowrap",
-                      }}>
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Clear filters button */}
-              <button
-                style={{
-                  width: "100%", padding: "10px 16px", fontSize: 14, fontWeight: 600,
-                  color: dm ? "#94a3b8" : "#6b7280",
-                  backgroundColor: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
-                  border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
-                  borderRadius: 10,
-                  cursor: "pointer", fontFamily: typography.family, marginTop: 8,
-                }}
-                onClick={() => {
-                  setKeywordFilter("");
-                  setLocationFilter("");
-                  setSalaryMin("");
-                  setSalaryMax("");
-                  setContractFilter("todos");
-                  setWorkModeFilter("todos");
-                  setOnlyVerified(false);
-                  setOnlyDirectSources(false);
-                  setHideAggregators(false);
-                  setOnlySalaryVisible(false);
-                  setOnlyJuniorFriendly(false);
-                  setSortBy("relevancia");
-                }}
-              >
-                Limpiar filtros
-              </button>
-            </div>
+            <OfferFilters
+              darkMode={dm}
+              userStack={userStack}
+              keywordFilter={keywordFilter}
+              setKeywordFilter={setKeywordFilter}
+              locationFilter={locationFilter}
+              setLocationFilter={setLocationFilter}
+              contractFilter={contractFilter}
+              setContractFilter={setContractFilter}
+              workModeFilter={workModeFilter}
+              setWorkModeFilter={setWorkModeFilter}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              salaryMin={salaryMin}
+              setSalaryMin={setSalaryMin}
+              salaryMax={salaryMax}
+              setSalaryMax={setSalaryMax}
+              onlyVerified={onlyVerified}
+              setOnlyVerified={setOnlyVerified}
+              onlyDirectSources={onlyDirectSources}
+              setOnlyDirectSources={setOnlyDirectSources}
+              hideAggregators={hideAggregators}
+              setHideAggregators={setHideAggregators}
+              onlySalaryVisible={onlySalaryVisible}
+              setOnlySalaryVisible={setOnlySalaryVisible}
+              onlyJuniorFriendly={onlyJuniorFriendly}
+              setOnlyJuniorFriendly={setOnlyJuniorFriendly}
+              onClearFilters={() => {
+                setKeywordFilter("");
+                setLocationFilter("");
+                setSalaryMin("");
+                setSalaryMax("");
+                setContractFilter("todos");
+                setWorkModeFilter("todos");
+                setOnlyVerified(false);
+                setOnlyDirectSources(false);
+                setHideAggregators(false);
+                setOnlySalaryVisible(false);
+                setOnlyJuniorFriendly(false);
+                setSortBy("relevancia");
+                setCompactCards(false);
+                try { localStorage.removeItem("jobmatch_result_filters"); } catch {}
+              }}
+            />
           )}
 
           {/* RIGHT — Content */}
           <div style={{ flex: 1, minWidth: 0 }}>
+
 
             {/* ── Header ──────────────────────────────────────────────── */}
             <div style={{ marginBottom: 24 }}>
@@ -1606,6 +1574,45 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
               ))}
             </div>
 
+            {/* View toggle + CSV export */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, marginTop: -8 }}>
+              {filtered.length > 0 && (
+                <button
+                  onClick={() => downloadCsv(filtered)}
+                  title={`Exportar ${filtered.length} ofertas a CSV`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "5px 12px", borderRadius: 50, fontSize: 11, fontWeight: 700,
+                    background: "none",
+                    border: `1px solid ${dm ? "rgba(94,234,212,0.25)" : "rgba(0,117,138,0.25)"}`,
+                    color: dm ? "#5eead4" : TEAL,
+                    cursor: "pointer", fontFamily: typography.family,
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = dm ? "rgba(94,234,212,0.08)" : "rgba(0,117,138,0.06)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
+                >
+                  ↓ Exportar CSV ({filtered.length})
+                </button>
+              )}
+              <button
+                onClick={() => setCompactCards(c => !c)}
+                title={compactCards ? "Vista detallada" : "Vista compacta"}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "5px 12px", borderRadius: 50, fontSize: 11, fontWeight: 700,
+                  background: "none",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"}`,
+                  color: dm ? "#94a3b8" : "#6b7280",
+                  cursor: "pointer", fontFamily: typography.family,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {compactCards ? "⊞ Vista detallada" : "☰ Vista compacta"}
+              </button>
+            </div>
+
+
             <div style={{
               marginBottom: 20,
               padding: "16px 18px",
@@ -1690,156 +1697,49 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
             {/* ── Offer Cards (list layout) ─────────────────────────── */}
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {filtered.length > 0 ? (
-                filtered.map((offer, index) => {
-                  const rs    = RESULT_STYLES[normalizeResultValue(offer.resultado)] || RESULT_STYLES.NO_ENCAJA;
+                filtered.slice(0, resultsPage * PAGE_SIZE).map((offer, index) => {
                   const isFav = offer.adzuna_id && favorites.has(offer.adzuna_id);
-                  const tags  = extractTechTags(offer, profile?.stack);
-                  const isNew = isNewOffer(offer.fecha_publicacion);
                   const isCompared = compareSelection.includes(getOfferCompareKey(offer));
+                  const aid = offer.adzuna_id || offer.id;
+                  const isTracked = tracked.has(aid);
                   return (
-                    <div
-                      key={offer.id}
-                      className="job-card"
-                      onClick={() => setSelectedOffer(offer)}
-                      style={{
-                        ...S.offerCard,
-                        borderLeftColor: rs.border,
-                        animation: `fadeInUp 0.4s ease-out ${index * 0.04}s both`,
-                        boxShadow: isCompared
-                          ? (dm ? "0 0 0 2px rgba(94,234,212,0.22), 0 10px 24px rgba(0,0,0,0.14)" : "0 0 0 2px rgba(0,117,138,0.16), 0 8px 24px rgba(0,117,138,0.10)")
-                          : undefined,
-                        ...(dm ? { backgroundColor: "#1e293b", borderColor: "rgba(255,255,255,0.06)", borderLeftColor: rs.border } : {}),
+                    <OfferCard
+                      key={offer.adzuna_id || `offer-${offer.id}-${index}`}
+                      offer={offer}
+                      darkMode={dm}
+                      compactCards={compactCards}
+                      isFav={isFav}
+                      isCompared={isCompared}
+                      isTracked={isTracked}
+                      feedbackValue={feedbackMap[offer.adzuna_id] || null}
+                      feedbackBusy={!!feedbackLoading[offer.adzuna_id]}
+                      userStack={userStack}
+                      insightSlot={<MatchInsightSummary offer={offer} darkMode={dm} compact />}
+                      calculateDaysAgo={calculateDaysAgo}
+                      onOpen={() => setSelectedOffer(offer)}
+                      onToggleFavorite={() => toggleFavorite(offer)}
+                      onToggleCompare={() => toggleCompareSelection(offer)}
+                      onDiscard={() => handleDiscardOffer(offer)}
+                      onTrack={() => handleTrackOffer(offer)}
+                      onFeedback={async (rating) => {
+                        setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: true }));
+                        try {
+                          await submitMatchFeedback({
+                            adzuna_id: offer.adzuna_id,
+                            rating,
+                            offer_score: offer.ranking_score ?? offer.puntuacion,
+                            offer_result: offer.resultado,
+                          });
+                          setFeedbackMap(prev => ({ ...prev, [offer.adzuna_id]: rating }));
+                        } catch { /* silent */ } finally {
+                          setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: false }));
+                        }
                       }}
-                    >
-                      {/* Row 1: Logo + Title/Company + Badge + Salary */}
-                      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                        <CompanyLogo
-                          name={offer.empresa}
-                          logoUrl={offer.company_logo_url}
-                          size={52}
-                          darkMode={dm}
-                        />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.35, fontFamily: typography.family }}>
-                            {offer.titulo}
-                          </h3>
-                          <p style={{ margin: "5px 0 0", fontSize: 14, color: dm ? "#5eead4" : TEAL, fontWeight: 500, fontFamily: typography.family, display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 13 }}>🏢</span> {offer.empresa}
-                          </p>
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
-                          <span style={{
-                            display: "inline-flex", alignItems: "center", gap: 6,
-                            padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-                            backgroundColor: dm ? `${rs.border}18` : rs.bg,
-                            color: rs.border, border: `1px solid ${dm ? `${rs.border}40` : `${rs.border}30`}`,
-                            whiteSpace: "nowrap",
-                          }}>
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: rs.border, display: "inline-block" }} />
-                            {rs.label}{offer.puntuacion != null ? ` - ${offer.puntuacion}% Match` : ""}
-                          </span>
-                          {offer.salario && offer.salario !== "Salario no especificado" && (
-                            <span style={{ fontSize: 17, fontWeight: 700, color: dm ? "#f1f5f9" : "#1e293b", whiteSpace: "nowrap", fontFamily: typography.family }}>
-                              {offer.salario}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Row 2: Context chips */}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0 0" }}>
-                        <OfferTrustSignals offer={offer} darkMode={dm} compact maxSignals={2} />
-                        {offer.ubicacion && (
-                          <span style={{ ...S.chip, ...(dm ? S.chipDm : {}) }}>
-                            <span style={{ fontSize: 11, opacity: 0.6 }}>📍</span> {offer.ubicacion}
-                          </span>
-                        )}
-                        {isNew && (
-                          <span style={{ ...S.chip, ...(dm ? S.chipDm : {}), backgroundColor: dm ? "rgba(245,158,11,0.12)" : "#fef3c7", color: "#92400e", borderColor: dm ? "rgba(245,158,11,0.25)" : "#fde68a" }}>
-                            🔥 Nueva
-                          </span>
-                        )}
-                        {tags.slice(0, 3).map(tag => (
-                          <span key={tag} style={{ ...S.chip, ...(dm ? S.chipDm : {}) }}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* Row 3: IA Insight */}
-                      <MatchInsightSummary offer={offer} darkMode={dm} compact />
-
-
-                      {/* Row 4: Actions */}
-                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 18, gap: 12 }}>
-                        <button
-                          style={{ ...S.starBtn, color: isFav ? "#f59e0b" : (dm ? "#475569" : "#d1d5db"), marginRight: "auto" }}
-                          onClick={e => { e.stopPropagation(); toggleFavorite(offer); }}
-                          title={isFav ? "Quitar de favoritas" : "Añadir a favoritas"}
-                        >
-                          {isFav ? "★" : "☆"}
-                        </button>
-                        <span style={{ fontSize: 11, color: dm ? "#475569" : "#9ca3af", fontFamily: typography.family }}>
-                          {calculateDaysAgo(offer.fecha_publicacion)}
-                        </span>
-                        <button
-                          className="btn-card-ghost"
-                          style={{
-                            background: "none", border: "none",
-                            fontSize: 13, fontWeight: 600,
-                            color: isCompared ? (dm ? "#5eead4" : TEAL) : (dm ? "#64748b" : "#6b7280"),
-                            cursor: "pointer", fontFamily: typography.family,
-                            padding: "6px 12px",
-                          }}
-                          onClick={e => { e.stopPropagation(); toggleCompareSelection(offer); }}
-                        >
-                          {isCompared ? "✓ En comparador" : "Comparar"}
-                        </button>
-                        <button
-                          className="btn-card-ghost btn-card-ghost-danger"
-                          style={{
-                            background: "none", border: "none",
-                            fontSize: 13, fontWeight: 500,
-                            color: dm ? "#64748b" : "#6b7280",
-                            cursor: "pointer", fontFamily: typography.family,
-                            padding: "6px 12px",
-                          }}
-                          onClick={e => { e.stopPropagation(); handleDiscardOffer(offer); }}
-                        >
-                          Descartar
-                        </button>
-                        {(() => {
-                          const aid = offer.adzuna_id || offer.id;
-                          const isTracked = tracked.has(aid);
-                          return (
-                            <button
-                              className="btn-card-ghost"
-                              style={{
-                                background: "none", border: "none",
-                                fontSize: 13, fontWeight: 500,
-                                color: isTracked ? (dm ? "#34d399" : "#059669") : (dm ? "#5eead4" : TEAL),
-                                cursor: isTracked ? "default" : "pointer",
-                                fontFamily: typography.family,
-                                padding: "6px 12px",
-                                opacity: isTracked ? 0.8 : 1,
-                              }}
-                              onClick={e => { e.stopPropagation(); handleTrackOffer(offer); }}
-                            >
-                              {isTracked ? "✓ Siguiendo" : "Seguir"}
-                            </button>
-                          );
-                        })()}
-                        <button
-                          className="btn-card-detail"
-                          onClick={e => { e.stopPropagation(); setSelectedOffer(offer); }}
-                          style={S.btnDetail}
-                        >
-                          Ver detalle
-                        </button>
-                      </div>
-                    </div>
+                      index={index}
+                    />
                   );
                 })
+
               ) : (
                 <div style={S.emptyState}>
                   {filter === "favoritas" ? (
@@ -1864,6 +1764,61 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                 </div>
               )}
             </div>
+
+            {/* ── Ver más ────────────────────────────────────────────── */}
+            {filtered.length > resultsPage * PAGE_SIZE && (
+              <div style={{ textAlign: "center", marginTop: 8 }}>
+                <button
+                  onClick={() => setResultsPage(p => p + 1)}
+                  style={{
+                    padding: "11px 32px", borderRadius: 50,
+                    background: dm ? "rgba(255,255,255,0.06)" : "#f1f5f9",
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.12)" : "#d1d5db"}`,
+                    color: dm ? "#94a3b8" : "#374151",
+                    fontSize: 14, fontWeight: 600,
+                    cursor: "pointer", fontFamily: typography.family,
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = dm ? "rgba(255,255,255,0.06)" : "#f1f5f9"; }}
+                >
+                  Ver más ({filtered.length - resultsPage * PAGE_SIZE} restantes)
+                </button>
+              </div>
+            )}
+
+            {/* ── Cargar más ofertas ─────────────────────────────────── */}
+            {filtered.length <= resultsPage * PAGE_SIZE && hasMore && (
+              <div style={{ textAlign: "center", marginTop: 20 }}>
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  style={{
+                    padding: "12px 36px", borderRadius: 50,
+                    background: dm ? "rgba(0,117,138,0.15)" : "#e6f4f6",
+                    border: `1px solid ${dm ? "rgba(0,117,138,0.4)" : "#b2d8de"}`,
+                    color: dm ? "#5eead4" : TEAL,
+                    fontSize: 14, fontWeight: 700,
+                    cursor: loadingMore ? "not-allowed" : "pointer",
+                    fontFamily: typography.family,
+                    transition: "all 0.2s ease",
+                    opacity: loadingMore ? 0.7 : 1,
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                  }}
+                  onMouseEnter={e => { if (!loadingMore) e.currentTarget.style.background = dm ? "rgba(0,117,138,0.25)" : "#ccedf1"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = dm ? "rgba(0,117,138,0.15)" : "#e6f4f6"; }}
+                >
+                  {loadingMore ? (
+                    <>
+                      <span style={{ display: "inline-block", width: 14, height: 14, border: `2px solid ${dm ? "#5eead4" : TEAL}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                      Cargando más ofertas…
+                    </>
+                  ) : (
+                    <>+ Cargar más ofertas (consume 1 uso de IA)</>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* ── Action buttons row ─────────────────────────────────── */}
             <div style={{ display: "flex", gap: 10, marginTop: 28, justifyContent: "flex-end" }}>
@@ -2106,9 +2061,37 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                                 Resumen
                               </div>
                               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: dm ? "#cbd5e1" : "#475569" }}>
-                                {getDecisionReason(offer) || "No hay explicación adicional para esta oferta."}
+                                {stripHtml(getDecisionReason(offer)) || "No hay explicación adicional para esta oferta."}
                               </p>
                             </div>
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 }}>
+                              <button
+                                onClick={() => {
+                                  setShowCompareModal(false);
+                                  setSelectedOffer(offer);
+                                }}
+                                style={{ ...S.btnDetail, flex: 1, minWidth: 140 }}
+                              >
+                                Ver detalle completo
+                              </button>
+                              {offer.redirect_url && (
+                                <a
+                                  href={offer.redirect_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    ...S.btnOutline,
+                                    flex: 1,
+                                    minWidth: 140,
+                                    textDecoration: "none",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  Abrir oferta
+                                </a>
+                              )}
+                            </div>
+
 
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 800, color: dm ? "#34d399" : "#15803d", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
@@ -2183,77 +2166,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                               )}
                             </div>
 
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 }}>
-                              <button
-                                onClick={() => {
-                                  setShowCompareModal(false);
-                                  setSelectedOffer(offer);
-                                }}
-                                style={{ ...S.btnDetail, flex: 1, minWidth: 140 }}
-                              >
-                                Ver detalle completo
-                              </button>
-                              {offer.redirect_url && (
-                                <a
-                                  href={offer.redirect_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{
-                                    ...S.btnOutline,
-                                    flex: 1,
-                                    minWidth: 140,
-                                    textDecoration: "none",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  Abrir oferta
-                                </a>
-                              )}
                             
-                        {/* Feedback buttons */}
-                        <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexShrink: 0 }}>
-                          {["up", "down"].map(rating => {
-                            const myFeedback = feedbackMap[offer.adzuna_id];
-                            const isActive = myFeedback === rating;
-                            const isLoading = feedbackLoading[offer.adzuna_id];
-                            return (
-                              <button
-                                key={rating}
-                                title={rating === "up" ? "Buen resultado" : "Mal resultado"}
-                                disabled={isLoading}
-                                onClick={async () => {
-                                  setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: true }));
-                                  try {
-                                    await submitMatchFeedback({
-                                      adzuna_id: offer.adzuna_id,
-                                      rating,
-                                      offer_score: offer.ranking_score ?? offer.puntuacion,
-                                      offer_result: offer.resultado,
-                                    });
-                                    setFeedbackMap(prev => ({ ...prev, [offer.adzuna_id]: rating }));
-                                  } catch { /* silent */ }
-                                  setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: false }));
-                                }}
-                                style={{
-                                  width: 30, height: 30, borderRadius: 8,
-                                  border: `1.5px solid ${isActive
-                                    ? (rating === "up" ? "#10b981" : "#ef4444")
-                                    : (dm ? "rgba(255,255,255,0.1)" : "#e5e7eb")}`,
-                                  background: isActive
-                                    ? (rating === "up" ? "#d1fae5" : "#fee2e2")
-                                    : "none",
-                                  cursor: isLoading ? "not-allowed" : "pointer",
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  fontSize: 14, opacity: isLoading ? 0.5 : 1,
-                                  transition: "all 0.2s ease",
-                                }}
-                              >
-                                {rating === "up" ? "👍" : "👎"}
-                              </button>
-                            );
-                          })}
-                        </div>
-</div>
                           </div>
                         </div>
                       );
@@ -2519,13 +2432,10 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                       <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", letterSpacing: "-0.01em" }}>
                         Descripción del puesto
                       </h2>
-                      <p style={{
-                        fontSize: 14, lineHeight: 1.85, margin: 0,
-                        color: dm ? "#94a3b8" : "#4b5563",
-                        whiteSpace: "pre-wrap", wordWrap: "break-word",
-                      }}>
-                        {selectedOffer.descripcion}
-                      </p>
+                      <div
+                        style={{ fontSize: 14, lineHeight: 1.85, color: dm ? "#94a3b8" : "#4b5563", wordWrap: "break-word" }}
+                        dangerouslySetInnerHTML={{ __html: decodeHtml(selectedOffer.descripcion || "") }}
+                      />
                     </div>
                   </div>
 
@@ -2572,7 +2482,7 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                         </div>
                         {getDecisionReason(selectedOffer) && (
                           <p style={{ margin: 0, fontSize: 13, color: dm ? "#94a3b8" : "#4b5563", lineHeight: 1.65 }}>
-                            {getDecisionReason(selectedOffer)}
+                            {stripHtml(getDecisionReason(selectedOffer))}
                           </p>
                         )}
                       </div>
@@ -2778,24 +2688,154 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
         {error && <div style={{ ...S.errorBox, ...(dm ? { backgroundColor: "rgba(239,68,68,0.08)", color: "#f87171", borderColor: "rgba(239,68,68,0.2)" } : {}) }}>{error}</div>}
         {aiQuota && <QuotaCard quota={aiQuota} darkMode={dm} />}
 
-        {/* Profile summary */}
+          {/* ── Unified flow hint ─────────────────────────────────────── */}
+          {onNavigate && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "11px 14px", borderRadius: 12, marginBottom: 16,
+              background: darkMode ? "rgba(124,58,237,0.08)" : "rgba(124,58,237,0.05)",
+              border: `1px solid ${darkMode ? "rgba(124,58,237,0.2)" : "rgba(124,58,237,0.15)"}`,
+            }}>
+              <span style={{ fontSize: 18 }}>📄</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: darkMode ? "#c4b5fd" : "#7c3aed", fontFamily: "inherit" }}>
+                  ¿Tienes un CV actualizado?{" "}
+                </span>
+                <span style={{ fontSize: 13, color: darkMode ? "#94a3b8" : "#6b7280", fontFamily: "inherit" }}>
+                  El análisis por CV extrae tu perfil automáticamente y suele dar resultados más precisos.
+                </span>
+              </div>
+              <button
+                onClick={() => onNavigate("cv-buscar")}
+                style={{
+                  padding: "6px 14px", borderRadius: 50, border: "none",
+                  background: "linear-gradient(135deg, #7c3aed, #2563eb)",
+                  color: "#fff", fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                  fontFamily: "inherit",
+                }}
+              >
+                Subir CV →
+              </button>
+            </div>
+          )}
+
+
+        {/* Profile summary — visual pre-análisis */}
         <div style={{
-          backgroundColor: dm ? "rgba(0,117,138,0.1)" : "rgba(0,117,138,0.04)",
-          border: `1px solid ${dm ? "rgba(0,117,138,0.2)" : "rgba(0,117,138,0.15)"}`,
-          borderRadius: 12, padding: "14px 18px", marginBottom: 20,
+          backgroundColor: dm ? "rgba(0,117,138,0.1)" : "rgba(0,117,138,0.05)",
+          border: `1px solid ${dm ? "rgba(0,117,138,0.28)" : "rgba(0,117,138,0.2)"}`,
+          borderTopLeftRadius: 16, borderTopRightRadius: 16,
+          borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
+          borderBottom: "none",
+          padding: "16px 18px 18px",
         }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: TEAL, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 6px", fontFamily: typography.family }}>
-            Analizando ofertas para:
-          </p>
-          <p style={{ margin: 0, fontSize: 14, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.6, fontFamily: typography.family }}>
-            {[
-              hasExperienceValue(profile.anos_experiencia) ? `${profile.anos_experiencia} año${String(profile.anos_experiencia) !== "1" ? "s" : ""} de experiencia` : null,
-              profile.stack?.length > 0 ? `Stack: ${stackPreview}` : null,
-              englishEntryReady ? `Inglés: ${englishEntryReady.nivel}` : null,
-              `📍 ${profile.ubicaciones?.length > 0 ? profile.ubicaciones.join(", ") : "Toda España"}`,
-              `💼 ${profile.modalidad?.length > 0 ? profile.modalidad.join(", ") : "Cualquier modalidad"}`,
-            ].filter(Boolean).join(" · ")}
-          </p>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 20, lineHeight: 1 }}>🎯</span>
+              <span style={{ fontSize: 15, fontWeight: 800, color: dm ? "#5eead4" : TEAL, fontFamily: typography.family, letterSpacing: "-0.01em" }}>
+                Analizarás ofertas con este perfil
+              </span>
+            </div>
+            <button
+              onClick={() => { window.location.hash = "user-profile"; }}
+              style={{
+                background: "none", border: "none", padding: "3px 8px",
+                fontSize: 11, fontWeight: 700, cursor: "pointer",
+                color: dm ? "#5eead4" : TEAL, fontFamily: typography.family,
+                borderRadius: 20,
+                border: `1px solid ${dm ? "rgba(94,234,212,0.25)" : "rgba(0,117,138,0.25)"}`,
+              }}
+            >
+              Editar →
+            </button>
+          </div>
+
+          {/* Experience badge */}
+          {hasExperienceValue(profile.anos_experiencia) && (
+            <div style={{ marginBottom: 10 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "5px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700,
+                backgroundColor: dm ? "rgba(94,234,212,0.12)" : "rgba(0,117,138,0.1)",
+                color: dm ? "#5eead4" : TEAL,
+                border: `1px solid ${dm ? "rgba(94,234,212,0.22)" : "rgba(0,117,138,0.18)"}`,
+                fontFamily: typography.family,
+              }}>
+                🧑‍💻 {profile.anos_experiencia} año{String(profile.anos_experiencia) !== "1" ? "s" : ""} de experiencia
+              </span>
+            </div>
+          )}
+
+          {/* Stack chips */}
+          {profile.stack?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+              {profile.stack.slice(0, 8).map((tech, idx) => {
+                const c = TAG_COLORS[idx % TAG_COLORS.length];
+                return (
+                  <span key={tech} style={{
+                    padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                    backgroundColor: c.bg, color: c.color, border: `1px solid ${c.border}`,
+                    fontFamily: typography.family,
+                  }}>
+                    {tech}
+                  </span>
+                );
+              })}
+              {profile.stack.length > 8 && (
+                <span style={{
+                  padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                  backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#f1f5f9",
+                  color: dm ? "#94a3b8" : "#475569",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e2e8f0"}`,
+                  fontFamily: typography.family,
+                }}>
+                  +{profile.stack.length - 8} más
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Location / modality / English chips */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {(profile.ubicaciones?.length > 0 ? profile.ubicaciones : ["Toda España"]).map(loc => (
+              <span key={loc} style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+                backgroundColor: dm ? "rgba(255,255,255,0.05)" : "#f8fafc",
+                color: dm ? "#cbd5e1" : "#374151",
+                border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                fontFamily: typography.family,
+              }}>
+                📍 {loc}
+              </span>
+            ))}
+            {(profile.modalidad?.length > 0 ? profile.modalidad : ["Cualquier modalidad"]).map(m => (
+              <span key={m} style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+                backgroundColor: dm ? "rgba(255,255,255,0.05)" : "#f8fafc",
+                color: dm ? "#cbd5e1" : "#374151",
+                border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                fontFamily: typography.family,
+              }}>
+                💼 {m}
+              </span>
+            ))}
+            {englishEntryReady && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+                backgroundColor: dm ? "rgba(255,255,255,0.05)" : "#f8fafc",
+                color: dm ? "#cbd5e1" : "#374151",
+                border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#d1d5db"}`,
+                fontFamily: typography.family,
+              }}>
+                🌐 Inglés {englishEntryReady.nivel}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Market chart */}
@@ -2905,11 +2945,11 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
           </div>
         )}
 
-        {/* Primary CTA */}
+        {/* Primary CTA — conectado con la tarjeta de perfil */}
         <button
           ref={analyzeBtnRef}
           className="analyze-ripple-btn"
-          style={{ ...S.btnAnalyze, opacity: loading ? 0.75 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+          style={{ ...S.btnAnalyze, borderTopLeftRadius: 0, borderTopRightRadius: 0, opacity: loading ? 0.75 : 1, cursor: loading ? "not-allowed" : "pointer" }}
           disabled={loading}
           onClick={(e) => {
             if (loading) return;

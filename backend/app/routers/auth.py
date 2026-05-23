@@ -23,6 +23,7 @@ from app.services.security_service import (
     normalize_email,
 )
 from app.services.turnstile_service import validate_turnstile_token
+from app.services.security_service import decode_user_id_from_token
 
 router = APIRouter()
 VERIFICATION_TOKEN_HOURS = int(os.getenv("EMAIL_VERIFICATION_TOKEN_HOURS", "24"))
@@ -435,6 +436,45 @@ def resend_verification_email(body: ResendVerificationRequest, request: Request)
         return JSONResponse(
             status_code=500,
             content={"detail": str(e)},
+            media_type="application/json; charset=utf-8",
+        )
+    finally:
+        db.close()
+
+
+@router.post("/api/auth/refresh")
+def refresh_token(request: Request):
+    """Issue a fresh 30-day JWT for any valid, non-expired current token."""
+    authorization = request.headers.get("Authorization")
+    try:
+        user_id = decode_user_id_from_token(authorization)
+    except HTTPException:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Token inválido o expirado"},
+            media_type="application/json; charset=utf-8",
+        )
+
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Base de datos no disponible"},
+            media_type="application/json; charset=utf-8",
+        )
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or user.is_blocked:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Usuario no disponible"},
+                media_type="application/json; charset=utf-8",
+            )
+        new_token = create_access_token(user.id, user.email)
+        return JSONResponse(
+            content={"token": new_token},
             media_type="application/json; charset=utf-8",
         )
     finally:

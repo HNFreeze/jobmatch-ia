@@ -20,6 +20,7 @@ from app.models.job_offer import JobOffer
 from app.models.rate_limit_bucket import RateLimitBucket
 from app.models.search_history import SearchHistory
 from app.models.user import User
+from app.models.match_feedback import MatchFeedback
 from app.routers.user import require_admin_user
 from app.services.job_ingestion_service import (
     create_ingestion_run,
@@ -946,6 +947,62 @@ def start_job_ingestion(
             "run_id": run.id,
             "status": run.status,
             "payload": payload,
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/matching-quality")
+def get_matching_quality_metrics(_: User = Depends(require_admin_user)):
+    """Métricas de calidad del motor de matching basadas en el feedback de usuarios."""
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        total = db.query(func.count(MatchFeedback.id)).scalar() or 0
+
+        positivos = (
+            db.query(func.count(MatchFeedback.id))
+            .filter(MatchFeedback.rating == "up")
+            .scalar()
+            or 0
+        )
+        negativos = total - positivos
+        ratio_precision = round((positivos / total * 100), 1) if total > 0 else 0.0
+
+        # Distribución por resultado_ia (offer_result)
+        dist_rows = (
+            db.query(
+                MatchFeedback.offer_result,
+                func.count(MatchFeedback.id).label("count"),
+            )
+            .filter(MatchFeedback.offer_result.isnot(None))
+            .group_by(MatchFeedback.offer_result)
+            .all()
+        )
+        distribucion = {row.offer_result: int(row.count) for row in dist_rows}
+
+        # Interpretación textual del ratio
+        if ratio_precision >= 70:
+            interpretacion = "Motor funcionando correctamente"
+            interpretacion_level = "good"
+        elif ratio_precision >= 50:
+            interpretacion = "Revisión recomendada"
+            interpretacion_level = "warning"
+        else:
+            interpretacion = "Calibración necesaria"
+            interpretacion_level = "danger"
+
+        return JSONResponse(content={
+            "total_feedbacks": int(total),
+            "positivos": int(positivos),
+            "negativos": int(negativos),
+            "ratio_precision": float(ratio_precision),
+            "distribucion_por_resultado": distribucion,
+            "interpretacion": interpretacion,
+            "interpretacion_level": interpretacion_level,
         })
     finally:
         db.close()

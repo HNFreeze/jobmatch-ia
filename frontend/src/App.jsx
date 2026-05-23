@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { ThemeContext } from "./context/ThemeContext";
 import Navbar from "./components/Navbar";
 import Toast from "./components/Toast";
 import Onboarding from "./components/Onboarding";
@@ -13,11 +14,17 @@ import VerifyEmail from "./pages/VerifyEmail";
 import Admin from "./pages/Admin";
 import CVSearch from "./pages/CVSearch";
 import Dashboard from "./pages/Dashboard";
-import { getUserProfile, updateUserProfile, getHistory, updateConsent } from "./services/api";
+import Interview from "./pages/Interview";
+import {
+  getUserProfile, updateUserProfile, getHistory, updateConsent,
+  getAiQuota, getNotifications, markAllNotificationsRead,
+  refreshToken, getTokenExpiresAt,
+} from "./services/api";
 import ConsentBanner from "./components/ConsentBanner";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { initClarity, stopClarity } from "./services/clarity";
 
-const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin", "dashboard"];
+const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin", "dashboard", "entrevista"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
 const USER_APP_PAGES = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "dashboard"];
 const PAGE_TITLES = {
@@ -34,6 +41,8 @@ const PAGE_TITLES = {
   dashboard: "Inicio | JobMatch IA",
   admin: "Admin | JobMatch IA",
 };
+
+const JWT_REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days before expiry
 
 function computeCompletion(profile) {
   if (!profile) return 0;
@@ -58,10 +67,11 @@ function App() {
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  // Starts true when a token exists so we don't render the wrong view before the
-  // profile (and its is_admin flag) has been fetched from the server.
   const [authLoading, setAuthLoading] = useState(() => Boolean(localStorage.getItem("token")));
   const [showConsentBanner, setShowConsentBanner] = useState(false);
+  const [aiQuota, setAiQuota] = useState(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [interviewContext, setInterviewContext] = useState(null); // {jobTitle, company, applicationId}
 
   useEffect(() => {
     localStorage.setItem("darkMode", darkMode);
@@ -90,15 +100,29 @@ function App() {
       return;
     }
     try {
-      const [profile, history] = await Promise.all([
+      // Auto-refresh JWT if expiring within threshold
+      const exp = getTokenExpiresAt();
+      if (exp && exp - Date.now() < JWT_REFRESH_THRESHOLD_MS) {
+        try {
+          const { token } = await refreshToken();
+          if (token) localStorage.setItem("token", token);
+        } catch {
+          // non-critical — old token still valid
+        }
+      }
+
+      const [profile, history, quota, notifData] = await Promise.all([
         getUserProfile(),
         getHistory().catch(() => []),
+        getAiQuota().catch(() => null),
+        getNotifications(true).catch(() => null),
       ]);
       setCurrentUser(profile);
       setProfileCompletion(computeCompletion(profile));
       setHasSearched(Array.isArray(history) && history.length > 0);
+      if (quota) setAiQuota(quota);
+      if (notifData) setUnreadNotifications(notifData.unread_count || 0);
     } catch {
-      // token invalid or server down
       setCurrentUser(null);
     } finally {
       setAuthLoading(false);
@@ -107,7 +131,6 @@ function App() {
 
   useEffect(() => { refreshProfileState(); }, [refreshProfileState]);
 
-  // Clarity: activate if consent already given, show banner if pending (null)
   useEffect(() => {
     if (!currentUser) return;
     if (currentUser.analytics_consent === true) {
@@ -117,7 +140,6 @@ function App() {
       stopClarity();
       setShowConsentBanner(false);
     } else {
-      // null → not decided yet
       setShowConsentBanner(true);
     }
   }, [currentUser?.id, currentUser?.analytics_consent]);
@@ -147,6 +169,8 @@ function App() {
     setProfileCompletion(0);
     setHasSearched(false);
     setCurrentUser(null);
+    setAiQuota(null);
+    setUnreadNotifications(0);
     window.location.replace(`#${targetPage}`);
     setPage(targetPage);
   }, []);
@@ -155,7 +179,6 @@ function App() {
     function handleForcedLogout() {
       handleLogout({ targetPage: "auth" });
     }
-
     window.addEventListener("jobmatch:force-logout", handleForcedLogout);
     return () => window.removeEventListener("jobmatch:force-logout", handleForcedLogout);
   }, [handleLogout]);
@@ -169,8 +192,6 @@ function App() {
   }, [refreshProfileState, currentUser?.id]);
 
   useEffect(() => {
-    // Don't resolve routes while the auth state is still loading — this prevents
-    // the brief redirect to #buscar that caused the admin-view flicker.
     if (authLoading) return;
 
     const resolve = () => {
@@ -211,16 +232,13 @@ function App() {
   useEffect(() => {
     if (authLoading) return;
     const hasToken = Boolean(localStorage.getItem("token"));
-    if (!hasToken || !currentUser) {
-      return;
-    }
+    if (!hasToken || !currentUser) return;
 
     if (currentUser.is_admin && page !== "admin") {
       window.location.replace("#admin");
       setPage("admin");
       return;
     }
-
     if (!currentUser.is_admin && page === "admin") {
       window.location.replace("#buscar");
       setPage("buscar");
@@ -241,13 +259,24 @@ function App() {
     } catch { /* non-critical */ }
   }
 
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    try {
+      await markAllNotificationsRead();
+      setUnreadNotifications(0);
+    } catch { /* non-critical */ }
+  }, []);
+
+  // Repeat search: navigate to buscar and auto-trigger analysis
+  const handleRepeatSearch = useCallback(() => {
+    setForceAnalyze(true);
+    navigateTo("buscar");
+  }, [navigateTo]);
+
   const isAdminSession = Boolean(currentUser?.is_admin);
-  const showNavbar = PROTECTED.includes(page) && page !== "admin" && !isAdminSession;
+  const showNavbar = PROTECTED.includes(page) && page !== "admin" && page !== "entrevista" && !isAdminSession;
   const profileComplete = profileCompletion >= 60;
   const progressDone = profileComplete && hasSearched;
 
-  // Show a neutral loading screen while we resolve the user's role.
-  // This prevents briefly rendering the wrong view (e.g. Profile for an admin).
   if (authLoading) {
     return (
       <>
@@ -270,6 +299,7 @@ function App() {
   }
 
   return (
+    <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
     <div>
       {showNavbar && (
         <Navbar
@@ -283,10 +313,13 @@ function App() {
           hasSearched={hasSearched}
           profileCompletion={profileCompletion}
           isAdmin={Boolean(currentUser?.is_admin)}
+          aiQuota={aiQuota}
+          unreadNotifications={unreadNotifications}
+          onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
         />
       )}
 
-      {showOnboarding && <Onboarding onDismiss={handleDismissOnboarding} darkMode={darkMode} />}
+      {showOnboarding && <Onboarding onDismiss={() => { handleDismissOnboarding(); navigateTo("buscar"); }} darkMode={darkMode} alias={currentUser?.alias || ""} />}
 
       {(page === "home" || page === "landing") && (
         <Landing onStartClick={() => navigateTo("auth")} />
@@ -305,7 +338,6 @@ function App() {
               const targetPage = profile.is_admin ? "admin" : "dashboard";
               navigateTo(targetPage);
             } catch {
-              // ignore
               navigateTo("buscar");
             }
             refreshProfileState();
@@ -316,43 +348,85 @@ function App() {
       {page === "verify-email" && <VerifyEmail />}
 
       {page === "buscar" && !isAdminSession && (
-        <Profile
-          analysisResults={analysisResults}
-          setAnalysisResults={(data) => {
-            setAnalysisResults(data);
-            setHasSearched(true);
-          }}
-          addToast={addToast}
-          darkMode={darkMode}
-          forceAnalyze={forceAnalyze}
-          onAnalyzeStarted={() => setForceAnalyze(false)}
-        />
+        <ErrorBoundary darkMode={darkMode} onReset={() => setAnalysisResults(null)}>
+          <Profile
+            analysisResults={analysisResults}
+            setAnalysisResults={(data) => {
+              setAnalysisResults(data);
+              setHasSearched(true);
+            }}
+            addToast={addToast}
+            darkMode={darkMode}
+            forceAnalyze={forceAnalyze}
+            onAnalyzeStarted={() => setForceAnalyze(false)}
+            onNavigate={navigateTo}
+          />
+        </ErrorBoundary>
       )}
       {page === "cv-buscar" && !isAdminSession && (
-        <CVSearch addToast={addToast} darkMode={darkMode} />
+        <ErrorBoundary darkMode={darkMode}>
+          <CVSearch addToast={addToast} darkMode={darkMode} />
+        </ErrorBoundary>
       )}
-      {page === "mapa" && !isAdminSession && <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />}
-      {page === "favoritos" && !isAdminSession && <Favoritos addToast={addToast} darkMode={darkMode} />}
-      {page === "candidaturas" && !isAdminSession && <Candidaturas addToast={addToast} darkMode={darkMode} />}
-      {page === "user-profile" && !isAdminSession && (
-        <UserProfile
-          onProfileSaved={() => {
-            setAnalysisResults(null);
-            refreshProfileState();
-            setForceAnalyze(true);
-            navigateTo("buscar");
-          }}
-          onAccountDeleted={handleLogout}
-          onSkip={() => navigateTo("buscar")}
-          addToast={addToast}
+      {page === "mapa" && !isAdminSession && (
+        <ErrorBoundary darkMode={darkMode}>
+          <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />
+        </ErrorBoundary>
+      )}
+      {page === "favoritos" && !isAdminSession && (
+        <ErrorBoundary darkMode={darkMode}>
+          <Favoritos addToast={addToast} darkMode={darkMode} onNavigate={navigateTo} />
+        </ErrorBoundary>
+      )}
+      {page === "candidaturas" && !isAdminSession && (
+        <ErrorBoundary darkMode={darkMode}>
+          <Candidaturas
+            addToast={addToast}
+            darkMode={darkMode}
+            onNavigate={navigateTo}
+            onStartInterview={(jobTitle, company, applicationId) => {
+              setInterviewContext({ jobTitle, company, applicationId });
+              navigateTo("entrevista");
+            }}
+          />
+        </ErrorBoundary>
+      )}
+      {page === "entrevista" && !isAdminSession && interviewContext && (
+        <Interview
           darkMode={darkMode}
+          jobTitle={interviewContext.jobTitle}
+          company={interviewContext.company}
+          applicationId={interviewContext.applicationId}
+          onExit={() => {
+            setInterviewContext(null);
+            navigateTo("candidaturas");
+          }}
         />
+      )}
+      {page === "user-profile" && !isAdminSession && (
+        <ErrorBoundary darkMode={darkMode}>
+          <UserProfile
+            onProfileSaved={() => {
+              setAnalysisResults(null);
+              refreshProfileState();
+              setForceAnalyze(true);
+              navigateTo("buscar");
+            }}
+            onAccountDeleted={handleLogout}
+            onSkip={() => navigateTo("buscar")}
+            addToast={addToast}
+            darkMode={darkMode}
+          />
+        </ErrorBoundary>
       )}
       {page === "dashboard" && !isAdminSession && (
-        <Dashboard
-          darkMode={darkMode}
-          onNavigate={(target) => navigateTo(target)}
-        />
+        <ErrorBoundary darkMode={darkMode}>
+          <Dashboard
+            darkMode={darkMode}
+            onNavigate={navigateTo}
+            onRepeatSearch={handleRepeatSearch}
+          />
+        </ErrorBoundary>
       )}
       {page === "admin" && isAdminSession && (
         <Admin
@@ -372,6 +446,7 @@ function App() {
 
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>
+    </ThemeContext.Provider>
   );
 }
 

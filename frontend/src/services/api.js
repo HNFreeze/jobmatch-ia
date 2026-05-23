@@ -50,6 +50,19 @@ async function buildApiError(response, fallbackMessage) {
     forceLogoutFromServer(error.code || (response.status === 401 ? "token_invalid" : "account_blocked"));
   }
 
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    const seconds = retryAfter ? parseInt(retryAfter, 10) : null;
+    const msg = seconds
+      ? `Demasiadas peticiones. Puedes volver a intentarlo en ${seconds}s.`
+      : (error.detail || "Demasiadas peticiones. Espera un momento antes de volver a intentarlo.");
+    const err = new Error(msg);
+    err.status = 429;
+    err.retryAfter = seconds;
+    err.isRateLimit = true;
+    return err;
+  }
+
   const err = new Error(error.detail || fallbackMessage);
   Object.assign(err, error);
   err.status = response.status;
@@ -63,6 +76,16 @@ export async function matchOffers(profile) {
     body: JSON.stringify(profile),
   });
   if (!response.ok) throw await buildApiError(response, "Error al conectar con el servidor");
+  return response.json();
+}
+
+export async function loadMoreOffers({ experience, stack, english, ubicaciones, modalidad, idiomas, exclude_ids, adzuna_page, results_count }) {
+  const response = await fetch(`${API_URL}/api/match/more`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ experience, stack, english, ubicaciones, modalidad, idiomas, exclude_ids, adzuna_page, results_count }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error cargando más ofertas");
   return response.json();
 }
 
@@ -612,5 +635,113 @@ export async function getMatchFeedback() {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al obtener el feedback");
+  return response.json();
+}
+export async function getMarketAnalysis() {
+  const response = await fetch(`${API_URL}/api/match/market-analysis`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al obtener análisis de mercado");
+  return response.json();
+}
+
+// ── JWT Refresh ───────────────────────────────────────────────────────────────
+
+export async function refreshToken() {
+  const response = await fetch(`${API_URL}/api/auth/refresh`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "No se pudo renovar la sesión");
+  return response.json();
+}
+
+/** Decode JWT payload (no signature verification — server validates on every call). */
+export function getTokenExpiresAt() {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.exp ? payload.exp * 1000 : null; // ms
+  } catch {
+    return null;
+  }
+}
+
+// ── Notificaciones in-app ─────────────────────────────────────────────────────
+
+export async function getNotifications(unreadOnly = false) {
+  const response = await fetch(
+    `${API_URL}/api/notifications${unreadOnly ? "?unread_only=true" : ""}`,
+    { headers: authHeaders() },
+  );
+  if (!response.ok) throw await buildApiError(response, "Error al cargar notificaciones");
+  return response.json();
+}
+
+export async function markNotificationRead(id) {
+  const response = await fetch(`${API_URL}/api/notifications/${id}/read`, {
+    method: "PATCH",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al marcar notificación");
+  return response.json();
+}
+
+export async function markAllNotificationsRead() {
+  const response = await fetch(`${API_URL}/api/notifications/read-all`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al marcar notificaciones");
+  return response.json();
+}
+
+// ── Interview ─────────────────────────────────────────────────────────────────
+
+export async function startInterview({ job_title, company, job_description, application_id }) {
+  const response = await fetch(`${API_URL}/api/interview/start`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ job_title, company, job_description, application_id }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al iniciar la entrevista");
+  return response.json();
+}
+
+export async function sendInterviewMessage(sessionId, content) {
+  const response = await fetch(`${API_URL}/api/interview/${sessionId}/message`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error enviando mensaje");
+  return response.json();
+}
+
+export async function endInterview(sessionId) {
+  const response = await fetch(`${API_URL}/api/interview/${sessionId}/end`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al finalizar la entrevista");
+  return response.json();
+}
+
+export async function getInterviewSessions() {
+  const response = await fetch(`${API_URL}/api/interview/sessions`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al obtener sesiones");
+  return response.json();
+}
+
+// ── Admin: Calidad del motor de matching ──────────────────────────────────────
+
+export async function getMatchingQualityMetrics() {
+  const response = await fetch(`${API_URL}/api/admin/matching-quality`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar métricas de calidad del matching");
   return response.json();
 }
