@@ -22,7 +22,28 @@ from app.services.matching_service import (
     _evaluate_offer_match,
     _sort_by_fit,
     TECH_NAME_SYNONYMS,
+    diversify_by_company,
+    diversify_keep_tiers,
 )
+
+
+def test_diversify_by_company_caps_and_keeps_all():
+    offers = [{"empresa": "Cabify", "id": i} for i in range(5)] + [{"empresa": "Otra", "id": 9}]
+    out = diversify_by_company(offers, max_per_company=2)
+    assert len(out) == 6  # nothing dropped
+    assert [o["empresa"] for o in out[:3]].count("Cabify") == 2  # capped in primary block
+
+
+def test_diversify_keep_tiers_never_buries_higher_tier():
+    offers = (
+        [{"resultado": "APLICA", "empresa": "Cabify", "id": i} for i in range(5)]
+        + [{"resultado": "QUIZÁ", "empresa": "Otra", "id": 50}]
+    )
+    out = diversify_keep_tiers(offers, max_per_company=2)
+    assert len(out) == 6
+    first_quiza = next(i for i, o in enumerate(out) if o["resultado"] == "QUIZÁ")
+    # Every item before the first QUIZÁ must be an APLICA (tiers never interleave).
+    assert all(out[j]["resultado"] == "APLICA" for j in range(first_quiza))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

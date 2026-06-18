@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.notification import Notification
 from app.routers.user import get_current_user_id
 
@@ -28,11 +29,8 @@ def get_notifications(
     limit: int = 30,
     unread_only: bool = False,
     user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         q = db.query(Notification).filter(Notification.user_id == user_id)
         if unread_only:
@@ -55,11 +53,8 @@ def get_notifications(
 def mark_notification_read(
     notification_id: int,
     user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         n = db.query(Notification).filter(
             Notification.id == notification_id,
@@ -75,11 +70,7 @@ def mark_notification_read(
 
 
 @router.post("/api/notifications/read-all")
-def mark_all_read(user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
+def mark_all_read(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         db.query(Notification).filter(
             Notification.user_id == user_id,

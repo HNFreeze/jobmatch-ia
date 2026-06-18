@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String
 
 from app.database import Base
 
@@ -16,11 +16,11 @@ class User(Base):
     nombre = Column(String(100), nullable=True)
     apellidos = Column(String(200), nullable=True)
     anos_experiencia = Column(String(50))
-    stack = Column(Text)    # JSON array almacenado como texto
+    stack = Column(JSON)
     ingles = Column(String(50))
-    idiomas = Column(Text)      # JSON: [{"idioma": "Inglés", "nivel": "avanzado"}, ...]
-    ubicaciones = Column(Text)  # JSON: ["Madrid", "Barcelona"]
-    modalidad = Column(Text)    # JSON: ["Presencial", "Híbrido", "Remoto"]
+    idiomas = Column(JSON)
+    ubicaciones = Column(JSON)
+    modalidad = Column(JSON)
     onboarding_completed = Column(Boolean, default=False, nullable=False, server_default="false")
     email_verified = Column(Boolean, default=False, nullable=False, server_default="false")
     email_verified_at = Column(DateTime, nullable=True)
@@ -30,5 +30,5 @@ class User(Base):
     daily_ai_quota = Column(Integer, default=8, nullable=False, server_default="8")
     analytics_consent = Column(Boolean, nullable=True, default=None)
     is_super_admin = Column(Boolean, default=False, nullable=False, server_default="false")
-    stack_years = Column(Text, nullable=True)  # JSON: {"Python": 3, "React": 2}
+    stack_years = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

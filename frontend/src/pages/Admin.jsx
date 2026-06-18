@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   clearAdminCache,
+  cleanupInactiveUsers,
   deleteAdminUser,
+  exportEvaluationCsv,
   getAdminActivity,
   getAdminAiUsage,
   getAdminDashboard,
@@ -9,6 +11,7 @@ import {
   getAdminJobSourceStatus,
   getAdminJobIngestionRuns,
   getAdminUsers,
+  getMatchingQualityMetrics,
   resetAdminUserQuotaUsage,
   startAdminJobIngestion,
   updateAdminUserBlock,
@@ -28,7 +31,13 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [jobHealth, setJobHealth] = useState(null);
   const [jobSources, setJobSources] = useState(null);
   const [ingestionRuns, setIngestionRuns] = useState(null);
+  const [matchingQuality, setMatchingQuality] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [activeSection, setActiveSection] = useState("dashboard-admin");
+  const [motorExpanded, setMotorExpanded] = useState(false);
+  const [deleteModalUser, setDeleteModalUser] = useState(null);
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState("");
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -43,19 +52,23 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   const [actionError, setActionError] = useState("");
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheNotice, setCacheNotice] = useState("");
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
   const [startingIngestion, setStartingIngestion] = useState(false);
   const [ingestionNotice, setIngestionNotice] = useState("");
   const [ingestionDraft, setIngestionDraft] = useState({
     skills: "",
     locations: "",
-    sources: "public_sources,adzuna",
+    sources: "public_sources,adzuna,jobspy,jsearch",
   });
 
   async function loadAdminData(currentPage = page, currentSearch = search, currentSortBy = sortBy, currentSortDir = sortDir) {
     setLoading(true);
     setError(null);
     try {
-      const [dashboardData, usersResponse, activityData, aiUsageData, jobHealthData, jobSourceData, ingestionData] = await Promise.all([
+      const [dashboardData, usersResponse, activityData, aiUsageData, jobHealthData, jobSourceData, ingestionData, matchingQualityData] = await Promise.all([
         getAdminDashboard(),
         getAdminUsers({
           page: currentPage,
@@ -69,6 +82,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
         getAdminJobIndexHealth(),
         getAdminJobSourceStatus(),
         getAdminJobIngestionRuns(10),
+        getMatchingQualityMetrics().catch(() => null),
       ]);
 
       setDashboard(dashboardData);
@@ -78,6 +92,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setJobHealth(jobHealthData);
       setJobSources(jobSourceData);
       setIngestionRuns(ingestionData);
+      setMatchingQuality(matchingQualityData);
       setQuotaDrafts((prev) => {
         const next = { ...prev };
         (usersResponse.items || []).forEach((user) => {
@@ -89,6 +104,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
       setError(err);
     } finally {
       setLoading(false);
+      setLastRefreshed(new Date());
     }
   }
 
@@ -103,6 +119,35 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     }, 5000);
     return () => clearInterval(timer);
   }, [ingestionRuns?.running, page, search, sortBy, sortDir]);
+
+  useEffect(() => {
+    const sectionIds = [
+      "dashboard-admin", "ia-admin", "calidad-matching", "actividad-admin",
+      "usuarios-admin", "motor-admin", "sistema-admin",
+    ];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) setActiveSection(entry.target.id);
+        }
+      },
+      { threshold: 0, rootMargin: "-20% 0px -70% 0px" },
+    );
+    sectionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  function formatAgo(date) {
+    if (!date) return null;
+    const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+    if (mins < 1) return "justo ahora";
+    if (mins === 1) return "hace 1 min";
+    if (mins < 60) return `hace ${mins} min`;
+    return `hace ${Math.floor(mins / 60)}h`;
+  }
 
   function scrollToSection(sectionId) {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -132,14 +177,6 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
   function changePage(nextPage) {
     setPage(nextPage);
     loadAdminData(nextPage, search, sortBy, sortDir);
-  }
-
-  function adjustQuotaDraft(userId, delta) {
-    setQuotaDrafts((prev) => {
-      const current = Number(prev[userId] ?? 0);
-      const nextValue = Math.min(200, Math.max(1, current + delta));
-      return { ...prev, [userId]: nextValue };
-    });
   }
 
   async function handleQuotaSave(user) {
@@ -198,26 +235,64 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
     }
   }
 
-  async function handleDeleteUser(user) {
-    const confirmationCode = window.prompt(
-      `Para eliminar a ${user.email}, introduce la clave de confirmacion`
-    );
+  function handleDeleteUser(user) {
+    setDeleteModalUser(user);
+    setDeleteConfirmCode("");
+  }
 
-    if (confirmationCode === null) {
-      return;
-    }
-
-    setDeletingUserId(user.id);
+  async function handleConfirmDelete() {
+    if (!deleteModalUser) return;
+    setDeletingUserId(deleteModalUser.id);
     setActionError("");
     setActionNotice("");
     try {
-      await deleteAdminUser(user.id, confirmationCode.trim());
-      setActionNotice(`Usuario eliminado: ${user.email}.`);
+      await deleteAdminUser(deleteModalUser.id, deleteConfirmCode.trim());
+      setActionNotice(`Usuario eliminado: ${deleteModalUser.email}.`);
+      setDeleteModalUser(null);
       await loadAdminData(page, search, sortBy, sortDir);
     } catch (err) {
       setActionError(err.message || "No se pudo eliminar el usuario.");
     } finally {
       setDeletingUserId(null);
+    }
+  }
+
+  async function handleExportCsv() {
+    setExportingCsv(true);
+    try {
+      await exportEvaluationCsv();
+    } catch (err) {
+      setActionError(err.message || "No se pudo exportar el CSV.");
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
+  async function handleCleanupPreview() {
+    setCleanupRunning(true);
+    setCleanupResult(null);
+    try {
+      const result = await cleanupInactiveUsers({ daysInactive: cleanupDays, dryRun: true });
+      setCleanupResult(result);
+    } catch (err) {
+      setActionError(err.message || "Error al previsualizar limpieza.");
+    } finally {
+      setCleanupRunning(false);
+    }
+  }
+
+  async function handleCleanupConfirm() {
+    if (!window.confirm(`¿Eliminar definitivamente ${cleanupResult?.would_delete || 0} usuarios inactivos? Esta acción no se puede deshacer.`)) return;
+    setCleanupRunning(true);
+    try {
+      const result = await cleanupInactiveUsers({ daysInactive: cleanupDays, dryRun: false });
+      setActionNotice(`Limpieza completada: ${result.deleted} usuarios eliminados.`);
+      setCleanupResult(null);
+      await loadAdminData(page, search, sortBy, sortDir);
+    } catch (err) {
+      setActionError(err.message || "Error en la limpieza.");
+    } finally {
+      setCleanupRunning(false);
     }
   }
 
@@ -301,13 +376,25 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
 
           <div style={S.adminActions}>
             <div style={S.sectionPills}>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("dashboard-admin")} style={S.pillButton}>Dashboard</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("motor-admin")} style={S.pillButton}>Motor</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("usuarios-admin")} style={S.pillButton}>Usuarios</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ingesta-admin")} style={S.pillButton}>Ingesta</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("ia-admin")} style={S.pillButton}>Uso IA</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("calidad-ia-admin")} style={S.pillButton}>Calidad IA</button>
-              <button type="button" className="admin-pill-btn" onClick={() => scrollToSection("actividad-admin")} style={S.pillButton}>Actividad</button>
+              {[
+                { id: "dashboard-admin",  label: "Dashboard" },
+                { id: "ia-admin",         label: "Uso IA" },
+                { id: "calidad-matching", label: "Calidad IA" },
+                { id: "actividad-admin",  label: "Actividad" },
+                { id: "usuarios-admin",   label: "Usuarios" },
+                { id: "motor-admin",      label: "Motor" },
+                { id: "sistema-admin",    label: "Sistema" },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="admin-pill-btn"
+                  onClick={() => scrollToSection(id)}
+                  style={{ ...S.pillButton, ...(activeSection === id ? S.pillButtonActive : {}) }}
+                >
+                  {label}
+                </button>
+              ))}
               <a
                 href="https://clarity.microsoft.com"
                 target="_blank"
@@ -327,7 +414,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 style={{ ...S.secondaryButton, opacity: loading ? 0.6 : 1 }}
                 title="Actualizar datos"
               >
-                {loading ? "↻ Actualizando…" : "↻ Actualizar"}
+                {loading ? "↻ Actualizando…" : `↻ Actualizar${lastRefreshed ? ` · ${formatAgo(lastRefreshed)}` : ""}`}
               </button>
               <button type="button" className="admin-btn-secondary" onClick={toggleDarkMode} style={S.secondaryButton}>
                 {dm ? "Modo claro" : "Modo oscuro"}
@@ -401,7 +488,15 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             />
           </div>
 
-          <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel), marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={() => setMotorExpanded(v => !v)}
+            style={{ ...S.secondaryButton, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            {motorExpanded ? "▲ Mostrar menos" : "▼ Ver fuentes y detalles"}
+          </button>
+
+          {motorExpanded && <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel), marginTop: 16 }}>
             <div style={S.sectionHeader}>
               <div>
                 <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Fuentes disponibles y configuración</p>
@@ -490,7 +585,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
           <div style={S.twoCol}>
             <div style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
@@ -580,7 +675,7 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 )}
               </div>
             </div>
-          </div>
+          </div>}
         </section>
 
         <section id="usuarios-admin" style={S.section}>
@@ -637,11 +732,24 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                   <div style={S.manageCell}>
                     <div style={S.quotaEditor}>
                       <span style={{ ...S.quotaLabel, color: dm ? "#94a3b8" : "#64748b" }}>Cuota diaria</span>
-                      <div style={S.quotaControls}>
-                        <button type="button" onClick={() => adjustQuotaDraft(user.id, -1)} style={S.stepButton}>-</button>
-                        <div style={{ ...S.quotaValue, ...(dm ? S.quotaValueDm : {}) }}>{draftQuota}</div>
-                        <button type="button" onClick={() => adjustQuotaDraft(user.id, 1)} style={S.stepButton}>+</button>
-                      </div>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={draftQuota}
+                        onChange={(e) => {
+                          const v = Math.min(200, Math.max(1, Number(e.target.value) || 1));
+                          setQuotaDrafts(prev => ({ ...prev, [user.id]: v }));
+                        }}
+                        style={{
+                          width: 72, textAlign: "center", borderRadius: 8,
+                          border: `1px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                          background: dm ? "#0f172a" : "#fff",
+                          color: dm ? "#f8fafc" : "#0f172a",
+                          fontSize: 14, fontWeight: 700, padding: "6px 8px",
+                          fontFamily: typography.family,
+                        }}
+                      />
                       <button
                         type="button"
                         className="admin-btn-secondary"
@@ -891,65 +999,6 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
             </div>
           </div>
 
-          <div id="calidad-ia-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel), marginBottom: 24 }}>
-            <h2 style={{ ...S.sectionTitle, marginBottom: 4, color: dm ? "#f8fafc" : "#111827" }}>Calidad IA (Matching)</h2>
-            <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b", marginBottom: 20 }}>
-              Métricas basadas en el feedback de usuarios sobre los resultados del motor.
-            </p>
-            <div style={S.usageSummary}>
-              <SummaryLine label="Total feedbacks" value={matchingQuality?.total_feedbacks || 0} darkMode={dm} />
-              <SummaryLine label="Precisión" value={`${matchingQuality?.ratio_precision || 0}%`} darkMode={dm} />
-            </div>
-
-            <div style={{
-              marginTop: 14,
-              padding: "12px",
-              borderRadius: 8,
-              backgroundColor: matchingQuality?.interpretacion_level === "good"
-                ? (dm ? "rgba(16,185,129,0.1)" : "#dcfce7")
-                : matchingQuality?.interpretacion_level === "warning"
-                  ? (dm ? "rgba(245,158,11,0.1)" : "#fef3c7")
-                  : (dm ? "rgba(239,68,68,0.1)" : "#fee2e2"),
-              color: matchingQuality?.interpretacion_level === "good"
-                ? "#059669"
-                : matchingQuality?.interpretacion_level === "warning"
-                  ? "#d97706"
-                  : "#dc2626",
-              border: `1px solid ${matchingQuality?.interpretacion_level === "good" ? "rgba(16,185,129,0.2)" : matchingQuality?.interpretacion_level === "warning" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)"}`,
-              fontSize: 14,
-              fontWeight: 600
-            }}>
-              {matchingQuality?.interpretacion || "Sin datos suficientes"}
-            </div>
-
-            <div style={S.subblock}>
-              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 12 }}>Distribución por resultado IA</p>
-              {matchingQuality?.distribucion_por_resultado && Object.keys(matchingQuality.distribucion_por_resultado).length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {Object.entries(matchingQuality.distribucion_por_resultado).map(([key, count]) => {
-                    const total = matchingQuality.total_feedbacks || 1;
-                    const percent = Math.round((count / total) * 100);
-                    return (
-                      <div key={key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 90, fontSize: 12, color: dm ? "#f8fafc" : "#111827", fontWeight: 700 }}>
-                          {key === "APLICA" ? "Aplica" : key === "QUIZA" ? "Quizá" : "No Encaja"}
-                        </div>
-                        <div style={{ flex: 1, height: 8, backgroundColor: dm ? "rgba(255,255,255,0.06)" : "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
-                          <div style={{ width: `${percent}%`, height: "100%", backgroundColor: key === "APLICA" ? "#10b981" : key === "QUIZA" ? "#f59e0b" : "#ef4444" }} />
-                        </div>
-                        <div style={{ width: 40, textAlign: "right", fontSize: 12, color: dm ? "#94a3b8" : "#64748b" }}>
-                          {count}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p style={{ ...S.emptyInline, color: dm ? "#94a3b8" : "#64748b" }}>Todavía no hay feedback de ofertas.</p>
-              )}
-            </div>
-          </div>
-
           <div id="sistema-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
             <h2 style={{ ...S.sectionTitle, marginBottom: 4, color: dm ? "#f8fafc" : "#111827" }}>Sistema</h2>
             <p style={{ ...S.sectionLead, color: dm ? "#94a3b8" : "#64748b", marginBottom: 20 }}>
@@ -1120,7 +1169,228 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
                 {clearingCache ? "Borrando…" : "🗑 Limpiar caché de búsquedas"}
               </button>
             </div>
+
+            {/* ── Limpieza de usuarios inactivos ── */}
+            <div style={{ borderTop: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e5e7eb"}`, paddingTop: 18, marginTop: 4 }}>
+              <p style={{ ...S.subTitle, color: dm ? "#e2e8f0" : "#0f172a", marginBottom: 6 }}>Limpieza de usuarios inactivos</p>
+              <p style={{ fontSize: 13, color: dm ? "#94a3b8" : "#64748b", marginBottom: 14, lineHeight: 1.6 }}>
+                Elimina cuentas que no han tenido actividad (búsquedas, candidaturas, favoritos) en el período indicado.
+                Usa el modo previsualización primero para ver quiénes serían afectados.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: dm ? "#94a3b8" : "#64748b" }}>
+                  Días de inactividad:
+                </label>
+                <input
+                  type="number" min={7} max={365} value={cleanupDays}
+                  onChange={e => setCleanupDays(Math.min(365, Math.max(7, Number(e.target.value) || 30)))}
+                  style={{
+                    width: 80, padding: "6px 10px", borderRadius: 8, fontSize: 14, fontWeight: 700,
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                    background: dm ? "#0f172a" : "#fff", color: dm ? "#f8fafc" : "#0f172a",
+                    fontFamily: typography.family,
+                  }}
+                />
+                <button type="button" onClick={handleCleanupPreview} disabled={cleanupRunning}
+                  style={{ ...S.secondaryButton, opacity: cleanupRunning ? 0.6 : 1 }}>
+                  {cleanupRunning ? "Analizando…" : "Previsualizar"}
+                </button>
+              </div>
+              {cleanupResult && (
+                <div style={{
+                  padding: "12px 14px", borderRadius: 10,
+                  background: dm ? "rgba(245,158,11,0.08)" : "#fffbeb",
+                  border: `1px solid ${dm ? "rgba(245,158,11,0.25)" : "rgba(245,158,11,0.35)"}`,
+                  marginBottom: 12,
+                }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: dm ? "#fcd34d" : "#b45309" }}>
+                    {cleanupResult.would_delete} usuarios serían eliminados (inactivos desde {new Date(cleanupResult.cutoff).toLocaleDateString("es-ES")})
+                  </p>
+                  {(cleanupResult.users || []).length > 0 && (
+                    <div style={{ fontSize: 12, color: dm ? "#94a3b8" : "#64748b", maxHeight: 120, overflowY: "auto" }}>
+                      {cleanupResult.users.map(u => (
+                        <div key={u.id}>{u.email} · registrado {new Date(u.created_at).toLocaleDateString("es-ES")}</div>
+                      ))}
+                    </div>
+                  )}
+                  {cleanupResult.would_delete > 0 && (
+                    <button type="button" onClick={handleCleanupConfirm} disabled={cleanupRunning}
+                      style={{ ...S.deleteButton, marginTop: 10, opacity: cleanupRunning ? 0.6 : 1 }}>
+                      {cleanupRunning ? "Eliminando…" : `Eliminar ${cleanupResult.would_delete} usuarios`}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* ── Panel Calidad del Motor de Matching ── */}
+          {matchingQuality && (
+            <div id="calidad-matching" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+                <h2 style={{ ...S.sectionTitle, margin: 0, color: dm ? "#f8fafc" : "#111827" }}>
+                  Calidad del motor de matching
+                </h2>
+                <span style={{
+                  fontSize: 11, fontWeight: 800, letterSpacing: "0.06em",
+                  padding: "3px 10px", borderRadius: 999,
+                  background: matchingQuality.interpretacion_level === "good"
+                    ? "rgba(16,185,129,0.12)" : matchingQuality.interpretacion_level === "warning"
+                    ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
+                  color: matchingQuality.interpretacion_level === "good" ? "#059669"
+                    : matchingQuality.interpretacion_level === "warning" ? "#b45309" : "#dc2626",
+                  border: `1px solid ${matchingQuality.interpretacion_level === "good"
+                    ? "rgba(16,185,129,0.25)" : matchingQuality.interpretacion_level === "warning"
+                    ? "rgba(245,158,11,0.25)" : "rgba(239,68,68,0.25)"}`,
+                }}>
+                  {matchingQuality.interpretacion}
+                </span>
+              </div>
+
+              {/* KPIs principales */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
+                {[
+                  { label: "Total feedbacks", value: matchingQuality.total_feedbacks, color: dm ? "#94a3b8" : "#64748b" },
+                  { label: "Positivos", value: matchingQuality.positivos, color: "#059669" },
+                  { label: "Negativos", value: matchingQuality.negativos, color: "#dc2626" },
+                  { label: "Precisión", value: `${matchingQuality.ratio_precision}%`, color: matchingQuality.ratio_precision >= 70 ? "#059669" : matchingQuality.ratio_precision >= 50 ? "#b45309" : "#dc2626" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{
+                    borderRadius: 10, padding: "12px 14px",
+                    background: dm ? "rgba(255,255,255,0.04)" : "#f8fafc",
+                    border: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}`,
+                  }}>
+                    <div style={{ fontSize: 11, color: dm ? "#64748b" : "#94a3b8", fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Barra de precisión */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 600, color: dm ? "#94a3b8" : "#64748b", marginBottom: 6 }}>
+                  <span>Ratio de precisión</span>
+                  <span style={{ color: matchingQuality.ratio_precision >= 70 ? "#059669" : matchingQuality.ratio_precision >= 50 ? "#b45309" : "#dc2626", fontWeight: 800 }}>
+                    {matchingQuality.ratio_precision}%
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: dm ? "rgba(255,255,255,0.08)" : "#e5e7eb", overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${matchingQuality.ratio_precision}%`,
+                    borderRadius: 999,
+                    background: matchingQuality.ratio_precision >= 70
+                      ? "linear-gradient(90deg,#10b981,#059669)"
+                      : matchingQuality.ratio_precision >= 50
+                      ? "linear-gradient(90deg,#f59e0b,#d97706)"
+                      : "linear-gradient(90deg,#ef4444,#dc2626)",
+                    transition: "width 0.6s ease",
+                  }} />
+                </div>
+              </div>
+
+              {/* Distribución por resultado de IA */}
+              {Object.keys(matchingQuality.distribucion_por_resultado || {}).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: dm ? "#64748b" : "#94a3b8", marginBottom: 10 }}>
+                    Distribución por etiqueta IA
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {Object.entries(matchingQuality.distribucion_por_resultado).map(([label, count]) => {
+                      const total = matchingQuality.total_feedbacks || 1;
+                      const pct = Math.round((count / total) * 100);
+                      const color = label === "APLICA" ? "#059669" : label === "QUIZÁ" ? "#b45309" : "#dc2626";
+                      const bg = label === "APLICA" ? "rgba(16,185,129,0.1)" : label === "QUIZÁ" ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
+                      return (
+                        <div key={label} style={{ display: "grid", gridTemplateColumns: "80px 1fr 36px 36px", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color, background: bg, padding: "2px 8px", borderRadius: 999, textAlign: "center" }}>{label}</span>
+                          <div style={{ height: 6, borderRadius: 999, background: dm ? "rgba(255,255,255,0.08)" : "#e5e7eb", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 999, transition: "width .4s" }} />
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color, textAlign: "right" }}>{pct}%</span>
+                          <span style={{ fontSize: 11, color: dm ? "#64748b" : "#94a3b8", textAlign: "right" }}>{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Precision por categoría IA */}
+              {matchingQuality.precision_by_result && Object.keys(matchingQuality.precision_by_result).length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: dm ? "#64748b" : "#94a3b8", marginBottom: 10 }}>
+                    Precisión por etiqueta (usuarios que validan cada categoría)
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px,1fr))", gap: 10 }}>
+                    {Object.entries(matchingQuality.precision_by_result).map(([label, data]) => {
+                      const color = label === "APLICA" ? "#059669" : label === "QUIZÁ" ? "#b45309" : "#dc2626";
+                      const bg = label === "APLICA" ? "rgba(16,185,129,0.08)" : label === "QUIZÁ" ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)";
+                      return (
+                        <div key={label} style={{ borderRadius: 10, padding: "12px 14px", background: bg, border: `1px solid ${color}33` }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 6 }}>{label}</div>
+                          <div style={{ fontSize: 22, fontWeight: 800, color }}>{data.precision}%</div>
+                          <div style={{ fontSize: 11, color: dm ? "#64748b" : "#94a3b8", marginTop: 2 }}>{data.positivos}/{data.total} votos +</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Evolución semanal */}
+              {(matchingQuality.weekly_evolution || []).some(w => w.total > 0) && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: dm ? "#64748b" : "#94a3b8", marginBottom: 10 }}>
+                    Evolución semanal del ratio de precisión (últimas 8 semanas)
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 60 }}>
+                    {(matchingQuality.weekly_evolution || []).map((w, i) => (
+                      <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                        {w.ratio !== null && (
+                          <span style={{ fontSize: 9, color: dm ? "#64748b" : "#94a3b8", fontWeight: 600 }}>{w.ratio}%</span>
+                        )}
+                        <div style={{ width: "100%", borderRadius: 3, overflow: "hidden", height: 36, background: dm ? "rgba(255,255,255,0.06)" : "#e5e7eb", position: "relative" }}>
+                          {w.ratio !== null && (
+                            <div style={{
+                              position: "absolute", bottom: 0, width: "100%",
+                              height: `${Math.max(6, w.ratio)}%`,
+                              background: w.ratio >= 70 ? "#10b981" : w.ratio >= 50 ? "#f59e0b" : "#ef4444",
+                              borderRadius: 3, transition: "height .4s ease",
+                            }} />
+                          )}
+                        </div>
+                        <span style={{ fontSize: 8, color: dm ? "#64748b" : "#94a3b8" }}>{w.week}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Botón exportar CSV */}
+              {matchingQuality.total_feedbacks > 0 && (
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${dm ? "rgba(255,255,255,0.06)" : "#e5e7eb"}` }}>
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    style={{ ...S.secondaryButton, opacity: exportingCsv ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    {exportingCsv ? "Exportando…" : "⬇ Exportar datos de evaluación (CSV)"}
+                  </button>
+                  <p style={{ margin: "6px 0 0", fontSize: 11, color: dm ? "#64748b" : "#94a3b8" }}>
+                    Incluye feedback de matching, historial de búsquedas y resumen de usuarios. Útil para la memoria del TFM.
+                  </p>
+                </div>
+              )}
+
+              {matchingQuality.total_feedbacks === 0 && (
+                <p style={{ fontSize: 13, color: dm ? "#64748b" : "#94a3b8", margin: 0 }}>
+                  Aún no hay feedback de usuarios. Los votos positivos/negativos en búsquedas alimentarán estas métricas.
+                </p>
+              )}
+            </div>
+          )}
 
           <div id="actividad-admin" style={{ ...S.card, ...(dm ? S.panelDm : S.panel) }}>
             <h2 style={{ ...S.sectionTitle, marginBottom: 16, color: dm ? "#f8fafc" : "#111827" }}>Actividad reciente</h2>
@@ -1140,6 +1410,78 @@ export default function Admin({ darkMode, onLogout, toggleDarkMode }) {
           </div>
         </section>
       </div>
+
+      {/* ── Modal eliminación usuario ── */}
+      {deleteModalUser && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDeleteModalUser(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: dm ? "#1e293b" : "#fff",
+              border: `1px solid ${dm ? "rgba(255,255,255,0.1)" : "#e5e7eb"}`,
+              borderRadius: 16, padding: 28,
+              width: "100%", maxWidth: 420,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              fontFamily: typography.family,
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 800, color: dm ? "#f8fafc" : "#0f172a" }}>
+              Eliminar usuario
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: dm ? "#94a3b8" : "#64748b", lineHeight: 1.5 }}>
+              Esta acción es <strong style={{ color: "#dc2626" }}>irreversible</strong>. Se borrarán todos los datos de{" "}
+              <strong style={{ color: dm ? "#f8fafc" : "#0f172a" }}>{deleteModalUser.email}</strong>.
+              Introduce la clave de confirmación para continuar.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              placeholder="Clave de confirmación"
+              value={deleteConfirmCode}
+              onChange={e => setDeleteConfirmCode(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleConfirmDelete()}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "10px 12px", borderRadius: 8, marginBottom: 16,
+                border: `1px solid ${dm ? "rgba(255,255,255,0.15)" : "#d1d5db"}`,
+                background: dm ? "#0f172a" : "#f9fafb",
+                color: dm ? "#f8fafc" : "#0f172a",
+                fontSize: 14, fontFamily: typography.family,
+              }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setDeleteModalUser(null)}
+                style={{ ...S.secondaryButton }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deletingUserId === deleteModalUser.id}
+                style={{
+                  ...S.deleteButton,
+                  opacity: deletingUserId === deleteModalUser.id ? 0.6 : 1,
+                }}
+              >
+                {deletingUserId === deleteModalUser.id ? "Eliminando…" : "Confirmar eliminación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1382,6 +1724,13 @@ const S = {
     textTransform: "uppercase",
     cursor: "pointer",
     fontFamily: typography.family,
+    transition: "all 0.15s ease",
+  },
+  pillButtonActive: {
+    border: "2px solid rgba(0,122,138,0.55)",
+    backgroundColor: "rgba(0,122,138,0.18)",
+    color: TEAL,
+    boxShadow: "0 0 0 2px rgba(0,122,138,0.12)",
   },
   headerButtons: {
     display: "flex",
@@ -1555,39 +1904,6 @@ const S = {
   quotaLabel: {
     fontSize: 12,
     fontWeight: 700,
-  },
-  quotaControls: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  stepButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 999,
-    border: "1px solid #cbd5e1",
-    backgroundColor: "#fff",
-    color: "#0f172a",
-    fontSize: 18,
-    fontWeight: 800,
-    cursor: "pointer",
-    fontFamily: typography.family,
-  },
-  quotaValue: {
-    minWidth: 54,
-    textAlign: "center",
-    borderRadius: 12,
-    border: "1px solid #cbd5e1",
-    backgroundColor: "#fff",
-    padding: "8px 10px",
-    fontSize: 14,
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  quotaValueDm: {
-    backgroundColor: "#0f172a",
-    borderColor: "rgba(255,255,255,0.1)",
-    color: "#f8fafc",
   },
   actionButtons: {
     display: "flex",

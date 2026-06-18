@@ -1,50 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   getUserProfile, getFavorites, getApplications, getHistory, getAiQuota,
-  getMyAlert, getMarketAnalysis,
+  getMyAlert, getMarketAnalysis, getSkillsRoadmap, submitSearchSatisfaction,
 } from "../services/api";
+import { pageTokens } from "../constants/theme";
 
 /* ---------------------------------------------------------------------------
  * Tokens — único sitio donde se calculan colores y espacios reactivos
  * ------------------------------------------------------------------------- */
 function useTokens(darkMode, density) {
-  return useMemo(() => {
-    const dm = !!darkMode;
-    const compact = density === "compacta";
-    return {
-      bg:         dm ? "#0a1120" : "#f8f9fc",
-      surface:    dm ? "#0f172a" : "#ffffff",
-      surface2:   dm ? "#111c30" : "#fbfbfd",
-      text:       dm ? "#e6edf7" : "#0b1220",
-      textSub:    dm ? "#94a3b8" : "#475569",
-      textMute:   dm ? "#64748b" : "#94a3b8",
-      border:     dm ? "#1e293b" : "#e8ebf2",
-      borderSt:   dm ? "#27364d" : "#d8dde7",
-      teal:       "#00758A",
-      tealSoft:   dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.08)",
-      tealLine:   dm ? "rgba(0,117,138,0.40)" : "rgba(0,117,138,0.25)",
-      purple:     "#7c3aed",
-      purpleSoft: dm ? "rgba(124,58,237,0.18)" : "rgba(124,58,237,0.08)",
-      blue:       "#2563eb",
-      green:      "#10b981",
-      greenSoft:  dm ? "rgba(16,185,129,0.16)" : "rgba(16,185,129,0.10)",
-      amber:      "#f59e0b",
-      amberSoft:  dm ? "rgba(245,158,11,0.16)" : "rgba(245,158,11,0.10)",
-      red:        "#ef4444",
-      redSoft:    dm ? "rgba(239,68,68,0.16)" : "rgba(239,68,68,0.08)",
-      shadow:     dm
-        ? "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)"
-        : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.10)",
-      gap:      compact ? 12 : 18,
-      gapLg:    compact ? 16 : 24,
-      pad:      compact ? 16 : 22,
-      padLg:    compact ? 20 : 28,
-      radius:   12,
-      radiusSm: 8,
-      font:     '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-      _dm: dm,
-    };
-  }, [darkMode, density]);
+  return useMemo(() => pageTokens(darkMode, density), [darkMode, density]);
 }
 
 function useHover() {
@@ -445,6 +410,9 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
   const [quota,        setQuota]        = useState(null);
   const [alert,        setAlert]        = useState(null);
   const [market,       setMarket]       = useState(null);
+  const [marketError,  setMarketError]  = useState(false);
+  const [roadmap,      setRoadmap]      = useState(null);
+  const [survey,       setSurvey]       = useState({ visible: false, rating: 0, sent: false });
   const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
@@ -464,9 +432,29 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
       if (q.status  === "fulfilled") setQuota(q.value);
       if (al.status === "fulfilled") setAlert(al.value?.alert);
       if (mk.status === "fulfilled") setMarket(mk.value);
+      if (mk.status === "rejected")  setMarketError(true);
       setLoading(false);
     });
   }, []);
+
+  // Roadmap: carga lazy tras datos del perfil (llama a Claude, puede tardar)
+  useEffect(() => {
+    if (loading) return;
+    getSkillsRoadmap().then(data => {
+      if (data?.steps?.length > 0) setRoadmap(data);
+    }).catch(() => null);
+  }, [loading]);
+
+  // Mostrar encuesta si tiene historial de búsquedas y no la ha enviado antes en esta sesión
+  useEffect(() => {
+    if (!loading && history.length >= 2 && !survey.sent) {
+      const shownAt = sessionStorage.getItem("survey_shown_at");
+      if (!shownAt || Date.now() - Number(shownAt) > 24 * 60 * 60 * 1000) {
+        setTimeout(() => setSurvey(s => ({ ...s, visible: true })), 3000);
+        sessionStorage.setItem("survey_shown_at", String(Date.now()));
+      }
+    }
+  }, [loading, history.length]);
 
   const stack = profile?.stack || [];
   const userStackLower = Array.isArray(stack) ? stack.map(s => s.toLowerCase()) : [];
@@ -635,7 +623,7 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
         )}
 
         {/* MÉTRICAS */}
-        <section style={{
+        <section className="dash-metrics" style={{
           display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
           gap: t.gap, marginBottom: t.gapLg,
         }}>
@@ -658,7 +646,7 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
         <InterviewBanner t={t} onClick={() => onNavigate?.("candidaturas")}/>
 
         {/* GRID PRINCIPAL: izquierda + sidebar derecho */}
-        <div style={{
+        <div className="dash-grid" style={{
           display: "grid",
           gridTemplateColumns: "minmax(0,1fr) 340px",
           gap: t.gapLg, alignItems: "start",
@@ -666,11 +654,21 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
           {/* ---- COLUMNA IZQUIERDA ---- */}
           <div style={{ display: "flex", flexDirection: "column", gap: t.gapLg }}>
 
+            {/* Análisis del mercado — error state */}
+            {!marketData && marketError && (
+              <Section t={t} eyebrow="Análisis del mercado" title={null} padding>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", color: t.textSub, fontSize: 13 }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  No se pudo cargar el análisis de mercado. Inténtalo de nuevo más tarde.
+                </div>
+              </Section>
+            )}
+
             {/* Análisis del mercado */}
             {marketData && (
               <Section
                 t={t}
-                eyebrow="Powered by IA"
+                eyebrow="Mercado laboral"
                 title="Análisis del mercado"
                 action={<span style={{ fontSize: 11, color: t.textMute, fontWeight: 600 }}>
                   Basado en {marketData.totalOfertas.toLocaleString()} ofertas activas
@@ -719,6 +717,54 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
               </Section>
             )}
 
+            {/* Skills Roadmap */}
+            {roadmap && roadmap.steps.length > 0 && (
+              <Section t={t} eyebrow="Tu roadmap de aprendizaje" title={null} padding>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ margin: "0 0 14px", fontSize: 13, color: t.textSub, lineHeight: 1.5 }}>
+                    Basado en tu stack y las skills más demandadas en el mercado ahora mismo.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {roadmap.steps.map((step, i) => (
+                      <div key={i} style={{
+                        display: "flex", gap: 14, padding: "12px 14px",
+                        background: t._dm ? "rgba(255,255,255,0.03)" : "#fafafa",
+                        border: `1px solid ${t.border}`, borderRadius: t.radiusSm,
+                      }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                          background: t.tealSoft, color: t.teal,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 12, fontWeight: 800,
+                        }}>{step.paso || i + 1}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 3 }}>
+                            {step.skill}
+                            {step.tiempo_semanas && (
+                              <span style={{ fontSize: 11, fontWeight: 500, color: t.textMute, marginLeft: 8 }}>
+                                ~{step.tiempo_semanas} sem
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.5 }}>{step.accion}</div>
+                          {(step.recursos || []).length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                              {step.recursos.map((r, j) => (
+                                <span key={j} style={{
+                                  fontSize: 11, padding: "2px 8px", borderRadius: 999,
+                                  background: t.tealSoft, color: t.teal, fontWeight: 600,
+                                }}>{r}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Section>
+            )}
+
             {/* Recordatorios próximos */}
             {upcomingFollowUps.length > 0 && (
               <Section t={t} eyebrow="Recordatorios" title={null} padding={true}>
@@ -762,6 +808,27 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
             )}
 
             {/* Últimas búsquedas */}
+            {historyItems.length === 0 && !loading && (
+              <Section t={t} eyebrow="Últimas búsquedas" title={null} padding>
+                <div style={{ textAlign: "center", padding: "28px 16px" }}>
+                  <Icon name="search" size={28} color={t.textMute}/>
+                  <p style={{ margin: "10px 0 16px", fontSize: 13, fontWeight: 600, color: t.textSub, lineHeight: 1.5 }}>
+                    Aún no has realizado ninguna búsqueda
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.("buscar")}
+                    style={{
+                      padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                      background: t.teal, color: "#fff", fontSize: 13, fontWeight: 700,
+                      fontFamily: t.font,
+                    }}
+                  >
+                    Buscar ofertas →
+                  </button>
+                </div>
+              </Section>
+            )}
             {historyItems.length > 0 && (
               <Section t={t} eyebrow="Últimas búsquedas" title={null} padding={false}>
                 <div>
@@ -818,7 +885,7 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
             }}>Acciones rápidas</div>
 
             <QuickAction t={t} icon="search" title="Buscar por perfil"
-              sub="Matching IA con tu stack" onClick={() => onNavigate?.("buscar")}/>
+              sub="Según tu perfil y stack" onClick={() => onNavigate?.("buscar")}/>
             <QuickAction t={t} icon="doc" title="Buscar subiendo CV"
               sub="Extracción automática + matching" accent="purple"
               onClick={() => onNavigate?.("cv-buscar")}/>
@@ -856,6 +923,63 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
           </aside>
         </div>
       </main>
+
+      {/* Encuesta de satisfacción flotante */}
+      {survey.visible && !survey.sent && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9000,
+          background: t.surface, border: `1px solid ${t.border}`,
+          borderRadius: t.radius, padding: 20, width: 300,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+          fontFamily: t.font, animation: "slideUp 0.3s ease",
+        }}>
+          <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
+          <button
+            onClick={() => setSurvey(s => ({ ...s, visible: false }))}
+            style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: t.textMute }}
+          >✕</button>
+          <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: t.text, paddingRight: 20 }}>
+            ¿Qué tal tus resultados?
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: t.textSub, lineHeight: 1.4 }}>
+            Tu valoración mejora el motor para todos los usuarios.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <button
+                key={n}
+                onClick={() => setSurvey(s => ({ ...s, rating: n }))}
+                style={{
+                  fontSize: 22, background: "none", border: "none", cursor: "pointer",
+                  opacity: survey.rating === 0 || survey.rating >= n ? 1 : 0.3,
+                  transform: survey.rating >= n ? "scale(1.15)" : "scale(1)",
+                  transition: "all 0.15s",
+                }}
+              >⭐</button>
+            ))}
+          </div>
+          {survey.rating > 0 && (
+            <button
+              onClick={async () => {
+                try {
+                  await submitSearchSatisfaction({ rating: survey.rating });
+                  setSurvey(s => ({ ...s, sent: true, visible: false }));
+                  addToast?.("¡Gracias por tu valoración!", "success");
+                } catch {
+                  setSurvey(s => ({ ...s, visible: false }));
+                }
+              }}
+              style={{
+                width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
+                background: t.teal, color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: "pointer", fontFamily: t.font,
+              }}
+            >
+              Enviar valoración ({survey.rating}/5)
+            </button>
+          )}
+        </div>
+      )}
 
       <style>{`
         @media (max-width: 1024px) {

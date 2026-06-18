@@ -1291,6 +1291,12 @@ function ImproveTabNew({
 
   const quotaLeft = result?.quota?.cv_improve_remaining;
   const qualityCounts = getOfferQualityCounts(searchResult?.offers || []);
+  // Best-effort numeric salary used only to order offers by "salario".
+  const parseSalaryValue = (salario) => {
+    if (!salario || typeof salario !== "string") return 0;
+    const matches = salario.replace(/[.\s]/g, "").match(/\d{4,6}/g);
+    return matches ? Math.max(...matches.map(Number)) : 0;
+  };
   const filteredOffers = (() => {
     const nextOffers = [...(searchResult?.offers || [])];
     let current = nextOffers;

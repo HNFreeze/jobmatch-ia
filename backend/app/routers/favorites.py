@@ -4,8 +4,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.favorite import Favorite
 from app.routers.user import get_current_user_id
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
@@ -22,15 +23,7 @@ class FavoriteRequest(BaseModel):
 
 
 @router.get("/api/favorites")
-def list_favorites(user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def list_favorites(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         rows = db.query(Favorite).filter(Favorite.user_id == user_id).all()
         payload = [
@@ -57,15 +50,7 @@ def list_favorites(user_id: int = Depends(get_current_user_id)):
 
 
 @router.post("/api/favorites")
-def add_favorite(body: FavoriteRequest, user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def add_favorite(body: FavoriteRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         existing = db.query(Favorite).filter(
             Favorite.user_id == user_id,
@@ -89,11 +74,11 @@ def add_favorite(body: FavoriteRequest, user_id: int = Depends(get_current_user_
             content={"detail": "Añadida a favoritas"},
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -101,15 +86,7 @@ def add_favorite(body: FavoriteRequest, user_id: int = Depends(get_current_user_
 
 
 @router.delete("/api/favorites/{adzuna_id}")
-def remove_favorite(adzuna_id: str, user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def remove_favorite(adzuna_id: str, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         row = db.query(Favorite).filter(
             Favorite.user_id == user_id,
@@ -122,11 +99,11 @@ def remove_favorite(adzuna_id: str, user_id: int = Depends(get_current_user_id))
             content={"detail": "Eliminada de favoritas"},
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:

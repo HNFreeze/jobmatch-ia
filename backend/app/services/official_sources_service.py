@@ -5,7 +5,6 @@ import httpx
 
 from app.services.job_index_service import matches_requested_locations, normalize_offer_record
 
-
 SOURCE_CONFIG_DEFINITIONS = [
     {
         "key": "adzuna",
@@ -61,6 +60,22 @@ SOURCE_CONFIG_DEFINITIONS = [
 def _parse_list_env(name: str) -> list[str]:
     raw = os.getenv(name, "")
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _max_offers_per_source() -> int:
+    """Cap on how many offers a SINGLE source/board contributes per fetch, so one
+    employer (e.g. a large Greenhouse board) cannot flood the index. 0 disables."""
+    try:
+        return max(0, int(os.getenv("JOB_INGESTION_MAX_OFFERS_PER_SOURCE", "25")))
+    except (TypeError, ValueError):
+        return 25
+
+
+def _cap(source_offers: list) -> list:
+    cap = _max_offers_per_source()
+    if cap and len(source_offers) > cap:
+        return source_offers[:cap]
+    return source_offers
 
 
 def _strip_html(value: str | None) -> str:
@@ -469,6 +484,7 @@ async def fetch_offers_from_public_sources_with_details(
         if infojobs_auth:
             try:
                 source_offers = await _fetch_infojobs_offers(client, infojobs_auth, skills, locations=locations)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": "infojobs", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:
@@ -477,6 +493,7 @@ async def fetch_offers_from_public_sources_with_details(
         for board_token in greenhouse_boards:
             try:
                 source_offers = await _fetch_greenhouse_board(client, board_token)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": f"greenhouse:{board_token}", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:
@@ -486,6 +503,7 @@ async def fetch_offers_from_public_sources_with_details(
         for board_name in ashby_boards:
             try:
                 source_offers = await _fetch_ashby_board(client, board_name)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": f"ashby:{board_name}", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:
@@ -495,6 +513,7 @@ async def fetch_offers_from_public_sources_with_details(
         for site_name in lever_sites:
             try:
                 source_offers = await _fetch_lever_site(client, site_name, eu_instance=False)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": f"lever:{site_name}", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:
@@ -504,6 +523,7 @@ async def fetch_offers_from_public_sources_with_details(
         for site_name in lever_eu_sites:
             try:
                 source_offers = await _fetch_lever_site(client, site_name, eu_instance=True)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": f"lever_eu:{site_name}", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:
@@ -513,6 +533,7 @@ async def fetch_offers_from_public_sources_with_details(
         for company_slug in recruitee_companies:
             try:
                 source_offers = await _fetch_recruitee_company(client, company_slug)
+                source_offers = _cap(source_offers)
                 offers.extend(source_offers)
                 source_logs.append({"source": f"recruitee:{company_slug}", "status": "ok", "fetched_count": len(source_offers)})
             except Exception as exc:

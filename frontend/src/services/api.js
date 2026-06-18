@@ -89,6 +89,48 @@ export async function loadMoreOffers({ experience, stack, english, ubicaciones, 
   return response.json();
 }
 
+// ── Agente personal de empleo ───────────────────────────────────────────────
+export async function agentSearch(instruction, overrideFilters = null) {
+  const response = await fetch(`${API_URL}/api/agent/search`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ instruction, override_filters: overrideFilters }),
+  });
+  if (!response.ok) throw await buildApiError(response, "El agente no pudo completar la búsqueda");
+  return response.json();
+}
+
+export async function getAgentRuns() {
+  const response = await fetch(`${API_URL}/api/agent/runs`, { headers: authHeaders() });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el historial del agente");
+  return response.json();
+}
+
+export async function getAgentRun(runId) {
+  const response = await fetch(`${API_URL}/api/agent/runs/${runId}`, { headers: authHeaders() });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el run del agente");
+  return response.json();
+}
+
+export async function confirmAgentRun(runId, offerIds) {
+  const response = await fetch(`${API_URL}/api/agent/runs/${runId}/confirm`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ offer_ids: offerIds }),
+  });
+  if (!response.ok) throw await buildApiError(response, "No se pudieron guardar las ofertas seleccionadas");
+  return response.json();
+}
+
+export async function cancelAgentRun(runId) {
+  const response = await fetch(`${API_URL}/api/agent/runs/${runId}/cancel`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "No se pudo cancelar el run");
+  return response.json();
+}
+
 export async function login(email, password) {
   const response = await fetch(`${API_URL}/api/auth/login`, {
     method: "POST",
@@ -743,5 +785,63 @@ export async function getMatchingQualityMetrics() {
     headers: authHeaders(),
   });
   if (!response.ok) throw await buildApiError(response, "Error al cargar métricas de calidad del matching");
+  return response.json();
+}
+
+// ── Admin: Exportar CSV de evaluación ─────────────────────────────────────────
+
+export async function exportEvaluationCsv() {
+  const response = await fetch(`${API_URL}/api/admin/export/evaluation-csv`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al exportar CSV");
+  const blob = await response.blob();
+  const cd = response.headers.get("Content-Disposition") || "";
+  const match = cd.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : "jobmatch_evaluacion.csv";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Admin: Limpieza de usuarios inactivos ─────────────────────────────────────
+
+export async function cleanupInactiveUsers({ daysInactive = 30, dryRun = true } = {}) {
+  const response = await fetch(
+    `${API_URL}/api/admin/cleanup/inactive-users?days_inactive=${daysInactive}&dry_run=${dryRun}`,
+    { method: "DELETE", headers: authHeaders() },
+  );
+  if (!response.ok) throw await buildApiError(response, "Error en limpieza de usuarios");
+  return response.json();
+}
+
+// ── Skills roadmap ────────────────────────────────────────────────────────────
+
+export async function getSkillsRoadmap() {
+  const response = await fetch(`${API_URL}/api/match/skills-roadmap`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al cargar el roadmap de skills");
+  return response.json();
+}
+
+// ── Encuesta de satisfacción ──────────────────────────────────────────────────
+
+export async function submitSearchSatisfaction({ rating, comment = "" }) {
+  const response = await fetch(`${API_URL}/api/match/satisfaction`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ rating, comment }),
+  });
+  if (!response.ok) throw await buildApiError(response, "Error al enviar la valoración");
+  return response.json();
+}
+
+// ── Health check (público) ────────────────────────────────────────────────────
+
+export async function getHealthStatus() {
+  const response = await fetch(`${API_URL}/health`);
+  if (!response.ok) throw new Error("API no disponible");
   return response.json();
 }

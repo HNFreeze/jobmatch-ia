@@ -3,6 +3,7 @@ import {
   getUserProfile, updateUserProfile, changePassword, deleteAccount,
   getMyAlert, upsertMyAlert, deleteMyAlert,
 } from "../services/api";
+import { pageTokens } from "../constants/theme";
 
 const DELETE_ACCOUNT_CONFIRMATION = "ELIMINAR";
 
@@ -10,40 +11,7 @@ const DELETE_ACCOUNT_CONFIRMATION = "ELIMINAR";
  * Tokens
  * ------------------------------------------------------------------------- */
 function useTokens(darkMode, density) {
-  return useMemo(() => {
-    const dm = !!darkMode;
-    const compact = density === "compacta";
-    return {
-      bg:       dm ? "#0a1120" : "#f8f9fc",
-      surface:  dm ? "#0f172a" : "#ffffff",
-      surface2: dm ? "#111c30" : "#fbfbfd",
-      text:     dm ? "#e6edf7" : "#0b1220",
-      textSub:  dm ? "#94a3b8" : "#475569",
-      textMute: dm ? "#64748b" : "#94a3b8",
-      border:   dm ? "#1e293b" : "#e8ebf2",
-      borderSt: dm ? "#27364d" : "#d8dde7",
-      teal:     "#00758A",
-      tealSoft: dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.08)",
-      tealLine: dm ? "rgba(0,117,138,0.40)" : "rgba(0,117,138,0.25)",
-      purple:   "#7c3aed",
-      purpleSoft: dm ? "rgba(124,58,237,0.18)" : "rgba(124,58,237,0.08)",
-      green:    "#10b981",
-      greenSoft: dm ? "rgba(16,185,129,0.18)" : "rgba(16,185,129,0.10)",
-      red:      "#ef4444",
-      redSoft:  dm ? "rgba(239,68,68,0.18)" : "rgba(239,68,68,0.08)",
-      shadow:   dm
-        ? "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)"
-        : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.10)",
-      gap:      compact ? 12 : 18,
-      gapLg:    compact ? 16 : 24,
-      pad:      compact ? 16 : 22,
-      padLg:    compact ? 20 : 28,
-      radius:   12,
-      radiusSm: 8,
-      font:     '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-      _dm: dm,
-    };
-  }, [darkMode, density]);
+  return useMemo(() => pageTokens(darkMode, density), [darkMode, density]);
 }
 
 function useHover() {
@@ -739,9 +707,59 @@ export default function UserProfile({
             Mi perfil
           </h1>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: t.textSub, fontWeight: 500 }}>
-            Configura tu stack, preferencias y alertas para que el matching IA sea más preciso.
+            Configura tu stack, preferencias y alertas para que el matching sea más preciso.
           </p>
         </section>
+
+        {/* Estado del perfil — completitud + impacto en el matching */}
+        {(() => {
+          const checks = [
+            { ok: stack.length > 0, label: "Stack tecnológico", impact: "El matching compara tus skills con las que pide cada oferta." },
+            { ok: Number(experience) > 0, label: "Años de experiencia", impact: "Ajusta el encaje al seniority que pide la oferta." },
+            { ok: (idiomas || []).filter(l => l.idioma?.trim()).length > 0, label: "Idiomas", impact: "Detecta requisitos de idioma como cumplidos o bloqueantes." },
+            { ok: (ubicaciones || []).length > 0, label: "Ubicaciones", impact: "Prioriza ofertas en tus zonas y permite filtrar por ubicación." },
+            { ok: (modalidad || []).length > 0, label: "Modalidad", impact: "Alinea remoto / híbrido / presencial con lo que ofrece la empresa." },
+          ];
+          const done = checks.filter(c => c.ok).length;
+          const pct = Math.round((done / checks.length) * 100);
+          const missing = checks.filter(c => !c.ok);
+          return (
+            <section style={{
+              background: t.surface, border: `1px solid ${t.border}`, borderRadius: t.radius,
+              padding: t.padLg, marginBottom: t.gapLg,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: t.text }}>Estado de tu perfil</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: pct === 100 ? t.green : t.teal }}>{pct}% completo</div>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: t.border, overflow: "hidden", margin: "10px 0 14px" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: pct === 100 ? t.green : t.teal, borderRadius: 999, transition: "width .4s ease" }} />
+              </div>
+              {missing.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 13, color: t.textSub, lineHeight: 1.5 }}>
+                  Tu perfil está completo. El matching usa toda esta información para puntuar y explicar cada oferta.
+                </p>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.textMute, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                    Te falta por completar
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {missing.map((c, i) => (
+                      <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span aria-hidden="true" style={{ color: t.teal, fontWeight: 800, marginTop: 1 }}>+</span>
+                        <div>
+                          <span style={{ fontSize: 13.5, fontWeight: 700, color: t.text }}>{c.label}</span>
+                          <span style={{ fontSize: 13, color: t.textSub }}> — {c.impact}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          );
+        })()}
 
         {/* GRID: sidebar + contenido */}
         <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: t.gapLg, alignItems: "start" }}>

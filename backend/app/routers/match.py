@@ -7,17 +7,23 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.cache import SearchCache
 from app.models.match_feedback import MatchFeedback
+from app.routers.user import get_current_user_record
 from app.services.ai_quota_service import consume_ai_quota
 from app.services.company_data_service import enrich_items_with_company_data as enrich_items_with_company_logos
 from app.services.job_search_service import fetch_offers_for_search
-from app.services.matching_service import MATCH_ENGINE_VERSION, generate_skills_gap, match_profile_with_offers
+from app.services.matching_service import (
+    MATCH_ENGINE_VERSION,
+    diversify_keep_tiers,
+    generate_skills_gap,
+    match_profile_with_offers,
+)
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
-from app.routers.user import get_current_user_record
 
 router = APIRouter()
 
@@ -132,6 +138,7 @@ async def match_offers(
     profile: ProfileRequest,
     request: Request,
     user=Depends(get_current_user_record),
+    db: Session = Depends(get_db),
 ):
     api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
@@ -145,16 +152,7 @@ async def match_offers(
     perfil_hash = _compute_profile_hash(profile_dict)
     client_ip = get_client_ip(request)
 
-    SessionLocal = get_session_local()
-    db = SessionLocal() if SessionLocal is not None else None
-
     try:
-        if not db:
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Base de datos no disponible"},
-                media_type="application/json; charset=utf-8",
-            )
 
         if not getattr(user, "is_super_admin", False):
             enforce_rate_limits(db, [
@@ -201,6 +199,7 @@ async def match_offers(
             for item in offers_list:
                 item["desde_cache"] = True
             offers_list = _apply_feedback_boost(offers_list, feedback_map)
+            offers_list = diversify_keep_tiers(offers_list)
             return JSONResponse(
                 content={"offers": offers_list, "skills_gap": skills_gap_data},
                 media_type="application/json; charset=utf-8",
@@ -282,6 +281,7 @@ async def match_offers(
             print(f"[CACHE] Error al guardar en BD: {e}")
 
         enriched = _apply_feedback_boost(enriched, feedback_map)
+        enriched = diversify_keep_tiers(enriched)
 
         return JSONResponse(
             content={"offers": enriched, "skills_gap": skills_gap_data},
@@ -309,6 +309,7 @@ class MoreOffersRequest(BaseModel):
 async def match_more_offers(
     body: MoreOffersRequest,
     user=Depends(get_current_user_record),
+    db: Session = Depends(get_db),
 ):
     from app.services.adzuna_service import fetch_adzuna_page
     from app.services.job_index_service import get_recent_db_offers, save_offers_to_db
@@ -317,12 +318,18 @@ async def match_more_offers(
     if not api_key:
         return JSONResponse(status_code=500, content={"detail": "CLAUDE_API_KEY no configurada"}, media_type="application/json; charset=utf-8")
 
-    SessionLocal = get_session_local()
-    db = SessionLocal() if SessionLocal else None
-    if not db:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"}, media_type="application/json; charset=utf-8")
-
     try:
+        if not getattr(user, "is_super_admin", False):
+            enforce_rate_limits(db, [
+                RateLimitRule(
+                    action="match_more_user",
+                    bucket_key=f"user:{user.id}",
+                    limit=20,
+                    window_seconds=3600,
+                    detail="Has cargado demasiadas ofertas adicionales en poco tiempo. Espera un poco.",
+                ),
+            ])
+
         consume_ai_quota(db, user, "match")
 
         exclude_set = {eid for eid in body.exclude_ids if eid}
@@ -425,13 +432,10 @@ class FeedbackRequest(BaseModel):
 def submit_match_feedback(
     body: FeedbackRequest,
     user=Depends(get_current_user_record),
+    db: Session = Depends(get_db),
 ):
     if body.rating not in ("up", "down"):
         return JSONResponse(status_code=422, content={"detail": "rating debe ser up o down"})
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         existing = (
             db.query(MatchFeedback)
@@ -461,11 +465,7 @@ def submit_match_feedback(
 
 
 @router.get("/api/match/feedback")
-def get_my_feedback(user=Depends(get_current_user_record)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
+def get_my_feedback(user=Depends(get_current_user_record), db: Session = Depends(get_db)):
     try:
         rows = db.query(MatchFeedback).filter(MatchFeedback.user_id == user.id).all()
         return JSONResponse(content={"feedback": {row.adzuna_id: row.rating for row in rows}})
@@ -475,28 +475,23 @@ def get_my_feedback(user=Depends(get_current_user_record)):
 # ── Market analysis endpoint ──────────────────────────────────────────────────
 
 @router.get("/api/match/market-analysis")
-def get_market_analysis(user=Depends(get_current_user_record)):
+def get_market_analysis(user=Depends(get_current_user_record), db: Session = Depends(get_db)):
     """
     Analisis de mercado personalizado basado en las ofertas activas:
     - Que skills del usuario tienen alta demanda
     - Que skills NO tiene el usuario pero hay alta demanda
     - Conteo de ofertas por modalidad / ubicacion
     """
-    from app.models.job_offer import JobOffer
-    import json, re
+    import json
+    import re
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "DB no disponible"})
-    db = SessionLocal()
+    from app.models.job_offer import JobOffer
+
     try:
         # Get user stack
         user_stack = []
         if hasattr(user, "stack") and user.stack:
-            try:
-                user_stack = json.loads(user.stack) if isinstance(user.stack, str) else user.stack
-            except Exception:
-                user_stack = []
+            user_stack = user.stack or []
 
         # Sample recent active offers (limit for performance)
         offers = (
@@ -587,7 +582,119 @@ def get_market_analysis(user=Depends(get_current_user_record)):
             "skills_demand": [s for s in skills_demand if s["pct"] >= 3],
             "skill_gaps": skill_gaps,
             "modality_dist": modality_dist,
-            "top_locations": [{"location": l, "count": c} for l, c in top_locations],
+            "top_locations": [{"location": loc, "count": c} for loc, c in top_locations],
         })
+    finally:
+        db.close()
+
+
+# ── Skills roadmap ────────────────────────────────────────────────────────────
+
+@router.get("/api/match/skills-roadmap")
+async def get_skills_roadmap(user=Depends(get_current_user_record), db: Session = Depends(get_db)):
+    """Genera un roadmap de aprendizaje personalizado usando Claude, basado en el
+    stack del usuario y las skills más demandadas en el mercado."""
+    import anthropic
+
+    from app.models.job_offer import JobOffer
+
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return JSONResponse(status_code=503, content={"detail": "IA no disponible"})
+
+    try:
+        user_stack = user.stack or []
+        if not user_stack:
+            return JSONResponse(content={"steps": [], "message": "Añade skills a tu perfil para obtener un roadmap personalizado."})
+
+        # Obtener top skills del mercado que el usuario no tiene
+        offers = (
+            db.query(JobOffer)
+            .filter(JobOffer.is_active.is_(True))
+            .order_by(JobOffer.created_at.desc())
+            .limit(1000)
+            .all()
+        )
+
+        COMMON_TECHS = [
+            "python", "javascript", "typescript", "react", "node.js", "java", "sql", "docker",
+            "kubernetes", "aws", "gcp", "azure", "go", "rust", "c#", "php", "vue", "angular",
+            "next.js", "fastapi", "django", "spring", "mongodb", "postgresql", "redis",
+            "machine learning", "tensorflow", "pytorch", "pandas", "kafka", "terraform",
+        ]
+        user_stack_lower = [s.lower() for s in user_stack]
+        skill_counts = {}
+        for tech in COMMON_TECHS:
+            if any(tech in u or u in tech for u in user_stack_lower):
+                continue
+            count = sum(1 for o in offers if tech in ((o.titulo or "") + " " + (o.descripcion or "")).lower())
+            if count > 0:
+                skill_counts[tech] = count
+
+        top_gaps = sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        if not top_gaps:
+            return JSONResponse(content={"steps": [], "message": "Tu stack ya cubre las principales tecnologías demandadas."})
+
+        gap_str = ", ".join(f"{s} ({c} ofertas)" for s, c in top_gaps)
+        stack_str = ", ".join(user_stack[:8])
+
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Soy desarrollador con este stack: {stack_str}.\n"
+                    f"Las tecnologías más demandadas que me faltan son: {gap_str}.\n\n"
+                    "Genera un roadmap de aprendizaje en JSON con exactamente 3-4 pasos concretos y accionables. "
+                    "Formato: [{\"paso\": 1, \"skill\": \"nombre\", \"accion\": \"descripción concreta en 1 frase\", "
+                    "\"tiempo_semanas\": número, \"recursos\": [\"recurso1\", \"recurso2\"]}]\n"
+                    "Solo devuelve el JSON, sin texto adicional."
+                ),
+            }],
+        )
+        raw = resp.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        steps = json.loads(raw.strip())
+        return JSONResponse(content={"steps": steps, "gaps": [{"skill": s, "count": c} for s, c in top_gaps]})
+    except Exception as exc:
+        return JSONResponse(content={"steps": [], "message": f"No se pudo generar el roadmap: {exc}"})
+    finally:
+        db.close()
+
+
+# ── Encuesta de satisfacción ──────────────────────────────────────────────────
+
+class SatisfactionRequest(BaseModel):
+    rating: int   # 1-5
+    comment: str = ""
+
+
+@router.post("/api/match/satisfaction")
+def submit_satisfaction(body: SatisfactionRequest, user=Depends(get_current_user_record), db: Session = Depends(get_db)):
+    """Guarda una valoración de satisfacción del usuario sobre los resultados."""
+    from app.models.search_history import SearchHistory
+
+    if body.rating < 1 or body.rating > 5:
+        return JSONResponse(status_code=422, content={"detail": "La valoración debe estar entre 1 y 5."})
+
+    try:
+        # Actualiza la última búsqueda del usuario con la valoración
+        last = (
+            db.query(SearchHistory)
+            .filter(SearchHistory.user_id == user.id)
+            .order_by(SearchHistory.created_at.desc())
+            .first()
+        )
+        if last:
+            last.satisfaction_rating = body.rating
+            last.satisfaction_comment = body.comment[:500] if body.comment else None
+            db.commit()
+        return JSONResponse(content={"detail": "Valoración guardada", "rating": body.rating})
     finally:
         db.close()

@@ -4,12 +4,12 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from fastapi import APIRouter, Request
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.user import User
 from app.services.ai_quota_service import DEFAULT_DAILY_AI_QUOTA
@@ -17,13 +17,13 @@ from app.services.email_service import build_verification_email, send_email
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import (
     create_access_token,
+    decode_user_id_from_token,
     generate_verification_token,
     get_client_ip,
     hash_token,
     normalize_email,
 )
 from app.services.turnstile_service import validate_turnstile_token
-from app.services.security_service import decode_user_id_from_token
 
 router = APIRouter()
 VERIFICATION_TOKEN_HOURS = int(os.getenv("EMAIL_VERIFICATION_TOKEN_HOURS", "24"))
@@ -77,7 +77,7 @@ def _send_verification_email(user: User, raw_token: str) -> None:
 
 
 @router.post("/api/auth/register")
-def register(body: RegisterRequest, request: Request):
+def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(body.email)
     alias = (body.alias or "").strip()
 
@@ -95,22 +95,13 @@ def register(body: RegisterRequest, request: Request):
             media_type="application/json; charset=utf-8",
         )
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     client_ip = get_client_ip(request)
     try:
         enforce_rate_limits(db, [
             RateLimitRule(
                 action="auth_register_ip",
                 bucket_key=f"ip:{client_ip}",
-                limit=20,
+                limit=3,
                 window_seconds=3600,
                 detail="Has alcanzado el límite de registros desde esta IP. Inténtalo más tarde.",
             ),
@@ -189,11 +180,11 @@ def register(body: RegisterRequest, request: Request):
             headers=e.headers,
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -201,18 +192,9 @@ def register(body: RegisterRequest, request: Request):
 
 
 @router.post("/api/auth/login")
-def login(body: LoginRequest, request: Request):
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(body.email)
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     client_ip = get_client_ip(request)
     try:
         enforce_rate_limits(db, [
@@ -275,10 +257,10 @@ def login(body: LoginRequest, request: Request):
             headers=e.headers,
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -286,16 +268,7 @@ def login(body: LoginRequest, request: Request):
 
 
 @router.post("/api/auth/verify-email")
-def verify_email(body: VerifyEmailRequest, request: Request):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
+def verify_email(body: VerifyEmailRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = get_client_ip(request)
     try:
         enforce_rate_limits(db, [
@@ -357,11 +330,11 @@ def verify_email(body: VerifyEmailRequest, request: Request):
             headers=e.headers,
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -369,18 +342,9 @@ def verify_email(body: VerifyEmailRequest, request: Request):
 
 
 @router.post("/api/auth/resend-verification")
-def resend_verification_email(body: ResendVerificationRequest, request: Request):
+def resend_verification_email(body: ResendVerificationRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(body.email)
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     client_ip = get_client_ip(request)
     try:
         enforce_rate_limits(db, [
@@ -431,11 +395,11 @@ def resend_verification_email(body: ResendVerificationRequest, request: Request)
             headers=e.headers,
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -443,7 +407,7 @@ def resend_verification_email(body: ResendVerificationRequest, request: Request)
 
 
 @router.post("/api/auth/refresh")
-def refresh_token(request: Request):
+def refresh_token(request: Request, db: Session = Depends(get_db)):
     """Issue a fresh 30-day JWT for any valid, non-expired current token."""
     authorization = request.headers.get("Authorization")
     try:
@@ -455,15 +419,6 @@ def refresh_token(request: Request):
             media_type="application/json; charset=utf-8",
         )
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user or user.is_blocked:

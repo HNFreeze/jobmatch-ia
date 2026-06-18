@@ -259,8 +259,9 @@ export default function OfferCard({
             opacity: isTracked ? 0.8 : 1,
           }}
           onClick={e => { e.stopPropagation(); onTrack(); }}
+          title={isTracked ? "Ya añadida a candidaturas" : "Guardar en candidaturas"}
         >
-          {isTracked ? "✓ Siguiendo" : "Seguir"}
+          {isTracked ? "✓ Candidatura" : "+ Candidatura"}
         </button>
         <button
           className="btn-card-detail"

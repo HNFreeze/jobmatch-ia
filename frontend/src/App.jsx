@@ -7,7 +7,6 @@ import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import UserProfile from "./pages/UserProfile";
-import MapaOfertas from "./pages/MapaOfertas";
 import Favoritos from "./pages/Favoritos";
 import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
@@ -15,31 +14,35 @@ import Admin from "./pages/Admin";
 import CVSearch from "./pages/CVSearch";
 import Dashboard from "./pages/Dashboard";
 import Interview from "./pages/Interview";
+import AgentSearch from "./pages/AgentSearch";
 import {
   getUserProfile, updateUserProfile, getHistory, updateConsent,
   getAiQuota, getNotifications, markAllNotificationsRead,
   refreshToken, getTokenExpiresAt,
 } from "./services/api";
+import About from "./pages/About";
 import ConsentBanner from "./components/ConsentBanner";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { initClarity, stopClarity } from "./services/clarity";
 
-const PROTECTED = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "admin", "dashboard", "entrevista"];
+const PROTECTED = ["buscar", "agente", "cv-buscar", "user-profile", "favoritos", "candidaturas", "admin", "dashboard", "entrevista"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
-const USER_APP_PAGES = ["buscar", "cv-buscar", "user-profile", "mapa", "favoritos", "candidaturas", "dashboard"];
+const USER_APP_PAGES = ["buscar", "agente", "cv-buscar", "user-profile", "favoritos", "candidaturas", "dashboard"];
 const PAGE_TITLES = {
   home: "JobMatch IA | Matching inteligente de ofertas",
   landing: "JobMatch IA | Matching inteligente de ofertas",
   auth: "Acceso | JobMatch IA",
   "verify-email": "Verificar correo | JobMatch IA",
   buscar: "Ofertas analizadas | JobMatch IA",
+  agente: "Agente de empleo | JobMatch IA",
   "cv-buscar": "Buscar por CV | JobMatch IA",
-  mapa: "Ubicaciones | JobMatch IA",
   favoritos: "Favoritos | JobMatch IA",
   candidaturas: "Candidaturas | JobMatch IA",
   "user-profile": "Mi perfil | JobMatch IA",
   dashboard: "Inicio | JobMatch IA",
   admin: "Admin | JobMatch IA",
+  entrevista: "Entrevista IA | JobMatch IA",
+  sobre: "Sobre JobMatch IA | TFM",
 };
 
 const JWT_REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days before expiry
@@ -322,7 +325,11 @@ function App() {
       {showOnboarding && <Onboarding onDismiss={() => { handleDismissOnboarding(); navigateTo("buscar"); }} darkMode={darkMode} alias={currentUser?.alias || ""} />}
 
       {(page === "home" || page === "landing") && (
-        <Landing onStartClick={() => navigateTo("auth")} />
+        <Landing onStartClick={() => navigateTo("auth")} onAboutClick={() => navigateTo("sobre")} />
+      )}
+
+      {page === "sobre" && (
+        <About onStartClick={() => navigateTo("auth")} />
       )}
 
       {page === "auth" && (
@@ -363,14 +370,14 @@ function App() {
           />
         </ErrorBoundary>
       )}
+      {page === "agente" && !isAdminSession && (
+        <ErrorBoundary darkMode={darkMode}>
+          <AgentSearch addToast={addToast} darkMode={darkMode} onNavigate={navigateTo} />
+        </ErrorBoundary>
+      )}
       {page === "cv-buscar" && !isAdminSession && (
         <ErrorBoundary darkMode={darkMode}>
           <CVSearch addToast={addToast} darkMode={darkMode} />
-        </ErrorBoundary>
-      )}
-      {page === "mapa" && !isAdminSession && (
-        <ErrorBoundary darkMode={darkMode}>
-          <MapaOfertas analysisResults={analysisResults} darkMode={darkMode} />
         </ErrorBoundary>
       )}
       {page === "favoritos" && !isAdminSession && (
@@ -403,6 +410,27 @@ function App() {
           }}
         />
       )}
+      {page === "entrevista" && !isAdminSession && !interviewContext && (
+        <div style={{
+          minHeight: "100vh",
+          display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16,
+          background: darkMode ? "#0f172a" : "#f8f9fc",
+          fontFamily: '"Inter", system-ui, sans-serif',
+        }}>
+          <p style={{ fontSize: 16, color: darkMode ? "#94a3b8" : "#64748b", margin: 0, fontWeight: 500 }}>
+            Selecciona una candidatura para simular la entrevista.
+          </p>
+          <button
+            onClick={() => navigateTo("candidaturas")}
+            style={{
+              padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer",
+              background: "#7c3aed", color: "#fff", fontSize: 14, fontWeight: 700,
+            }}
+          >
+            Ir a Candidaturas
+          </button>
+        </div>
+      )}
       {page === "user-profile" && !isAdminSession && (
         <ErrorBoundary darkMode={darkMode}>
           <UserProfile
@@ -423,6 +451,7 @@ function App() {
         <ErrorBoundary darkMode={darkMode}>
           <Dashboard
             darkMode={darkMode}
+            addToast={addToast}
             onNavigate={navigateTo}
             onRepeatSearch={handleRepeatSearch}
           />

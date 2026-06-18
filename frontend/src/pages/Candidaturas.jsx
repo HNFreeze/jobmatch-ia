@@ -1,8 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { getApplications, updateApplication, deleteApplication } from "../services/api";
-import { typography } from "../constants/theme";
+import { typography, palette } from "../constants/theme";
+import Modal from "../components/ui/Modal";
+import Button from "../components/ui/Button";
 
 const TEAL = "#00758A";
+
+// Days until (or since) a follow-up date. Negative = overdue, 0 = today.
+function followUpDiffDays(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr + "T00:00:00");
+  return Math.round((d - today) / (1000 * 60 * 60 * 24));
+}
+
+const ACTIVE_STATUSES = new Set(["aplicada", "entrevista"]);
 
 const STATUSES = [
   {
@@ -377,8 +389,25 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
   const [error, setError] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const dm = darkMode;
+  const t = palette(dm);
+
+  // "Requiere atención": recordatorios vencidos/hoy + candidaturas activas sin
+  // próxima acción definida. Cálculo determinista a partir de los datos.
+  const attention = useMemo(() => {
+    const items = [];
+    for (const a of apps) {
+      const diff = followUpDiffDays(a.follow_up_date);
+      if (diff !== null && diff <= 0) {
+        items.push({ app: a, reason: diff < 0 ? `Recordatorio vencido hace ${Math.abs(diff)}d` : "Recordatorio para hoy", urgent: true });
+      } else if (!a.follow_up_date && ACTIVE_STATUSES.has(a.status)) {
+        items.push({ app: a, reason: "Sin próxima acción definida", urgent: false });
+      }
+    }
+    return items.sort((x, y) => Number(y.urgent) - Number(x.urgent));
+  }, [apps]);
 
   useEffect(() => {
     (async () => {
@@ -464,15 +493,20 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
     }
   }
 
-  async function handleDelete(id) {
-    if (!window.confirm("¿Eliminar esta candidatura?")) return;
-    const prev = apps.find(a => a.id === id);
-    setApps(curr => curr.filter(a => a.id !== id));
+  function requestDelete(id) {
+    setPendingDelete(apps.find(a => a.id === id) || null);
+  }
+
+  async function confirmDelete() {
+    const prev = pendingDelete;
+    if (!prev) return;
+    setPendingDelete(null);
+    setApps(curr => curr.filter(a => a.id !== prev.id));
     try {
-      await deleteApplication(id);
+      await deleteApplication(prev.id);
       addToast?.("Candidatura eliminada", "success");
     } catch {
-      if (prev) setApps(curr => [...curr, prev].sort((a, b) => a.id - b.id));
+      setApps(curr => [...curr, prev].sort((a, b) => a.id - b.id));
       addToast?.("Error al eliminar", "error");
     }
   }
@@ -525,6 +559,30 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
           Arrastra las tarjetas entre columnas para actualizar el estado · {total} candidatura{total !== 1 ? "s" : ""}
         </p>
       </div>
+
+      {/* Requieren atención — próxima acción / vencidos / sin seguimiento */}
+      {attention.length > 0 && (
+        <div style={{ marginBottom: 18, padding: "14px 16px", borderRadius: 12, background: t.surface, border: `1px solid ${t.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            Requieren tu atención
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: t.surfaceMuted, color: t.textSecondary }}>{attention.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {attention.slice(0, 5).map(({ app, reason, urgent }) => (
+              <div key={app.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 0", borderTop: `1px solid ${t.border}` }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{app.titulo}</div>
+                  <div style={{ fontSize: 12, color: t.textMuted }}>{app.empresa}</div>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap",
+                  color: urgent ? "#fff" : t.textSecondary, background: urgent ? "#dc2626" : t.surfaceMuted,
+                }}>{reason}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tip entrevista IA */}
       {total > 0 && (
@@ -631,7 +689,7 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
                 onDragOver={handleDragOver}
                 onDragEnter={handleDragEnter}
                 onDragLeave={handleDragLeave}
-                onDelete={handleDelete}
+                onDelete={requestDelete}
                 onNotesChange={handleNotesChange}
                 onStatusChange={handleStatusChange}
                 onFollowUpChange={handleFollowUpChange}
@@ -641,6 +699,18 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
           ))}
         </div>
       )}
+
+      <Modal
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        dm={dm}
+        title="Eliminar candidatura"
+        description={pendingDelete ? `Se eliminará "${pendingDelete.titulo}" en ${pendingDelete.empresa}. Esta acción no se puede deshacer.` : ""}
+        footer={[
+          <Button key="c" variant="secondary" dm={dm} onClick={() => setPendingDelete(null)}>Cancelar</Button>,
+          <Button key="d" variant="danger" dm={dm} onClick={confirmDelete}>Eliminar</Button>,
+        ]}
+      />
     </div>
   );
 }

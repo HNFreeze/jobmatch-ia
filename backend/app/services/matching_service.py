@@ -11,6 +11,7 @@ import anthropic
 
 from app.models.job_offer import JobOffer
 from app.services.ai_cost_service import record_ai_api_cost
+from app.services.claude_client import call_claude
 
 MATCH_ENGINE_VERSION = "v8_synonyms"
 MATCH_SIGNAL_BATCH_SIZE = max(1, min(int(os.getenv("MATCH_SIGNAL_BATCH_SIZE", "8")), 12))
@@ -574,11 +575,11 @@ def _extract_offer_signals_with_ai(offers: list[dict], api_key: str, user_id: in
         return {}
     client = anthropic.Anthropic(api_key=api_key)
     prompt = _build_extraction_prompt(offers)
-    message = client.messages.create(
+    message = call_claude(lambda: client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
-    )
+    ))
     record_ai_api_cost(
         user_id=user_id,
         feature="match_signal_extraction",
@@ -961,6 +962,11 @@ def _score_work_mode(profile_modalities: set[str], profile_locations: set[str], 
 def _score_location(profile_locations: set[str], signals: dict, offer: dict) -> tuple[float, list[str], list[str]]:
     blockers: list[str] = []
     notes: list[str] = []
+    # Una oferta remota no se penaliza ni se bloquea por ubicación: el trabajo
+    # remoto no depende de la ciudad del candidato.
+    if _normalize_text(signals.get("work_mode") or "") in WORK_MODE_REMOTE:
+        notes.append("Oferta remota: la ubicacion no es un bloqueante")
+        return 7, notes, blockers
     constraints = {_normalize_text(item) for item in signals.get("location_constraints") or [] if item}
     offer_location = _normalize_text(offer.get("ubicacion", ""))
     if offer_location:
@@ -1002,6 +1008,12 @@ def _compose_decision_reason(result: str, strengths: list[str], gaps: list[str],
     label = _RESULT_LABEL.get(result, result)
     if blockers:
         return f"{label}: hay incompatibilidades importantes ({'; '.join(blockers[:2])})."
+    # Para NO_ENCAJA nunca usamos un marco positivo ("encajas en lo esencial"):
+    # sería contradictorio cuando no hay coincidencia real de skills.
+    if result == "NO_ENCAJA":
+        if gaps:
+            return f"{label}: faltan requisitos clave ({'; '.join(gaps[:2])})."
+        return f"{label}: coincidencia insuficiente con tu perfil."
     if strengths and not gaps:
         return f"{label}: cumples bien los requisitos principales y no se ven carencias criticas."
     if strengths and gaps:
@@ -1261,6 +1273,49 @@ def _sort_by_fit(results: list[dict]) -> list[dict]:
     )
 
 
+def diversify_by_company(offers: list, max_per_company: int = 3) -> list:
+    """Cap how many offers per company appear at the top, preserving order.
+
+    Deterministic (no AI). Offers beyond the cap for a company are appended at
+    the end instead of dropped, so nothing relevant is lost — diversity is
+    preferred but the result set never shrinks. Shared by the agent and the
+    classic match flow so one employer cannot flood either view.
+    """
+    counts: dict[str, int] = {}
+    primary: list = []
+    overflow: list = []
+    for offer in offers:
+        company = str(offer.get("empresa") or "").strip().lower()
+        if not company:
+            primary.append(offer)
+            continue
+        seen = counts.get(company, 0)
+        if seen < max_per_company:
+            counts[company] = seen + 1
+            primary.append(offer)
+        else:
+            overflow.append(offer)
+    return primary + overflow
+
+
+def diversify_keep_tiers(offers: list, max_per_company: int = 4) -> list:
+    """Cap offers per company WITHIN each result tier (APLICA > QUIZÁ > NO_ENCAJA).
+
+    Unlike diversify_by_company, this never moves a higher-tier match below a
+    lower-tier one: it diversifies inside each tier and concatenates tiers in
+    order. Used by the classic match view so one employer cannot flood the list
+    while keeping the fit ranking meaningful.
+    """
+    order = {"APLICA": 0, "QUIZÁ": 1, "NO_ENCAJA": 2}
+    tiers: dict[int, list] = {0: [], 1: [], 2: []}
+    for offer in offers:
+        tiers[order.get(offer.get("resultado", "NO_ENCAJA"), 2)].append(offer)
+    out: list = []
+    for key in (0, 1, 2):
+        out.extend(diversify_by_company(tiers[key], max_per_company))
+    return out
+
+
 def match_profile_with_offers(
     profile: dict,
     offers: list,
@@ -1351,11 +1406,11 @@ Devuelve UNICAMENTE un JSON valido con este formato:
 """
 
     try:
-        message = client.messages.create(
+        message = call_claude(lambda: client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1600,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ))
         record_ai_api_cost(
             user_id=user_id,
             feature="skills_gap",

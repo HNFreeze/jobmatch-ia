@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from typing import Optional
-import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -12,6 +11,7 @@ from app.routers.user import get_current_user_id, get_current_user_record
 from app.models.interview_session import InterviewSession
 from app.services import interview_service as svc
 from app.services.ai_quota_service import consume_ai_quota
+from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 
 router = APIRouter()
 
@@ -41,14 +41,12 @@ class InterviewResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_conv(session: InterviewSession) -> list[dict]:
-    try:
-        return json.loads(session.conversation_json or "[]")
-    except Exception:
-        return []
+    conv = session.conversation_json
+    return conv if isinstance(conv, list) else []
 
 
 def _save_conv(session: InterviewSession, messages: list[dict], db: Session):
-    session.conversation_json = json.dumps(messages, ensure_ascii=False)
+    session.conversation_json = messages
     session.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(session)
@@ -63,6 +61,16 @@ def start_interview(
     user_id: int = Depends(get_current_user_id),
     user=Depends(get_current_user_record),
 ):
+    enforce_rate_limits(db, [
+        RateLimitRule(
+            action="interview_start_user",
+            bucket_key=f"user:{user_id}",
+            limit=5,
+            window_seconds=3600,
+            detail="Has iniciado demasiadas entrevistas en la última hora. Espera antes de volver a intentarlo.",
+        ),
+    ])
+
     # Cuota 1 entrevista/día (independiente de cuota general)
     consume_ai_quota(db, user, "interview")
 
@@ -73,7 +81,7 @@ def start_interview(
         job_title=body.job_title.strip(),
         company=(body.company or "").strip(),
         job_description=body.job_description,
-        conversation_json="[]",
+        conversation_json=[],
         status="active",
     )
     db.add(session)
@@ -116,6 +124,16 @@ def send_message(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
+    enforce_rate_limits(db, [
+        RateLimitRule(
+            action="interview_message_user",
+            bucket_key=f"user:{user_id}",
+            limit=60,
+            window_seconds=3600,
+            detail="Has enviado demasiados mensajes de entrevista en la última hora.",
+        ),
+    ])
+
     session = db.query(InterviewSession).filter(
         InterviewSession.id == session_id,
         InterviewSession.user_id == user_id,
@@ -167,7 +185,7 @@ def end_interview(
     except Exception as exc:
         feedback = {"error": str(exc)}
 
-    session.feedback_json = json.dumps(feedback, ensure_ascii=False)
+    session.feedback_json = feedback
     session.status = "completed"
     session.updated_at = datetime.utcnow()
     db.commit()
@@ -189,18 +207,12 @@ def list_sessions(
     )
     result = []
     for s in sessions:
-        feedback = None
-        if s.feedback_json:
-            try:
-                feedback = json.loads(s.feedback_json)
-            except Exception:
-                pass
         result.append({
             "id": s.id,
             "job_title": s.job_title,
             "company": s.company,
             "status": s.status,
-            "feedback": feedback,
+            "feedback": s.feedback_json,
             "created_at": s.created_at.isoformat() if s.created_at else None,
         })
     return result

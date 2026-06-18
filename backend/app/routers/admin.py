@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+import csv
+import io
 import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, inspect, literal
 from sqlalchemy.orm import aliased
@@ -696,6 +698,70 @@ def get_admin_ai_usage(_: User = Depends(require_admin_user)):
         db.close()
 
 
+@router.get("/api/admin/agent-activity")
+def get_admin_agent_activity(_: User = Depends(require_admin_user)):
+    """Trazabilidad del agente: runs agrupados por estado + actividad reciente.
+
+    Complementa /api/admin/ai-usage (coste y tokens) con la observabilidad de la
+    máquina de estados del agente personal de empleo.
+    """
+    from app.models.agent_run import AgentRun
+
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+    db = SessionLocal()
+    try:
+        if not inspect(db.bind).has_table("agent_runs"):
+            return JSONResponse(content={"by_state": [], "recent": [], "totals": {}})
+
+        by_state = (
+            db.query(AgentRun.state, func.count(AgentRun.id).label("count"))
+            .group_by(AgentRun.state)
+            .all()
+        )
+        totals = db.query(
+            func.count(AgentRun.id),
+            func.coalesce(func.sum(AgentRun.ai_calls), 0),
+            func.coalesce(func.sum(AgentRun.offers_discarded_prefilter), 0),
+            func.coalesce(func.sum(AgentRun.offers_analyzed), 0),
+        ).first()
+        recent = (
+            db.query(AgentRun, User.email)
+            .outerjoin(User, User.id == AgentRun.user_id)
+            .order_by(AgentRun.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+        total_runs = int(totals[0] or 0)
+        total_analyzed = int(totals[3] or 0)
+        total_discarded = int(totals[2] or 0)
+        return JSONResponse(content={
+            "by_state": [{"state": s, "count": int(c)} for s, c in by_state],
+            "totals": {
+                "runs": total_runs,
+                "ai_interpret_calls": int(totals[1] or 0),
+                "offers_discarded_prefilter": total_discarded,
+                "offers_analyzed": total_analyzed,
+                # % de ofertas descartadas con reglas deterministas antes de tocar IA
+                "prefilter_ratio": round(total_discarded / max(total_discarded + total_analyzed, 1), 3),
+            },
+            "recent": [{
+                "id": run.id,
+                "email": email,
+                "state": run.state,
+                "instruction": (run.raw_instruction or "")[:120],
+                "result_count": run.result_count,
+                "ai_calls": run.ai_calls,
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+            } for run, email in recent],
+        })
+    finally:
+        db.close()
+
+
 @router.post("/api/admin/cache/clear")
 def clear_search_cache(_: User = Depends(require_admin_user)):
     """Delete all search-cache entries so the next search fetches fresh results."""
@@ -995,14 +1061,203 @@ def get_matching_quality_metrics(_: User = Depends(require_admin_user)):
             interpretacion = "Calibración necesaria"
             interpretacion_level = "danger"
 
+        # Precision/Recall por categoría de resultado IA
+        # Precision(APLICA) = feedbacks positivos en ofertas que el motor marcó APLICA / total APLICA con feedback
+        precision_by_result = {}
+        for result_label in ("APLICA", "QUIZÁ", "NO_ENCAJA"):
+            total_label = (
+                db.query(func.count(MatchFeedback.id))
+                .filter(MatchFeedback.offer_result == result_label)
+                .scalar() or 0
+            )
+            positivos_label = (
+                db.query(func.count(MatchFeedback.id))
+                .filter(MatchFeedback.offer_result == result_label, MatchFeedback.rating == "up")
+                .scalar() or 0
+            )
+            if total_label > 0:
+                precision_by_result[result_label] = {
+                    "total": total_label,
+                    "positivos": positivos_label,
+                    "precision": round(positivos_label / total_label * 100, 1),
+                }
+
+        # Evolución semanal del ratio (últimas 8 semanas)
+        weekly = []
+        for w in range(7, -1, -1):
+            week_start = datetime.utcnow() - timedelta(weeks=w + 1)
+            week_end = datetime.utcnow() - timedelta(weeks=w)
+            w_total = (
+                db.query(func.count(MatchFeedback.id))
+                .filter(MatchFeedback.created_at >= week_start, MatchFeedback.created_at < week_end)
+                .scalar() or 0
+            )
+            w_pos = (
+                db.query(func.count(MatchFeedback.id))
+                .filter(
+                    MatchFeedback.created_at >= week_start,
+                    MatchFeedback.created_at < week_end,
+                    MatchFeedback.rating == "up",
+                )
+                .scalar() or 0
+            )
+            weekly.append({
+                "week": week_end.strftime("%d/%m"),
+                "total": w_total,
+                "positivos": w_pos,
+                "ratio": round(w_pos / w_total * 100, 1) if w_total > 0 else None,
+            })
+
         return JSONResponse(content={
             "total_feedbacks": int(total),
             "positivos": int(positivos),
             "negativos": int(negativos),
             "ratio_precision": float(ratio_precision),
             "distribucion_por_resultado": distribucion,
+            "precision_by_result": precision_by_result,
+            "weekly_evolution": weekly,
             "interpretacion": interpretacion,
             "interpretacion_level": interpretacion_level,
+        })
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/export/evaluation-csv")
+def export_evaluation_csv(_: User = Depends(require_admin_user)):
+    """Exporta CSV con datos de evaluación del motor: feedback, scores y búsquedas.
+    Para incluir en la memoria del TFM."""
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+    db = SessionLocal()
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Sección 1: Feedback de matching
+        writer.writerow(["# SECCION: Feedback de Matching"])
+        writer.writerow(["id", "usuario_email", "adzuna_id", "rating", "offer_result", "offer_score", "created_at"])
+        feedback_rows = (
+            db.query(MatchFeedback, User.email)
+            .outerjoin(User, User.id == MatchFeedback.user_id)
+            .order_by(MatchFeedback.created_at.desc())
+            .limit(5000)
+            .all()
+        )
+        for fb, email in feedback_rows:
+            writer.writerow([
+                fb.id, email or "", fb.adzuna_id, fb.rating,
+                fb.offer_result or "", fb.offer_score or "",
+                fb.created_at.isoformat() if fb.created_at else "",
+            ])
+
+        writer.writerow([])
+
+        # Sección 2: Historial de búsquedas
+        writer.writerow(["# SECCION: Historial de busquedas"])
+        writer.writerow(["id", "usuario_email", "stack", "anos_experiencia", "num_aplica", "num_quiza", "num_no_encaja", "created_at"])
+        search_rows = (
+            db.query(SearchHistory, User.email)
+            .outerjoin(User, User.id == SearchHistory.user_id)
+            .order_by(SearchHistory.created_at.desc())
+            .limit(5000)
+            .all()
+        )
+        for sh, email in search_rows:
+            stack_str = ",".join(sh.stack) if isinstance(sh.stack, list) else (sh.stack or "")
+            writer.writerow([
+                sh.id, email or "", stack_str, sh.anos_experiencia or "",
+                sh.num_aplica or 0, sh.num_quiza or 0, sh.num_no_encaja or 0,
+                sh.created_at.isoformat() if sh.created_at else "",
+            ])
+
+        writer.writerow([])
+
+        # Sección 3: Resumen de usuarios
+        writer.writerow(["# SECCION: Resumen de usuarios"])
+        writer.writerow(["total_usuarios", "verificados", "fecha_exportacion"])
+        total_u = db.query(func.count(User.id)).scalar() or 0
+        verified_u = db.query(func.count(User.id)).filter(User.email_verified.is_(True)).scalar() or 0
+        writer.writerow([total_u, verified_u, datetime.utcnow().isoformat()])
+
+        output.seek(0)
+        filename = f"jobmatch_evaluacion_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        db.close()
+
+
+@router.delete("/api/admin/cleanup/inactive-users")
+def cleanup_inactive_users(
+    days_inactive: int = Query(default=30, ge=7, le=365),
+    dry_run: bool = Query(default=True),
+    _: User = Depends(require_admin_user),
+):
+    """Elimina usuarios sin actividad en los últimos N días.
+    Con dry_run=true (por defecto) solo muestra quiénes serían eliminados."""
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        raise HTTPException(status_code=500, detail="Base de datos no disponible")
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=days_inactive)
+
+        # Usuarios inactivos: sin búsquedas, sin candidaturas, sin favoritos desde cutoff
+        # y cuenta creada antes del cutoff
+        active_user_ids = set()
+        for sh in db.query(SearchHistory.user_id).filter(SearchHistory.created_at >= cutoff).all():
+            active_user_ids.add(sh.user_id)
+        for app in db.query(Application.user_id).filter(Application.created_at >= cutoff).all():
+            active_user_ids.add(app.user_id)
+        for fav in db.query(Favorite.user_id).filter(Favorite.created_at >= cutoff).all():
+            active_user_ids.add(fav.user_id)
+
+        inactive_query = (
+            db.query(User)
+            .filter(
+                User.is_admin.is_(False),
+                User.is_super_admin.is_(False),
+                User.created_at < cutoff,
+                ~User.id.in_(active_user_ids) if active_user_ids else literal(True),
+            )
+        )
+        inactive_users = inactive_query.all()
+
+        if dry_run:
+            return JSONResponse(content={
+                "dry_run": True,
+                "would_delete": len(inactive_users),
+                "days_inactive": days_inactive,
+                "cutoff": cutoff.isoformat(),
+                "users": [{"id": u.id, "email": u.email, "created_at": u.created_at.isoformat() if u.created_at else None} for u in inactive_users[:50]],
+            })
+
+        deleted_count = 0
+        for user in inactive_users:
+            try:
+                db.query(AIDailyUsage).filter(AIDailyUsage.user_id == user.id).delete(synchronize_session=False)
+                db.query(Favorite).filter(Favorite.user_id == user.id).delete(synchronize_session=False)
+                db.query(SearchHistory).filter(SearchHistory.user_id == user.id).delete(synchronize_session=False)
+                db.query(Application).filter(Application.user_id == user.id).delete(synchronize_session=False)
+                db.query(RateLimitBucket).filter(RateLimitBucket.bucket_key == f"email:{user.email}").delete(synchronize_session=False)
+                db.delete(user)
+                deleted_count += 1
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(status_code=500, detail=f"Error eliminando usuario {user.id}: {exc}")
+
+        db.commit()
+        return JSONResponse(content={
+            "dry_run": False,
+            "deleted": deleted_count,
+            "days_inactive": days_inactive,
         })
     finally:
         db.close()

@@ -1,48 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { getFavorites, removeFavorite, createApplication } from "../services/api";
+import { pageTokens } from "../constants/theme";
 
 /* ---------------------------------------------------------------------------
- * Tokens
+ * Tokens — fuente única en theme.js (pageTokens)
  * ------------------------------------------------------------------------- */
 function useTokens(darkMode, density) {
-  return useMemo(() => {
-    const dm = !!darkMode;
-    const compact = density === "compacta";
-    return {
-      bg:       dm ? "#0a1120" : "#f8f9fc",
-      surface:  dm ? "#0f172a" : "#ffffff",
-      surface2: dm ? "#111c30" : "#fbfbfd",
-      text:     dm ? "#e6edf7" : "#0b1220",
-      textSub:  dm ? "#94a3b8" : "#475569",
-      textMute: dm ? "#64748b" : "#94a3b8",
-      border:   dm ? "#1e293b" : "#e8ebf2",
-      borderSt: dm ? "#27364d" : "#d8dde7",
-      teal:     "#00758A",
-      tealSoft: dm ? "rgba(0,117,138,0.18)" : "rgba(0,117,138,0.08)",
-      tealLine: dm ? "rgba(0,117,138,0.40)" : "rgba(0,117,138,0.25)",
-      purple:   "#7c3aed",
-      green:    "#10b981",
-      greenSoft: dm ? "rgba(16,185,129,0.18)" : "rgba(16,185,129,0.10)",
-      greenFg:  dm ? "#6ee7b7" : "#047857",
-      amber:    "#f59e0b",
-      amberSoft: dm ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.10)",
-      amberFg:  dm ? "#fcd34d" : "#b45309",
-      red:      "#ef4444",
-      redSoft:  dm ? "rgba(239,68,68,0.18)" : "rgba(239,68,68,0.08)",
-      redFg:    dm ? "#fca5a5" : "#b91c1c",
-      shadow:   dm
-        ? "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.5)"
-        : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.10)",
-      gap:      compact ? 12 : 18,
-      gapLg:    compact ? 16 : 24,
-      pad:      compact ? 16 : 22,
-      padLg:    compact ? 20 : 28,
-      radius:   12,
-      radiusSm: 8,
-      font:     '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-      _dm: dm,
-    };
-  }, [darkMode, density]);
+  return useMemo(() => pageTokens(darkMode, density), [darkMode, density]);
 }
 
 function useHover() {
