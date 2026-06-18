@@ -149,6 +149,7 @@ async def fetch_offers_from_adzuna(
     skills: list[str],
     locations: Optional[list[str]] = None,
     db=None,
+    fallback_query: Optional[str] = "developer",
 ) -> Optional[list]:
     log_debug(f"[ADZUNA] skills={skills} locations={locations}")
 
@@ -180,7 +181,8 @@ async def fetch_offers_from_adzuna(
         queries.append(" ".join(skills))
         if len(skills) > 1:
             queries.append(skills[0])
-    queries.append("developer")
+    if fallback_query:
+        queries.append(fallback_query)
 
     seen: set[str] = set()
     adzuna_offers: list[dict] = []

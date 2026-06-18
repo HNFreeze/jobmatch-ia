@@ -1,0 +1,27 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# E: pycodestyle errors, F: pyflakes, I: isort, W: pycodestyle warnings
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "F401",   # unused import (some are intentional re-exports in alembic/env.py)
+    "E711",   # comparison to None (SQLAlchemy uses == None)
+    "E712",   # comparison to True/False (SQLAlchemy uses == True)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: tests rápidos sin servicios externos",
+    "battery: tests de integración que requieren backend en localhost:8000",
+]
+addopts = "-m 'not battery'"

@@ -11,10 +11,15 @@ import os
 import anthropic
 import httpx
 
+from app.services.claude_client import call_claude, system_with_cache
+
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Adam
 ELEVENLABS_MODEL = "eleven_multilingual_v2"
+# La voz del entrevistador la pone por defecto el navegador (Web Speech API, coste 0).
+# ElevenLabs queda como opción de pago opt-in: solo se usa si se activa explícitamente.
+ELEVENLABS_ENABLED = os.getenv("INTERVIEW_ELEVENLABS_ENABLED", "false").strip().lower() == "true"
 
 INTERVIEW_DAILY_LIMIT = 1
 END_SIGNAL = "ENTREVISTA_FINALIZADA"
@@ -50,8 +55,9 @@ def _system_prompt(job_title: str, company: str) -> str:
 # ── ElevenLabs TTS ────────────────────────────────────────────────────────────
 
 def tts(text: str) -> str | None:
-    """Llama a ElevenLabs y devuelve el audio como base64 (mp3). None si falla."""
-    if not ELEVENLABS_API_KEY:
+    """Devuelve audio base64 (mp3) vía ElevenLabs SOLO si está activado explícitamente.
+    Por defecto devuelve None y el navegador lee el texto con la Web Speech API (coste 0)."""
+    if not ELEVENLABS_ENABLED or not ELEVENLABS_API_KEY:
         return None
     # Eliminar la señal de fin del texto que se lee en voz alta
     clean = text.replace(END_SIGNAL, "").strip()
@@ -88,12 +94,12 @@ def tts(text: str) -> str | None:
 
 def chat(messages: list[dict], job_title: str, company: str) -> str:
     """Envía la conversación a Claude y devuelve el texto de respuesta."""
-    resp = _claude.messages.create(
+    resp = call_claude(lambda: _claude.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=450,
-        system=_system_prompt(job_title, company),
+        system=system_with_cache(_system_prompt(job_title, company)),
         messages=messages,
-    )
+    ))
     return resp.content[0].text.strip()
 
 
@@ -112,7 +118,7 @@ def generate_feedback(messages: list[dict], job_title: str) -> dict:
         f"{'Entrevistador' if m['role'] == 'assistant' else 'Candidato'}: {m['content']}"
         for m in messages
     )
-    resp = _claude.messages.create(
+    resp = call_claude(lambda: _claude.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=700,
         messages=[{
@@ -128,7 +134,7 @@ def generate_feedback(messages: list[dict], job_title: str) -> dict:
                 "Devuelve SOLO el JSON, sin texto adicional."
             ),
         }],
-    )
+    ))
     raw = resp.content[0].text.strip()
     # Extraer el JSON aunque venga con markdown code block
     if "```" in raw:

@@ -110,7 +110,7 @@ const GrayCheckIcon = () => (
 );
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function Landing({ onStartClick }) {
+export default function Landing({ onStartClick, onAboutClick }) {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: BG, fontFamily: typography.family }}>
 
@@ -142,6 +142,13 @@ export default function Landing({ onStartClick }) {
                 fontFamily: typography.family, padding: 0,
               }}>{l.label}</button>
             ))}
+            {onAboutClick && (
+              <button className="lv2-nav-link" onClick={onAboutClick} style={{
+                fontSize: 14, fontWeight: 600, color: GRAY_500,
+                background: "none", border: "none", cursor: "pointer",
+                fontFamily: typography.family, padding: 0,
+              }}>Sobre el proyecto</button>
+            )}
           </div>
 
           {/* Desktop auth buttons */}

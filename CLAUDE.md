@@ -63,6 +63,11 @@ Full-stack TFM (Trabajo de Fin de Máster) app: AI-powered job matching and CV i
 - Módulo de Interview (`app/routers/interview.py`, `app/services/interview_service.py`): gestiona simulaciones.
 - ElevenLabs: solo se usa en `interview_service.py` para TTS de la entrevista simulada.
 
+### Agent module (`app/routers/agent.py`, `app/services/agent_service.py`, `app/models/agent_run.py`)
+- Agente personal de empleo: interpreta una instrucción en lenguaje natural y ejecuta una máquina de estados persistida (`AgentRun`): CREATED→INTERPRETING→SEARCHING→FILTERING→ANALYZING→RANKING→WAITING_FOR_USER→EXECUTING_APPROVED_ACTION→COMPLETED.
+- La IA se usa SOLO en el paso de interpretación (1 llamada Haiku, validada con Pydantic `SearchInstruction`); si falla o devuelve JSON inválido hay un fallback determinista. El resto (buscar/filtrar/puntuar) reutiliza el motor de matching ya cacheado — sin coste extra por oferta.
+- Confirmación humana (`POST /runs/{id}/confirm`): guarda las ofertas elegidas como `Favorite`. Todo se consulta filtrando por `user_id` (anti-IDOR). Frontend: `pages/AgentSearch.jsx`, página `agente`.
+
 ### Interview module (`app/routers/interview.py`, `app/services/interview_service.py`)
 - Simulates a voice interview with Claude as "Alex" (HR interviewer) and ElevenLabs for TTS
 - `InterviewSession` model: links to `application_id`, stores conversation history as JSON, status, feedback JSON
@@ -94,9 +99,12 @@ y2a4c6e8g0i2 → job_offer_source_metadata
 z3b5d7f9h1j3 → job_ingestion_runs
 a1b2c3d4e5f6 → add_alerts_and_feedback
 d4e5f6a7b8c9 → add_follow_up_date
-e5f6a7b8c9d0 → add_interview_feature (CURRENT HEAD)
+e5f6a7b8c9d0 → add_interview_feature
+f6g7h8i9j0k1 → convert_json_fields_to_jsonb
+g7h8i9j0k1l2 → add_satisfaction_to_search_history
+h8i9j0k1l2m3 → add_agent_runs (CURRENT HEAD)
 ```
-Next migration must set `down_revision = "e5f6a7b8c9d0"`.
+Next migration must set `down_revision = "h8i9j0k1l2m3"`.
 
 ---
 

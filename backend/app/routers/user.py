@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import json
+from datetime import datetime
 from typing import List, Optional
 
 import bcrypt
@@ -7,12 +7,15 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db, get_session_local
+from app.models.agent_run import AgentRun
 from app.models.ai_daily_usage import AIDailyUsage
 from app.models.application import Application
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
+from app.models.match_feedback import MatchFeedback
 from app.models.search_history import SearchHistory
 from app.models.user import User
 from app.services.ai_quota_service import get_quota_snapshot
@@ -83,15 +86,7 @@ class DeleteAccountRequest(BaseModel):
 
 
 @router.patch("/api/user/consent")
-def update_consent(body: ConsentRequest, user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def update_consent(body: ConsentRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -104,11 +99,11 @@ def update_consent(body: ConsentRequest, user_id: int = Depends(get_current_user
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -116,15 +111,7 @@ def update_consent(body: ConsentRequest, user_id: int = Depends(get_current_user
 
 
 @router.get("/api/user/profile")
-def get_profile(user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def get_profile(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -138,14 +125,14 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
                 "alias": user.alias or user.email.split("@")[0],
                 "nombre": user.nombre or "",
                 "apellidos": user.apellidos or "",
-                "stack": json.loads(user.stack) if user.stack else [],
+                "stack": user.stack or [],
                 "anos_experiencia": user.anos_experiencia or "",
-                "idiomas": json.loads(user.idiomas) if user.idiomas else [],
-                "ubicaciones": json.loads(user.ubicaciones) if user.ubicaciones else [],
-                "modalidad": json.loads(user.modalidad) if user.modalidad else [],
+                "idiomas": user.idiomas or [],
+                "ubicaciones": user.ubicaciones or [],
+                "modalidad": user.modalidad or [],
                 "onboarding_completed": bool(user.onboarding_completed),
                 "analytics_consent": user.analytics_consent,
-                "stack_years": json.loads(user.stack_years) if user.stack_years else {},
+                "stack_years": user.stack_years or {},
             },
             media_type="application/json; charset=utf-8",
         )
@@ -154,15 +141,7 @@ def get_profile(user_id: int = Depends(get_current_user_id)):
 
 
 @router.get("/api/user/ai-quota")
-def get_ai_quota(user: User = Depends(get_current_user_record)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def get_ai_quota(user: User = Depends(get_current_user_record), db: Session = Depends(get_db)):
     try:
         fresh_user = db.query(User).filter(User.id == user.id).first()
         if not fresh_user:
@@ -174,7 +153,7 @@ def get_ai_quota(user: User = Depends(get_current_user_record)):
 
 
 @router.patch("/api/user/password")
-def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_current_user_id)):
+def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     if len(body.new_password) < 8:
         return JSONResponse(
             status_code=422,
@@ -182,15 +161,6 @@ def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_curr
             media_type="application/json; charset=utf-8",
         )
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -220,11 +190,11 @@ def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_curr
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -232,7 +202,7 @@ def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_curr
 
 
 @router.delete("/api/user/account")
-def delete_account(body: DeleteAccountRequest, user_id: int = Depends(get_current_user_id)):
+def delete_account(body: DeleteAccountRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     if not body.current_password.strip():
         return JSONResponse(
             status_code=422,
@@ -247,15 +217,6 @@ def delete_account(body: DeleteAccountRequest, user_id: int = Depends(get_curren
             media_type="application/json; charset=utf-8",
         )
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -273,6 +234,10 @@ def delete_account(body: DeleteAccountRequest, user_id: int = Depends(get_curren
         db.query(Favorite).filter(Favorite.user_id == user_id).delete(synchronize_session=False)
         db.query(SearchHistory).filter(SearchHistory.user_id == user_id).delete(synchronize_session=False)
         db.query(Application).filter(Application.user_id == user_id).delete(synchronize_session=False)
+        # Agent runs and match feedback hold a FK to users.id — must be removed first
+        # or the account deletion would fail on Postgres (and leave orphans).
+        db.query(AgentRun).filter(AgentRun.user_id == user_id).delete(synchronize_session=False)
+        db.query(MatchFeedback).filter(MatchFeedback.user_id == user_id).delete(synchronize_session=False)
         db.delete(user)
         db.commit()
 
@@ -283,58 +248,104 @@ def delete_account(body: DeleteAccountRequest, user_id: int = Depends(get_curren
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
         db.close()
 
 
+@router.get("/api/user/export")
+def export_my_data(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    """RGPD (derecho de portabilidad): exporta en JSON todos los datos personales
+    del usuario autenticado. Solo accede a sus propios datos (scoping por user_id)."""
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Usuario no disponible")
+
+        def _iso(value):
+            return value.isoformat() if value else None
+
+        export = {
+            "exported_at": datetime.utcnow().isoformat(),
+            "profile": {
+                "email": user.email,
+                "alias": user.alias,
+                "nombre": user.nombre,
+                "apellidos": user.apellidos,
+                "anos_experiencia": user.anos_experiencia,
+                "stack": user.stack,
+                "ingles": user.ingles,
+                "idiomas": user.idiomas,
+                "ubicaciones": user.ubicaciones,
+                "modalidad": user.modalidad,
+                "stack_years": user.stack_years,
+                "analytics_consent": user.analytics_consent,
+                "created_at": _iso(user.created_at),
+            },
+            "favorites": [
+                {"adzuna_id": f.adzuna_id, "titulo": f.titulo, "empresa": f.empresa,
+                 "url": f.url, "resultado_ia": f.resultado_ia, "created_at": _iso(f.created_at)}
+                for f in db.query(Favorite).filter(Favorite.user_id == user_id).all()
+            ],
+            "search_history": [
+                {"stack": s.stack, "ubicaciones": s.ubicaciones, "modalidad": s.modalidad,
+                 "num_aplica": s.num_aplica, "num_quiza": s.num_quiza, "num_no_encaja": s.num_no_encaja,
+                 "satisfaction_rating": s.satisfaction_rating, "created_at": _iso(s.created_at)}
+                for s in db.query(SearchHistory).filter(SearchHistory.user_id == user_id).all()
+            ],
+            "applications": [
+                {"id": a.id, "created_at": _iso(getattr(a, "created_at", None))}
+                for a in db.query(Application).filter(Application.user_id == user_id).all()
+            ],
+            "agent_runs": [
+                {"id": r.id, "instruction": r.raw_instruction, "state": r.state,
+                 "result_count": r.result_count, "created_at": _iso(r.created_at)}
+                for r in db.query(AgentRun).filter(AgentRun.user_id == user_id).all()
+            ],
+        }
+        return JSONResponse(content=export, media_type="application/json; charset=utf-8")
+    except HTTPException:
+        raise
+    finally:
+        db.close()
+
+
 @router.put("/api/user/profile")
-def update_profile(body: ProfileData, user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def update_profile(body: ProfileData, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         if body.stack is not None:
-            user.stack = json.dumps(body.stack, ensure_ascii=False)
+            user.stack = body.stack
         if body.anos_experiencia is not None:
             user.anos_experiencia = body.anos_experiencia
         if body.idiomas is not None:
-            user.idiomas = json.dumps(
-                [lang.model_dump() for lang in body.idiomas],
-                ensure_ascii=False,
-            )
+            user.idiomas = [lang.model_dump() for lang in body.idiomas]
         if body.ubicaciones is not None:
-            user.ubicaciones = json.dumps(body.ubicaciones, ensure_ascii=False)
+            user.ubicaciones = body.ubicaciones
         if body.modalidad is not None:
-            user.modalidad = json.dumps(body.modalidad, ensure_ascii=False)
+            user.modalidad = body.modalidad
         if body.onboarding_completed is not None:
             user.onboarding_completed = body.onboarding_completed
         if body.stack_years is not None:
-            user.stack_years = json.dumps(body.stack_years, ensure_ascii=False)
+            user.stack_years = body.stack_years
         db.commit()
         return JSONResponse(
             content={"detail": "Perfil guardado correctamente"},
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:

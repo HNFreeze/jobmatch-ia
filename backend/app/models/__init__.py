@@ -16,6 +16,7 @@ from app.models.cv_edit_session import CVEditSession
 from app.models.cv_offer_variant import CVOfferVariant
 from app.models.job_alert import JobAlert  # noqa: F401
 from app.models.match_feedback import MatchFeedback  # noqa: F401
+from app.models.agent_run import AgentRun  # noqa: F401
 
 __all__ = [
     "SearchCache",
@@ -36,4 +37,5 @@ __all__ = [
     "CVOfferVariant",
     "JobAlert",
     "MatchFeedback",
+    "AgentRun",
 ]

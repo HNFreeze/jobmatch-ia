@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.services.company_data_service import get_or_create_company_data
 
 router = APIRouter()
 
 @router.get("/api/company/{name}")
-def get_company_info(name: str):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "BD no disponible"})
-    db = SessionLocal()
+def get_company_info(name: str, db: Session = Depends(get_db)):
     try:
         data = get_or_create_company_data(db, name)
         if data:
@@ -21,7 +18,7 @@ def get_company_info(name: str):
                 media_type="application/json; charset=utf-8"
             )
         return JSONResponse(
-            status_code=404, 
+            status_code=404,
             content={"detail": "Empresa no encontrada"},
             media_type="application/json; charset=utf-8"
         )

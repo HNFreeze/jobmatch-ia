@@ -7,8 +7,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.job_alert import JobAlert
 from app.models.user import User
 from app.routers.user import get_current_user_record, require_admin_user
@@ -41,12 +42,8 @@ def _serialize_alert(alert: JobAlert) -> dict:
 # ── User endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/api/alerts/mine")
-def get_my_alert(user: User = Depends(get_current_user_record)):
+def get_my_alert(user: User = Depends(get_current_user_record), db: Session = Depends(get_db)):
     """Devuelve la alerta activa del usuario (o null si no tiene)."""
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         alert = db.query(JobAlert).filter(JobAlert.user_id == user.id).first()
         return JSONResponse(content={"alert": _serialize_alert(alert) if alert else None})
@@ -55,12 +52,8 @@ def get_my_alert(user: User = Depends(get_current_user_record)):
 
 
 @router.put("/api/alerts/mine")
-def upsert_my_alert(body: UpsertAlertRequest, user: User = Depends(get_current_user_record)):
+def upsert_my_alert(body: UpsertAlertRequest, user: User = Depends(get_current_user_record), db: Session = Depends(get_db)):
     """Crea o actualiza la alerta del usuario."""
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         now = datetime.utcnow()
         alert = db.query(JobAlert).filter(JobAlert.user_id == user.id).first()
@@ -90,12 +83,8 @@ def upsert_my_alert(body: UpsertAlertRequest, user: User = Depends(get_current_u
 
 
 @router.delete("/api/alerts/mine")
-def delete_my_alert(user: User = Depends(get_current_user_record)):
+def delete_my_alert(user: User = Depends(get_current_user_record), db: Session = Depends(get_db)):
     """Desactiva (soft-delete) la alerta del usuario."""
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
-    db = SessionLocal()
     try:
         alert = db.query(JobAlert).filter(JobAlert.user_id == user.id).first()
         if alert:
@@ -118,5 +107,5 @@ def trigger_alerts_manually(_: User = Depends(require_admin_user)):
     try:
         summary = process_job_alerts()
         return JSONResponse(content={"detail": "Proceso de alertas completado", **summary})
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"detail": f"Error: {str(exc)}"})
+    except Exception:
+        return JSONResponse(status_code=500, content={"detail": "No se pudo procesar el proceso de alertas."})

@@ -14,6 +14,7 @@ from fastapi import HTTPException, UploadFile
 import anthropic
 
 from app.services.ai_cost_service import record_ai_api_cost
+from app.services.claude_client import call_claude, system_with_cache
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
@@ -236,12 +237,12 @@ CV:
 {_truncate_cv_text(text)}"""
 
     try:
-        response = client.messages.create(
+        response = call_claude(lambda: client.messages.create(
             model=CV_AI_MODEL,
             max_tokens=2000,
-            system=system_prompt,
+            system=system_with_cache(system_prompt),
             messages=[{"role": "user", "content": user_prompt}],
-        )
+        ))
     except anthropic.APIStatusError as exc:
         if exc.status_code == 429:
             raise HTTPException(
@@ -330,12 +331,12 @@ CV a analizar:
 {_truncate_cv_text(text)}"""
 
     try:
-        response = client.messages.create(
+        response = call_claude(lambda: client.messages.create(
             model=CV_AI_MODEL,
             max_tokens=3000,
-            system=system_prompt,
+            system=system_with_cache(system_prompt),
             messages=[{"role": "user", "content": user_prompt}],
-        )
+        ))
     except anthropic.APIStatusError as exc:
         if exc.status_code == 429:
             raise HTTPException(
@@ -578,12 +579,12 @@ CV original a analizar:
 {_truncate_cv_text(text, max_chars=12000)}"""
 
     try:
-        response = client.messages.create(
+        response = call_claude(lambda: client.messages.create(
             model=CV_AI_MODEL,
             max_tokens=6000,
-            system=system_prompt,
+            system=system_with_cache(system_prompt),
             messages=[{"role": "user", "content": user_prompt}],
-        )
+        ))
     except anthropic.APIStatusError as exc:
         if exc.status_code == 429:
             raise HTTPException(status_code=429, detail="Límite de Claude API alcanzado. Inténtalo en unos minutos.")
@@ -693,12 +694,12 @@ CV ESTRUCTURADO ACTUAL:
 """
 
     try:
-        response = client.messages.create(
+        response = call_claude(lambda: client.messages.create(
             model=CV_AI_MODEL,
             max_tokens=5000,
-            system=system_prompt,
+            system=system_with_cache(system_prompt),
             messages=[{"role": "user", "content": user_prompt}],
-        )
+        ))
     except anthropic.APIStatusError as exc:
         if exc.status_code == 429:
             raise HTTPException(status_code=429, detail="Limite de Claude API alcanzado. Intentalo en unos minutos.")

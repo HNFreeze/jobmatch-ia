@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import pytest
+pytestmark = pytest.mark.battery
+
 """
 Match engine — batería masiva de 100 perfiles.
 Objetivo: calibrar el motor v6_zero_match con cobertura amplia de stacks,

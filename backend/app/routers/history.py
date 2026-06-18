@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-import json
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.models.search_history import SearchHistory
 from app.routers.user import get_current_user_id
 
@@ -25,28 +25,27 @@ class HistoryRequest(BaseModel):
 
 
 @router.post("/api/history")
-def save_history(body: HistoryRequest, user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def save_history(body: HistoryRequest, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
-        stack_json = json.dumps(body.stack, ensure_ascii=False)
-        ubicaciones_json = json.dumps(body.ubicaciones or [], ensure_ascii=False)
-        modalidad_json = json.dumps(body.modalidad or [], ensure_ascii=False)
+        stack_val = body.stack
+        ubicaciones_val = body.ubicaciones or []
+        modalidad_val = body.modalidad or []
 
-        existing = (
+        # Dedup en Python: comparar columnas JSONB (stack/ubicaciones/modalidad)
+        # con == en SQL falla en Postgres ("operator does not exist: jsonb = json").
+        # Filtramos por user_id + anos_experiencia (String) y comparamos las listas en memoria.
+        candidates = (
             db.query(SearchHistory)
             .filter(SearchHistory.user_id == user_id)
-            .filter(SearchHistory.stack == stack_json)
             .filter(SearchHistory.anos_experiencia == body.anos_experiencia)
-            .filter(SearchHistory.ubicaciones == ubicaciones_json)
-            .filter(SearchHistory.modalidad == modalidad_json)
-            .first()
+            .all()
+        )
+        existing = next(
+            (r for r in candidates
+             if (r.stack or []) == stack_val
+             and (r.ubicaciones or []) == ubicaciones_val
+             and (r.modalidad or []) == modalidad_val),
+            None,
         )
 
         if existing:
@@ -58,10 +57,10 @@ def save_history(body: HistoryRequest, user_id: int = Depends(get_current_user_i
         else:
             db.add(SearchHistory(
                 user_id=user_id,
-                stack=stack_json,
+                stack=stack_val,
                 anos_experiencia=body.anos_experiencia,
-                ubicaciones=ubicaciones_json,
-                modalidad=modalidad_json,
+                ubicaciones=ubicaciones_val,
+                modalidad=modalidad_val,
                 num_aplica=body.num_aplica,
                 num_quiza=body.num_quiza,
                 num_no_encaja=body.num_no_encaja,
@@ -82,11 +81,11 @@ def save_history(body: HistoryRequest, user_id: int = Depends(get_current_user_i
             content={"detail": "Búsqueda guardada"},
             media_type="application/json; charset=utf-8",
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"detail": str(e)},
+            content={"detail": "Error interno del servidor."},
             media_type="application/json; charset=utf-8",
         )
     finally:
@@ -94,15 +93,7 @@ def save_history(body: HistoryRequest, user_id: int = Depends(get_current_user_i
 
 
 @router.get("/api/history")
-def get_history(user_id: int = Depends(get_current_user_id)):
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-    db = SessionLocal()
+def get_history(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         rows = (
             db.query(SearchHistory)
@@ -115,10 +106,10 @@ def get_history(user_id: int = Depends(get_current_user_id)):
             content=[
                 {
                     "id": r.id,
-                    "stack": json.loads(r.stack) if r.stack else [],
+                    "stack": r.stack or [],
                     "anos_experiencia": r.anos_experiencia or "",
-                    "ubicaciones": json.loads(r.ubicaciones) if r.ubicaciones else [],
-                    "modalidad": json.loads(r.modalidad) if r.modalidad else [],
+                    "ubicaciones": r.ubicaciones or [],
+                    "modalidad": r.modalidad or [],
                     "num_aplica": r.num_aplica or 0,
                     "num_quiza": r.num_quiza or 0,
                     "num_no_encaja": r.num_no_encaja or 0,

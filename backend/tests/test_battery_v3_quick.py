@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import pytest
+pytestmark = pytest.mark.battery
+
 """Quick 4-profile validation for v5_calibration engine."""
 import sys, json, time, urllib.request, urllib.error
 sys.stdout.reconfigure(encoding="utf-8")
@@ -46,30 +49,35 @@ PROFILES = [
      "english": "avanzado", "ubicaciones": ["Madrid"], "modalidad": ["remoto"]},
 ]
 
-token = make_token()
-for p in PROFILES:
-    label = p.pop("label")
-    body = p
-    print(f"\n{'='*55}\nTest: {label}")
-    t0 = time.time()
-    try:
-        r = post_json("/api/match", body, token)
-    except RuntimeError as e:
-        print(f"  ERROR: {e}"); continue
-    offers = r.get("offers") or []
-    print(f"  {len(offers)} offers ({time.time()-t0:.1f}s)")
-    ap, qz, no = [], [], []
-    for o in offers:
-        res = o.get("resultado",""); pct = o.get("puntuacion",0)
-        sm = len(o.get("skills_match") or []); miss = len(o.get("skills_missing") or [])
-        bl = len(o.get("blockers") or []); t = o.get("titulo","")
-        ghost = "GHOST" if res in ("APLICA","QUIZÁ") and not sm and not miss and not bl else ""
-        row = f"  [{res:<10}] {pct:3}% sm={sm} miss={miss} bl={bl}  {ghost:<6} {t[:52]}"
-        if res == "APLICA": ap.append(row)
-        elif res == "QUIZÁ": qz.append(row)
-        else: no.append(row)
-    for rows in [ap, qz, no[:5]]:
-        for row in rows: print(row)
-    if len(no) > 5: print(f"  ... +{len(no)-5} more NO_ENCAJA")
-    print(f"\n  >> APLICA={len(ap)} QUIZA={len(qz)} NO={len(no)}")
-    print(f"  >> Ghosts: {sum(1 for o in offers if o.get('resultado') in ('APLICA','QUIZÁ') and not (o.get('skills_match') or o.get('skills_missing') or o.get('blockers')))}")
+def run_quick():
+    token = make_token()
+    for p in PROFILES:
+        label = p.pop("label")
+        body = p
+        print(f"\n{'='*55}\nTest: {label}")
+        t0 = time.time()
+        try:
+            r = post_json("/api/match", body, token)
+        except RuntimeError as e:
+            print(f"  ERROR: {e}"); continue
+        offers = r.get("offers") or []
+        print(f"  {len(offers)} offers ({time.time()-t0:.1f}s)")
+        ap, qz, no = [], [], []
+        for o in offers:
+            res = o.get("resultado",""); pct = o.get("puntuacion",0)
+            sm = len(o.get("skills_match") or []); miss = len(o.get("skills_missing") or [])
+            bl = len(o.get("blockers") or []); t = o.get("titulo","")
+            ghost = "GHOST" if res in ("APLICA","QUIZÁ") and not sm and not miss and not bl else ""
+            row = f"  [{res:<10}] {pct:3}% sm={sm} miss={miss} bl={bl}  {ghost:<6} {t[:52]}"
+            if res == "APLICA": ap.append(row)
+            elif res == "QUIZÁ": qz.append(row)
+            else: no.append(row)
+        for rows in [ap, qz, no[:5]]:
+            for row in rows: print(row)
+        if len(no) > 5: print(f"  ... +{len(no)-5} more NO_ENCAJA")
+        print(f"\n  >> APLICA={len(ap)} QUIZA={len(qz)} NO={len(no)}")
+        print(f"  >> Ghosts: {sum(1 for o in offers if o.get('resultado') in ('APLICA','QUIZÁ') and not (o.get('skills_match') or o.get('skills_missing') or o.get('blockers')))}")
+
+
+if __name__ == "__main__":
+    run_quick()

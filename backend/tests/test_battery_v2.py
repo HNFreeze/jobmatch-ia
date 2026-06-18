@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import pytest
+pytestmark = pytest.mark.battery
+
 """
 Match quality battery v2 — post-filter validation.
 Runs 14 test cases varying stack, years, seniority and specialization

@@ -9,6 +9,8 @@ from app.models.job_offer import JobOffer
 from app.services.adzuna_service import fetch_offers_from_adzuna
 from app.services.job_index_service import save_offers_to_db
 from app.services.job_verification_service import refresh_stale_job_offers
+from app.services.jobspy_service import fetch_offers_from_jobspy
+from app.services.jsearch_service import fetch_offers_from_jsearch
 from app.services.official_sources_service import fetch_offers_from_public_sources_with_details
 
 
@@ -22,6 +24,16 @@ DEFAULT_INGESTION_SKILLS = [
     "frontend",
     "devops",
     "data engineer",
+    # SQL / BI / data roles — frecuentes en España
+    "SQL Server",
+    "PL/SQL",
+    "SSIS",
+    "SSRS",
+    "Power BI",
+    "ETL",
+    "Business Intelligence",
+    "data warehouse",
+    "T-SQL",
 ]
 DEFAULT_INGESTION_LOCATIONS = ["Madrid", "Barcelona", "Valencia", "Toda España"]
 
@@ -49,7 +61,7 @@ def normalize_requested_sources(sources: list[str] | None) -> list[str]:
     cleaned = [str(item or "").strip().lower() for item in (sources or []) if str(item or "").strip()]
     if not cleaned:
         return get_default_ingestion_sources()
-    allowed = {"public_sources", "adzuna"}
+    allowed = {"public_sources", "adzuna", "jobspy", "jsearch"}
     return [item for item in cleaned if item in allowed] or get_default_ingestion_sources()
 
 
@@ -254,7 +266,7 @@ async def _run_ingestion_internal(run_id: int, payload: dict) -> None:
             adzuna_seeds = skills[:adzuna_seed_limit] if skills else ["developer"]
             adzuna_stats = []
             for seed in adzuna_seeds:
-                seed_offers = await fetch_offers_from_adzuna([seed], locations=locations, db=None)
+                seed_offers = await fetch_offers_from_adzuna([seed], locations=locations, db=None, fallback_query=None)
                 seed_offers = seed_offers or []
                 fetched_count += len(seed_offers)
                 new_count, updated_count = _count_existing_offers(db, seed_offers)
@@ -270,6 +282,46 @@ async def _run_ingestion_internal(run_id: int, payload: dict) -> None:
                 _append_run_log(run, f"Adzuna '{seed}': {len(seed_offers)} ofertas ({new_count} nuevas, {updated_count} actualizadas)")
                 db.commit()
             stats["sources"].extend(adzuna_stats)
+
+        if "jobspy" in sources:
+            _append_run_log(run, "Consultando Indeed via JobSpy...")
+            db.commit()
+            try:
+                jobspy_offers = await fetch_offers_from_jobspy(skills, locations=locations)
+                jobspy_offers = jobspy_offers or []
+                fetched_count += len(jobspy_offers)
+                new_count, updated_count = _count_existing_offers(db, jobspy_offers)
+                if jobspy_offers:
+                    save_offers_to_db(db, jobspy_offers, skills)
+                saved_new_count += new_count
+                saved_updated_count += updated_count
+                stats["sources"].append({"source": "jobspy_indeed", "status": "ok", "fetched_count": len(jobspy_offers)})
+                _append_run_log(run, f"JobSpy/Indeed: {len(jobspy_offers)} ofertas ({new_count} nuevas, {updated_count} actualizadas)")
+            except Exception as exc:
+                error_count += 1
+                stats["sources"].append({"source": "jobspy_indeed", "status": "error", "error": str(exc)[:200]})
+                _append_run_log(run, f"JobSpy error: {str(exc)[:200]}")
+            db.commit()
+
+        if "jsearch" in sources:
+            _append_run_log(run, "Consultando JSearch API (LinkedIn/Indeed/Glassdoor)...")
+            db.commit()
+            try:
+                jsearch_offers = await fetch_offers_from_jsearch(skills, locations=locations)
+                jsearch_offers = jsearch_offers or []
+                fetched_count += len(jsearch_offers)
+                new_count, updated_count = _count_existing_offers(db, jsearch_offers)
+                if jsearch_offers:
+                    save_offers_to_db(db, jsearch_offers, skills)
+                saved_new_count += new_count
+                saved_updated_count += updated_count
+                stats["sources"].append({"source": "jsearch", "status": "ok", "fetched_count": len(jsearch_offers)})
+                _append_run_log(run, f"JSearch: {len(jsearch_offers)} ofertas ({new_count} nuevas, {updated_count} actualizadas)")
+            except Exception as exc:
+                error_count += 1
+                stats["sources"].append({"source": "jsearch", "status": "error", "error": str(exc)[:200]})
+                _append_run_log(run, f"JSearch error: {str(exc)[:200]}")
+            db.commit()
 
         _append_run_log(run, "Reverificando ofertas antiguas para refrescar estado...")
         db.commit()

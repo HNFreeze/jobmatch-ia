@@ -84,3 +84,16 @@ def test_fetch_offers_from_public_sources_includes_recruitee(monkeypatch):
     assert result["offers"][0]["ubicacion"] == "Madrid, ES"
     assert result["sources"][0]["source"] == "recruitee:acme"
     assert result["sources"][0]["status"] == "ok"
+
+
+def test_cap_limits_offers_per_source(monkeypatch):
+    """One source/board cannot contribute more than the configured cap."""
+    monkeypatch.setenv("JOB_INGESTION_MAX_OFFERS_PER_SOURCE", "3")
+    offers = [{"id": i} for i in range(10)]
+    assert len(service._cap(offers)) == 3
+
+
+def test_cap_disabled_when_zero(monkeypatch):
+    monkeypatch.setenv("JOB_INGESTION_MAX_OFFERS_PER_SOURCE", "0")
+    offers = [{"id": i} for i in range(10)]
+    assert len(service._cap(offers)) == 10

@@ -6,11 +6,13 @@ import anthropic
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from app.database import get_session_local
+from app.database import get_db
 from app.routers.user import get_current_user_record
 from app.services.ai_cost_service import record_ai_api_cost
 from app.services.ai_quota_service import consume_ai_quota
+from app.services.claude_client import call_claude
 from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
 
@@ -39,6 +41,7 @@ def generate_cover_letter(
     body: CoverLetterRequest,
     request: Request,
     user=Depends(get_current_user_record),
+    db: Session = Depends(get_db),
 ):
     api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
@@ -48,15 +51,6 @@ def generate_cover_letter(
             media_type="application/json; charset=utf-8",
         )
 
-    SessionLocal = get_session_local()
-    if SessionLocal is None:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Base de datos no disponible"},
-            media_type="application/json; charset=utf-8",
-        )
-
-    db = SessionLocal()
     client_ip = get_client_ip(request)
     try:
         enforce_rate_limits(db, [
@@ -112,11 +106,11 @@ Exactamente 4 párrafos, sin títulos ni separadores entre ellos:
 Responde ÚNICAMENTE con los 4 párrafos de la carta, sin encabezado, sin firma, sin comentarios adicionales."""
 
         client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
+        message = call_claude(lambda: client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ))
         record_ai_api_cost(
             user_id=user.id,
             feature="cover_letter",

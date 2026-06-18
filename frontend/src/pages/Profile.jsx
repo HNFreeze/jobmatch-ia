@@ -1731,6 +1731,12 @@ export default function Profile({ analysisResults, setAnalysisResults, addToast,
                             offer_result: offer.resultado,
                           });
                           setFeedbackMap(prev => ({ ...prev, [offer.adzuna_id]: rating }));
+                          addToast?.(
+                            rating === "up"
+                              ? "👍 Valoración guardada — ajustamos el ranking para tu próxima búsqueda"
+                              : "👎 Valoración guardada — tendremos en cuenta esta señal",
+                            "success",
+                          );
                         } catch { /* silent */ } finally {
                           setFeedbackLoading(prev => ({ ...prev, [offer.adzuna_id]: false }));
                         }

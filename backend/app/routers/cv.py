@@ -44,6 +44,7 @@ from app.services.cv_service import (
     validate_cv_upload,
 )
 from app.services.matching_service import MATCH_ENGINE_VERSION, generate_skills_gap, match_profile_with_offers
+from app.services.rate_limit_service import RateLimitRule, enforce_rate_limits
 from app.services.security_service import get_client_ip
 
 router = APIRouter()
@@ -293,6 +294,16 @@ async def analyze_cv(
                 media_type="application/json; charset=utf-8",
             )
 
+        enforce_rate_limits(db, [
+            RateLimitRule(
+                action="cv_analyze_user",
+                bucket_key=f"user:{user.id}",
+                limit=5,
+                window_seconds=3600,
+                detail="Has analizado demasiados CVs en la última hora. Espera antes de volver a intentarlo.",
+            ),
+        ])
+
         # Consumir cuota IA (lanza 429 si se agotó)
         consume_ai_quota(db, user, "cv_analysis")
 
@@ -444,6 +455,16 @@ async def improve_cv(
                 media_type="application/json; charset=utf-8",
             )
 
+        enforce_rate_limits(db, [
+            RateLimitRule(
+                action="cv_improve_user",
+                bucket_key=f"user:{user.id}",
+                limit=5,
+                window_seconds=3600,
+                detail="Has realizado demasiadas mejoras de CV en la última hora. Espera antes de volver a intentarlo.",
+            ),
+        ])
+
         # Cuota independiente: máx 2 mejoras/día
         quota = consume_ai_quota(db, user, "cv_improve")
 
@@ -489,6 +510,16 @@ async def improve_cv_full_endpoint(
     try:
         if not db:
             return JSONResponse(status_code=500, content={"detail": "Base de datos no disponible"})
+
+        enforce_rate_limits(db, [
+            RateLimitRule(
+                action="cv_improve_full_user",
+                bucket_key=f"user:{user.id}",
+                limit=3,
+                window_seconds=3600,
+                detail="Has realizado demasiadas mejoras completas de CV en la última hora. Espera antes de volver a intentarlo.",
+            ),
+        ])
 
         # Cuota: usa la misma acción cv_improve (máx 2/día, bypass para super admin)
         quota = consume_ai_quota(db, user, "cv_improve")

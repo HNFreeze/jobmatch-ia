@@ -9,9 +9,9 @@ import BrandLogo from "./BrandLogo";
 
 const BASE_NAV_LINKS = [
   { key: "dashboard",    label: "Inicio" },
+  { key: "agente",       label: "Agente" },
   { key: "buscar",       label: "Buscar ofertas" },
   { key: "cv-buscar",   label: "Buscar por CV" },
-  { key: "mapa",         label: "Ubicaciones" },
   { key: "favoritos",    label: "Favoritos" },
   { key: "candidaturas", label: "Candidaturas" },
   { key: "user-profile", label: "Mi perfil" },

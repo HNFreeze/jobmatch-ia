@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { startInterview, sendInterviewMessage, endInterview } from "../services/api";
+import alexFace from "../assets/alex_face.jpg";
 
 const TEAL = "#00758A";
 const TEAL_DARK = "#0f766e";
@@ -11,10 +12,10 @@ const KEYFRAMES = `
   0%   { transform: scale(1);   opacity: 0.6; }
   100% { transform: scale(1.55); opacity: 0; }
 }
-@keyframes mouthTalk {
-  0%   { transform: scaleY(0.2); }
-  50%  { transform: scaleY(1);   }
-  100% { transform: scaleY(0.35); }
+@keyframes mouthOpen {
+  0%   { transform: translateX(-50%) scaleY(0.15) scaleX(0.8); opacity: 0.7; }
+  40%  { transform: translateX(-50%) scaleY(1)    scaleX(1);   opacity: 0.92; }
+  100% { transform: translateX(-50%) scaleY(0.35) scaleX(0.9); opacity: 0.75; }
 }
 @keyframes waveBeat {
   0%   { transform: scaleY(0.25); }
@@ -36,14 +37,6 @@ const KEYFRAMES = `
   from { width: 0; }
   to   { width: var(--score-w); }
 }
-@keyframes eyeBlink {
-  0%, 88%, 100% { transform: scaleY(1); }
-  93%           { transform: scaleY(0.08); }
-}
-@keyframes headBreathe {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.015); }
-}
 @keyframes floatIn {
   from { opacity: 0; transform: translateY(24px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
@@ -52,135 +45,167 @@ const KEYFRAMES = `
   0%, 100% { opacity: 0.55; }
   50%      { opacity: 0.85; }
 }
+@keyframes speakingBorder {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(0,117,138,0.7), 0 12px 48px rgba(0,117,138,0.35); }
+  50%      { box-shadow: 0 0 0 4px rgba(0,117,138,0.9), 0 12px 56px rgba(0,117,138,0.5); }
+}
+@keyframes listenBorder {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(239,68,68,0.7), 0 12px 40px rgba(239,68,68,0.3); }
+  50%      { box-shadow: 0 0 0 4px rgba(239,68,68,0.9), 0 12px 48px rgba(239,68,68,0.45); }
+}
 `;
 
 // ── Avatar Component ──────────────────────────────────────────────────────────
 
 function AlexAvatar({ isSpeaking, isListening, dm, size = 120 }) {
-  const glowColor = isSpeaking
-    ? "rgba(0,117,138,0.6)"
-    : isListening
-    ? "rgba(239,68,68,0.45)"
-    : "rgba(0,0,0,0.18)";
+  // Scale factor — keeps all proportions relative to the base size
+  const W = Math.max(size, 140);
+  const H = Math.round(W * 1.18);
 
-  const scale = size / 120;
+  const borderAnim = isSpeaking
+    ? "speakingBorder 2s ease-in-out infinite"
+    : isListening
+    ? "listenBorder 1.2s ease-in-out infinite"
+    : "none";
+
+  const borderShadow = isSpeaking
+    ? "0 0 0 3px rgba(0,117,138,0.8), 0 16px 52px rgba(0,117,138,0.4)"
+    : isListening
+    ? "0 0 0 3px rgba(239,68,68,0.8), 0 16px 40px rgba(239,68,68,0.35)"
+    : "0 8px 32px rgba(0,0,0,0.28)";
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", userSelect: "none" }}>
-      {/* Pulse rings when speaking */}
-      {isSpeaking && [0, 1].map(i => (
-        <div key={i} style={{
-          position: "absolute",
-          borderRadius: "50%",
-          border: `2px solid rgba(0,117,138,${0.45 - i * 0.15})`,
-          inset: -(22 + i * 20) * scale,
-          animation: `avatarPulse 1.6s ease-out ${i * 0.6}s infinite`,
-          pointerEvents: "none",
-        }} />
-      ))}
 
-      {/* Listening ring */}
-      {isListening && !isSpeaking && (
-        <div style={{
-          position: "absolute",
-          borderRadius: "50%",
-          border: "2px solid rgba(239,68,68,0.5)",
-          inset: -16 * scale,
-          animation: "avatarPulse 1.1s ease-out infinite",
-          pointerEvents: "none",
-        }} />
-      )}
-
-      {/* Head circle */}
+      {/* ── Video-call frame ─────────────────────────────────────────── */}
       <div style={{
-        width: size, height: size, borderRadius: "50%",
-        background: `linear-gradient(145deg, ${TEAL_DARK} 0%, ${TEAL} 55%, #0891b2 100%)`,
-        boxShadow: `0 0 0 4px ${isSpeaking ? "rgba(0,117,138,0.28)" : "transparent"}, 0 8px 36px ${glowColor}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        position: "relative", overflow: "visible",
-        transition: "box-shadow 0.4s ease",
+        position: "relative",
+        width: W,
+        height: H,
+        borderRadius: 18,
+        overflow: "hidden",
+        boxShadow: borderShadow,
+        animation: borderAnim,
+        transition: "box-shadow 0.35s ease",
         flexShrink: 0,
-        animation: "headBreathe 4s ease-in-out infinite",
       }}>
-        {/* Face SVG */}
-        <svg
-          width={80 * scale} height={80 * scale}
-          viewBox="0 0 80 80"
-          style={{ overflow: "visible" }}
-        >
-          {/* Eyebrows */}
-          <path d="M20 25 Q27 20 34 25" stroke="white" strokeWidth="2.2" fill="none" strokeLinecap="round" opacity="0.85"/>
-          <path d="M46 25 Q53 20 60 25" stroke="white" strokeWidth="2.2" fill="none" strokeLinecap="round" opacity="0.85"/>
 
-          {/* Eyes — whites */}
-          <ellipse cx="27" cy="34" rx="5.5" ry="6" fill="white" opacity="0.93"
-            style={{ transformOrigin: "27px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
-          <ellipse cx="53" cy="34" rx="5.5" ry="6" fill="white" opacity="0.93"
-            style={{ transformOrigin: "53px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
+        {/* Office background (CSS only — blurred gradient suggesting a meeting room) */}
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 0,
+          background: "linear-gradient(170deg, #d6cfc6 0%, #c8bfb2 35%, #b8b0a4 65%, #a8a098 100%)",
+        }}>
+          {/* Subtle window light from top-right */}
+          <div style={{
+            position: "absolute", top: "-20%", right: "-10%",
+            width: "55%", height: "60%",
+            background: "radial-gradient(ellipse, rgba(255,248,230,0.55) 0%, transparent 70%)",
+            borderRadius: "50%",
+          }}/>
+          {/* Desk/table suggestion at bottom */}
+          <div style={{
+            position: "absolute", bottom: 0, left: 0, right: 0, height: "22%",
+            background: "linear-gradient(to top, rgba(90,75,60,0.35), transparent)",
+          }}/>
+        </div>
 
-          {/* Pupils */}
-          <circle cx="28" cy="35" r="3.2" fill="#0c3d47"
-            style={{ transformOrigin: "27px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
-          <circle cx="54" cy="35" r="3.2" fill="#0c3d47"
-            style={{ transformOrigin: "53px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
+        {/* Face photo */}
+        <img
+          src={alexFace}
+          alt="Alejandro - Entrevistador IA"
+          style={{
+            position: "relative", zIndex: 1,
+            width: "100%", height: "100%",
+            objectFit: "cover",
+            objectPosition: "center 8%",
+            display: "block",
+          }}
+        />
 
-          {/* Eye shine */}
-          <circle cx="29.5" cy="33.2" r="1.1" fill="white" opacity="0.75"
-            style={{ transformOrigin: "27px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
-          <circle cx="55.5" cy="33.2" r="1.1" fill="white" opacity="0.75"
-            style={{ transformOrigin: "53px 34px", animation: "eyeBlink 4.5s ease-in-out 1.2s infinite" }}/>
+        {/* ── Mouth open overlay (speaking) ── */}
+        {isSpeaking && (
+          <div style={{
+            position: "absolute", zIndex: 2,
+            bottom: "20%",
+            left: "50%",
+            width: "22%",
+            height: "6%",
+            background: "radial-gradient(ellipse, rgba(10,5,3,0.82) 50%, rgba(30,15,8,0.45) 100%)",
+            borderRadius: "50%",
+            animation: "mouthOpen 0.21s ease-in-out infinite alternate",
+            transformOrigin: "center center",
+          }}/>
+        )}
 
-          {/* Mouth */}
-          {isSpeaking ? (
-            <ellipse
-              cx="40" cy="56" rx="9" ry="5.5"
-              fill="white" opacity="0.92"
-              style={{
-                transformOrigin: "40px 56px",
-                animation: "mouthTalk 0.22s ease-in-out infinite",
-              }}
-            />
-          ) : (
-            <path
-              d="M28 54 Q40 63 52 54"
-              stroke="white" strokeWidth="2.6" fill="none" strokeLinecap="round" opacity="0.9"
-            />
-          )}
-        </svg>
+        {/* ── Listening badge (bottom of frame) ── */}
+        {isListening && !isSpeaking && (
+          <div style={{
+            position: "absolute", zIndex: 3,
+            bottom: 10, left: "50%", transform: "translateX(-50%)",
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 12px",
+            background: "rgba(185,28,28,0.88)",
+            borderRadius: 20,
+            backdropFilter: "blur(4px)",
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "white", animation: "micPulse 0.85s ease-in-out infinite" }}/>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "white", fontFamily: "system-ui, sans-serif", letterSpacing: "0.03em" }}>
+              Escuchando…
+            </span>
+          </div>
+        )}
+
+        {/* ── Name tag (bottom-left, always visible) ── */}
+        <div style={{
+          position: "absolute", zIndex: 3,
+          bottom: 8, left: 10,
+          padding: "3px 9px",
+          background: "rgba(0,0,0,0.52)",
+          borderRadius: 8,
+          backdropFilter: "blur(6px)",
+          color: "white",
+          fontSize: 11,
+          fontWeight: 700,
+          fontFamily: "system-ui, sans-serif",
+          letterSpacing: "0.02em",
+        }}>
+          Alejandro
+        </div>
+
+        {/* ── Speaking: subtle teal overlay glow ── */}
+        {isSpeaking && (
+          <div style={{
+            position: "absolute", zIndex: 2, inset: 0,
+            background: "radial-gradient(ellipse at 50% 100%, rgba(0,117,138,0.12) 0%, transparent 65%)",
+            pointerEvents: "none",
+          }}/>
+        )}
       </div>
 
-      {/* Wave bars when speaking */}
+      {/* ── Audio wave bars (speaking) ── */}
       {isSpeaking && (
-        <div style={{ display: "flex", gap: 3, alignItems: "center", height: 22, marginTop: 10 }}>
+        <div style={{ display: "flex", gap: 3, alignItems: "center", height: 20, marginTop: 10 }}>
           {[0.65, 1.05, 0.55, 1.25, 0.75, 0.95, 0.5].map((dur, i) => (
             <div key={i} style={{
-              width: 4, height: "100%", backgroundColor: TEAL, borderRadius: 2,
+              width: 3, height: "100%", backgroundColor: TEAL, borderRadius: 2,
               animation: `waveBeat ${dur}s ease-in-out ${i * 0.09}s infinite alternate`,
             }}/>
           ))}
         </div>
       )}
 
-      {/* Listening indicator */}
-      {isListening && !isSpeaking && (
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10 }}>
-          <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#ef4444", animation: "micPulse 0.9s ease-in-out infinite" }}/>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", fontFamily: "system-ui, sans-serif" }}>Escuchando…</span>
-        </div>
-      )}
+      {/* Idle / listening spacer */}
+      {!isSpeaking && <div style={{ height: 20 }}/>}
 
-      {/* Idle spacer */}
-      {!isSpeaking && !isListening && <div style={{ height: 32 }}/>}
-
-      {/* Name badge */}
+      {/* ── Role badge ── */}
       <div style={{
-        marginTop: 10, padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+        marginTop: 6, padding: "4px 14px", borderRadius: 20, fontSize: 11, fontWeight: 700,
         background: dm ? "rgba(0,117,138,0.2)" : "rgba(0,117,138,0.1)",
         color: dm ? "#5eead4" : TEAL,
         border: `1px solid ${dm ? "rgba(94,234,212,0.25)" : "rgba(0,117,138,0.2)"}`,
         fontFamily: "system-ui, sans-serif", letterSpacing: "0.02em",
       }}>
-        Alex · Entrevistador IA
+        Alejandro · Entrevistador IA
       </div>
     </div>
   );
@@ -368,7 +393,35 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
       try { audioSrcRef.current.stop(); } catch {}
       audioSrcRef.current = null;
     }
+    // Cancela también la voz del navegador (Web Speech API).
+    try { window.speechSynthesis?.cancel(); } catch {}
     setIsSpeaking(false);
+  }
+
+  // Voz del entrevistador con la Web Speech API del navegador (coste 0).
+  // Se usa cuando el backend no devuelve audio (ElevenLabs desactivado por defecto).
+  function speakWithBrowser(text) {
+    const synth = window.speechSynthesis;
+    const clean = (text || "").trim();
+    if (!synth || !clean) { setIsSpeaking(false); return; }
+    try {
+      synth.cancel();
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = "es-ES";
+      utter.rate = 1.0;
+      utter.onstart = () => setIsSpeaking(true);
+      utter.onend = () => setIsSpeaking(false);
+      utter.onerror = () => setIsSpeaking(false);
+      synth.speak(utter);
+    } catch {
+      setIsSpeaking(false);
+    }
+  }
+
+  // Reproduce la respuesta: audio de ElevenLabs si viene, si no voz del navegador.
+  async function speakResponse(data) {
+    if (data?.audio_b64) await playAudio(data.audio_b64);
+    else speakWithBrowser(data?.text);
   }
 
   async function playAudio(b64) {
@@ -419,7 +472,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
       sessionIdRef.current = data.session_id;
       setMessages([{ role: "assistant", text: data.text }]);
       setPhase("active");
-      if (data.audio_b64) await playAudio(data.audio_b64);
+      await speakResponse(data);
       if (data.is_final) handleFinish(data.session_id);
     } catch (err) {
       setError(err?.detail || err?.message || "No se pudo iniciar la entrevista.");
@@ -441,7 +494,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     try {
       const data = await sendInterviewMessage(sessionIdRef.current, text);
       setMessages(prev => [...prev, { role: "assistant", text: data.text }]);
-      if (data.audio_b64) await playAudio(data.audio_b64);
+      await speakResponse(data);
       if (data.is_final) handleFinish(sessionIdRef.current);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", text: "Lo siento, ha ocurrido un error. ¿Podrías repetir tu respuesta?" }]);

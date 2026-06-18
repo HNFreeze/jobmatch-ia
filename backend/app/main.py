@@ -5,6 +5,23 @@ import os
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
+# Sentry — inicializar lo antes posible, solo si está configurado
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("ENVIRONMENT", "development"),
+            traces_sample_rate=0.1,
+            integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+            send_default_pii=False,
+        )
+    except Exception:
+        pass  # Sentry opcional — no bloquear arranque
+
 # Cargar .env ANTES de importar cualquier módulo de app (database.py lee DATABASE_URL al importarse)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -13,7 +30,9 @@ if os.environ.get("DATABASE_URL", "").startswith("postgres://"):
     os.environ["DATABASE_URL"] = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from alembic.config import Config
 from alembic import command
@@ -22,6 +41,7 @@ from app.routers import auth, user, match, favorites, application, history, cove
 from app.routers import alerts as alerts_router
 from app.routers import notifications as notifications_router
 from app.routers import interview as interview_router
+from app.routers import agent as agent_router
 from app.services.admin_bootstrap_service import ensure_bootstrap_admin
 from app.services.job_ingestion_service import (
     create_ingestion_run,
@@ -32,13 +52,31 @@ from app.services.job_ingestion_service import (
 from app.services.alert_service import process_job_alerts
 
 # ── Logging ───────────────────────────────────────────────────────────────────
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+_is_production = os.getenv("ENVIRONMENT", "development") == "production"
+
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=getattr(logging, _LOG_LEVEL, logging.INFO),
+    format=(
+        '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}'
+        if _is_production
+        else "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ),
 )
 logger = logging.getLogger("jobmatch.scheduler")
 
 app = FastAPI(title="JobMatch-IA API")
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error("Error no manejado: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 frontend_url = os.getenv("APP_FRONTEND_URL", "").strip()
 allowed_origins = []
@@ -57,6 +95,21 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Cabeceras de seguridad en todas las respuestas: anti clickjacking,
+    anti MIME-sniffing, control de referrer y permisos; HSTS solo en producción."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if _is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 app.include_router(match.router)
 app.include_router(auth.router)
 app.include_router(user.router)
@@ -70,6 +123,7 @@ app.include_router(cv.router)
 app.include_router(alerts_router.router)
 app.include_router(notifications_router.router)
 app.include_router(interview_router.router)
+app.include_router(agent_router.router)
 
 
 # ── Background scheduler ──────────────────────────────────────────────────────
@@ -187,6 +241,22 @@ async def _auto_alerts_loop() -> None:
 
 @app.on_event("startup")
 async def startup_tasks():
+    # 0. Validación de variables de entorno críticas
+    _is_prod = os.getenv("ENVIRONMENT", "development") == "production"
+    _jwt_secret = os.getenv("JWT_SECRET", "dev-secret-inseguro")
+    if _jwt_secret == "dev-secret-inseguro":
+        if _is_prod:
+            raise RuntimeError("JWT_SECRET no puede ser el valor por defecto en producción.")
+        else:
+            logger.warning("ADVERTENCIA: JWT_SECRET usa el valor por defecto inseguro — solo válido en desarrollo local.")
+
+    if not os.getenv("CLAUDE_API_KEY"):
+        logger.warning("ADVERTENCIA: CLAUDE_API_KEY no configurada — las funciones de IA no estarán disponibles.")
+    if not os.getenv("DATABASE_URL"):
+        logger.warning("ADVERTENCIA: DATABASE_URL no configurada — la base de datos no estará disponible.")
+    if _is_prod and not os.getenv("APP_FRONTEND_URL"):
+        logger.warning("ADVERTENCIA: APP_FRONTEND_URL no configurada en producción — el CORS puede no funcionar correctamente.")
+
     # 1. Migraciones Alembic
     alembic_cfg = Config(Path(__file__).resolve().parent.parent / "alembic.ini")
     alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
@@ -209,3 +279,32 @@ async def startup_tasks():
 @app.get("/")
 def root():
     return {"message": "JobMatch-IA API running"}
+
+
+@app.get("/health")
+def health_check():
+    """Health check con estado de la base de datos e índice de ofertas."""
+    from datetime import datetime
+    from app.database import get_session_local
+    from app.models.job_offer import JobOffer
+
+    status = {"status": "ok", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.0"}
+
+    SessionLocal = get_session_local()
+    if SessionLocal is None:
+        status["database"] = "unavailable"
+        status["status"] = "degraded"
+        return status
+
+    try:
+        db = SessionLocal()
+        active_offers = db.query(JobOffer).filter(JobOffer.is_active.is_(True)).count()
+        status["database"] = "ok"
+        status["active_offers"] = active_offers
+        status["ai_available"] = bool(os.getenv("CLAUDE_API_KEY"))
+        db.close()
+    except Exception as exc:
+        status["database"] = f"error: {exc}"
+        status["status"] = "degraded"
+
+    return status
