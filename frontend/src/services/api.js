@@ -631,35 +631,6 @@ export async function deleteCVVariant(improvementId, variantId) {
   return response.json();
 }
 
-// ── Alertas de empleo ────────────────────────────────────────────────────────
-
-export async function getMyAlert() {
-  const response = await fetch(`${API_URL}/api/alerts/mine`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw await buildApiError(response, "Error al obtener la alerta");
-  return response.json();
-}
-
-export async function upsertMyAlert({ min_score_threshold, email_frequency, is_active }) {
-  const response = await fetch(`${API_URL}/api/alerts/mine`, {
-    method: "PUT",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ min_score_threshold, email_frequency, is_active }),
-  });
-  if (!response.ok) throw await buildApiError(response, "Error al guardar la alerta");
-  return response.json();
-}
-
-export async function deleteMyAlert() {
-  const response = await fetch(`${API_URL}/api/alerts/mine`, {
-    method: "DELETE",
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw await buildApiError(response, "Error al eliminar la alerta");
-  return response.json();
-}
-
 // ── Feedback de matching ──────────────────────────────────────────────────────
 
 export async function submitMatchFeedback({ adzuna_id, rating, offer_score, offer_result }) {

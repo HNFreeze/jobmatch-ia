@@ -82,9 +82,9 @@ def mark_all_read(user_id: int = Depends(get_current_user_id), db: Session = Dep
         db.close()
 
 
-# ── Helper used by alert_service to write notifications ──────────────────────
+# ── Helper para escribir notificaciones in-app ───────────────────────────────
 def create_notification(db, user_id: int, title: str, message: str = "", ntype: str = "alert") -> None:
-    """Create an in-app notification. Called from alert_service when an alert fires."""
+    """Create an in-app notification."""
     try:
         n = Notification(
             user_id=user_id,

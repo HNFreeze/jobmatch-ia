@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   getUserProfile, getFavorites, getApplications, getHistory, getAiQuota,
-  getMyAlert, getMarketAnalysis, getSkillsRoadmap, submitSearchSatisfaction,
+  getMarketAnalysis, getSkillsRoadmap, submitSearchSatisfaction,
 } from "../services/api";
 import { pageTokens } from "../constants/theme";
 
@@ -294,39 +294,6 @@ function Section({ t, title, eyebrow, action, children, padding = true }) {
 }
 
 /* ---------------------------------------------------------------------------
- * AlertBanner — alerta de empleo activa
- * ------------------------------------------------------------------------- */
-function AlertBanner({ t, alert, onManage }) {
-  if (!alert?.is_active) return null;
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 12,
-      padding: "10px 16px",
-      background: t.tealSoft, border: `1px solid ${t.tealLine}`,
-      borderRadius: t.radiusSm, marginBottom: t.gapLg,
-      fontFamily: t.font,
-    }}>
-      <span style={{ color: t.teal, display: "flex" }}><Icon name="bell" size={14} color={t.teal}/></span>
-      <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: t.text }}>
-        Alerta activa — Compatibilidad ≥ {alert.min_score_threshold}%
-        <span style={{ color: t.textMute, fontWeight: 500 }}>
-          {" · "}{alert.email_frequency === "daily" ? "Email diario" : "Email semanal"}
-          {alert.last_triggered_at
-            ? ` · Última: ${new Date(alert.last_triggered_at).toLocaleDateString("es-ES")}`
-            : ""}
-        </span>
-      </div>
-      <button onClick={onManage} style={{
-        all: "unset", cursor: "pointer",
-        fontSize: 11, fontWeight: 700, color: t.teal,
-        padding: "4px 10px", borderRadius: 6,
-        border: `1px solid ${t.tealLine}`,
-      }}>Gestionar</button>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------------------
  * InterviewBanner — card destacada de la feature de entrevista
  * ------------------------------------------------------------------------- */
 function InterviewBanner({ t, onClick }) {
@@ -408,7 +375,6 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
   const [applications, setApplications] = useState([]);
   const [history,      setHistory]      = useState([]);
   const [quota,        setQuota]        = useState(null);
-  const [alert,        setAlert]        = useState(null);
   const [market,       setMarket]       = useState(null);
   const [marketError,  setMarketError]  = useState(false);
   const [roadmap,      setRoadmap]      = useState(null);
@@ -422,15 +388,13 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
       getApplications(),
       getHistory(),
       getAiQuota(),
-      getMyAlert(),
       getMarketAnalysis(),
-    ]).then(([p, f, a, h, q, al, mk]) => {
+    ]).then(([p, f, a, h, q, mk]) => {
       if (p.status  === "fulfilled") setProfile(p.value);
       if (f.status  === "fulfilled") setFavorites(f.value || []);
       if (a.status  === "fulfilled") setApplications(a.value || []);
       if (h.status  === "fulfilled") setHistory(h.value || []);
       if (q.status  === "fulfilled") setQuota(q.value);
-      if (al.status === "fulfilled") setAlert(al.value?.alert);
       if (mk.status === "fulfilled") setMarket(mk.value);
       if (mk.status === "rejected")  setMarketError(true);
       setLoading(false);
@@ -590,9 +554,6 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
             {" · "}{new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </section>
-
-        {/* Alerta activa */}
-        <AlertBanner t={t} alert={alert} onManage={() => onNavigate?.("user-profile")}/>
 
         {/* Perfil incompleto */}
         {completion < 100 && (
@@ -897,9 +858,6 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
             <QuickAction t={t} icon="mic" title="Simular entrevista IA"
               sub="Practica para una candidatura real" accent="purple"
               onClick={() => onNavigate?.("candidaturas")}/>
-            <QuickAction t={t} icon="bell" title="Alertas de empleo"
-              sub={alert?.is_active ? `Activa ≥ ${alert.min_score_threshold}%` : "Sin alerta configurada"}
-              onClick={() => onNavigate?.("user-profile")}/>
             <QuickAction t={t} icon="user" title="Mi perfil"
               sub={`Completado ${completion}%`} onClick={() => onNavigate?.("user-profile")}/>
 

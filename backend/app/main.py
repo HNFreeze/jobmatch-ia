@@ -38,7 +38,6 @@ from alembic.config import Config
 from alembic import command
 
 from app.routers import auth, user, match, favorites, application, history, cover_letter, company, admin, cv
-from app.routers import alerts as alerts_router
 from app.routers import notifications as notifications_router
 from app.routers import interview as interview_router
 from app.routers import agent as agent_router
@@ -49,7 +48,6 @@ from app.services.job_ingestion_service import (
     prepare_ingestion_payload,
     run_ingestion_task,
 )
-from app.services.alert_service import process_job_alerts
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 _LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -120,7 +118,6 @@ app.include_router(cover_letter.router)
 app.include_router(company.router)
 app.include_router(admin.router)
 app.include_router(cv.router)
-app.include_router(alerts_router.router)
 app.include_router(notifications_router.router)
 app.include_router(interview_router.router)
 app.include_router(agent_router.router)
@@ -129,7 +126,6 @@ app.include_router(agent_router.router)
 # ── Background scheduler ──────────────────────────────────────────────────────
 
 INGESTION_INTERVAL_HOURS = int(os.getenv("JOB_INGESTION_INTERVAL_HOURS", "12"))
-ALERTS_INTERVAL_HOURS = int(os.getenv("ALERTS_INTERVAL_HOURS", "24"))
 
 # Umbral de fallos consecutivos que dispara la notificación al super admin
 _INGESTION_MAX_CONSECUTIVE_FAILURES = 3
@@ -224,21 +220,6 @@ async def _auto_ingestion_loop() -> None:
         await asyncio.sleep(interval)
 
 
-async def _auto_alerts_loop() -> None:
-    """Procesa alertas de empleo cada ALERTS_INTERVAL_HOURS horas."""
-    interval = ALERTS_INTERVAL_HOURS * 3600
-    # Espera inicial: 600s tras arrancar
-    await asyncio.sleep(600)
-    while True:
-        try:
-            logger.info("[SCHEDULER] Procesando alertas de empleo...")
-            summary = process_job_alerts()
-            logger.info("[SCHEDULER] Alertas completadas: %s", summary)
-        except Exception as exc:
-            logger.error("[SCHEDULER] Error en alertas: %s", exc, exc_info=True)
-        await asyncio.sleep(interval)
-
-
 @app.on_event("startup")
 async def startup_tasks():
     # 0. Validación de variables de entorno críticas
@@ -268,11 +249,9 @@ async def startup_tasks():
     # 3. Lanzar loops en background (solo si la BD está disponible)
     if os.getenv("DATABASE_URL"):
         asyncio.create_task(_auto_ingestion_loop())
-        asyncio.create_task(_auto_alerts_loop())
         logger.info(
-            "[SCHEDULER] Ingesta automática cada %dh, alertas cada %dh",
+            "[SCHEDULER] Ingesta automática cada %dh",
             INGESTION_INTERVAL_HOURS,
-            ALERTS_INTERVAL_HOURS,
         )
 
 
