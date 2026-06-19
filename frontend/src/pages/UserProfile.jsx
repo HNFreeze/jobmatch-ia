@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   getUserProfile, updateUserProfile, changePassword, deleteAccount,
-  getMyAlert, upsertMyAlert, deleteMyAlert,
 } from "../services/api";
 import { pageTokens } from "../constants/theme";
 
@@ -96,7 +95,6 @@ const SIDEBAR_ITEMS = [
   { id: "stack",    label: "Stack Tecnológico",       icon: "code" },
   { id: "exp",      label: "Experiencia e Idiomas",   icon: "briefcase" },
   { id: "prefs",    label: "Preferencias de Trabajo", icon: "sliders" },
-  { id: "alerts",   label: "Alertas de empleo",       icon: "bell" },
   { id: "security", label: "Seguridad",               icon: "shield" },
 ];
 
@@ -329,26 +327,6 @@ function LocationPill({ t, name, selected, onClick }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Toggle Switch
- * ------------------------------------------------------------------------- */
-function Switch({ t, value, onChange }) {
-  return (
-    <button type="button" onClick={() => onChange(!value)} aria-pressed={value} style={{
-      all: "unset", cursor: "pointer",
-      width: 38, height: 22, borderRadius: 999, position: "relative",
-      background: value ? t.teal : (t._dm ? "#334155" : "#cbd5e1"),
-      transition: "background .2s", flexShrink: 0,
-    }}>
-      <span style={{
-        position: "absolute", top: 2, left: value ? 18 : 2,
-        width: 18, height: 18, borderRadius: 999, background: "#fff",
-        transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
-      }}/>
-    </button>
-  );
-}
-
-/* ---------------------------------------------------------------------------
  * PasswordField
  * ------------------------------------------------------------------------- */
 function PasswordField({ t, placeholder, value, onChange }) {
@@ -407,12 +385,6 @@ export default function UserProfile({
   // ── Stack search ──────────────────────────────────────────────────────────
   const [stackQuery, setStackQuery] = useState("");
 
-  // ── Alerts ───────────────────────────────────────────────────────────────
-  const [alertActive,    setAlertActive]    = useState(false);
-  const [alertThreshold, setAlertThreshold] = useState(70);
-  const [alertFrequency, setAlertFrequency] = useState("daily");
-  const [alertSaving,    setAlertSaving]    = useState(false);
-
   // ── Password change ────────────────────────────────────────────────────────
   const [pwOpen,      setPwOpen]      = useState(false);
   const [currentPw,   setCurrentPw]   = useState("");
@@ -435,7 +407,6 @@ export default function UserProfile({
     stack:    useRef(null),
     exp:      useRef(null),
     prefs:    useRef(null),
-    alerts:   useRef(null),
     security: useRef(null),
   };
 
@@ -444,9 +415,8 @@ export default function UserProfile({
     let cancelled = false;
     async function load() {
       try {
-        const [data, alertResp] = await Promise.allSettled([
+        const [data] = await Promise.allSettled([
           getUserProfile(),
-          getMyAlert(),
         ]);
         if (cancelled) return;
         if (data.status === "fulfilled") {
@@ -459,12 +429,6 @@ export default function UserProfile({
           if (d.idiomas?.length)     setIdiomas(d.idiomas);
           if (d.ubicaciones?.length) setUbicaciones(d.ubicaciones);
           if (d.modalidad?.length)   setModalidad(d.modalidad);
-        }
-        if (alertResp.status === "fulfilled" && alertResp.value?.alert) {
-          const al = alertResp.value.alert;
-          setAlertActive(al.is_active || false);
-          setAlertThreshold(al.min_score_threshold || 70);
-          setAlertFrequency(al.email_frequency || "daily");
         }
       } catch { /* keep defaults */ }
       finally {
@@ -479,7 +443,7 @@ export default function UserProfile({
   useEffect(() => {
     const onScroll = () => {
       const y = window.scrollY + 120;
-      const order = ["security", "alerts", "prefs", "exp", "stack", "info"];
+      const order = ["security", "prefs", "exp", "stack", "info"];
       for (const id of order) {
         const el = refs[id].current;
         if (el && el.offsetTop <= y) { setActiveSection(id); break; }
@@ -609,24 +573,6 @@ export default function UserProfile({
     }
   }
 
-  // ── Save alerts ───────────────────────────────────────────────────────────
-  async function handleSaveAlert() {
-    setAlertSaving(true);
-    try {
-      if (alertActive) {
-        await upsertMyAlert({ min_score_threshold: alertThreshold, email_frequency: alertFrequency, is_active: true });
-        addToast?.("Alerta guardada correctamente", "success");
-      } else {
-        await deleteMyAlert();
-        addToast?.("Alerta desactivada", "info");
-      }
-    } catch {
-      addToast?.("No se pudo guardar la alerta", "error");
-    } finally {
-      setAlertSaving(false);
-    }
-  }
-
   // ── Change password ───────────────────────────────────────────────────────
   async function handleChangePassword(e) {
     e.preventDefault();
@@ -707,7 +653,7 @@ export default function UserProfile({
             Mi perfil
           </h1>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: t.textSub, fontWeight: 500 }}>
-            Configura tu stack, preferencias y alertas para que el matching sea más preciso.
+            Configura tu stack, experiencia y preferencias para que el matching sea más preciso.
           </p>
         </section>
 
@@ -1020,63 +966,6 @@ export default function UserProfile({
                   selected={ubicaciones.includes(SPAIN)}
                   onClick={() => toggleLocation(SPAIN)}/>
               </div>
-            </SectionCard>
-
-            {/* ── Alertas de empleo ────────────────────────────────────── */}
-            <SectionCard t={t} title="Alertas de empleo" eyebrow="Notificaciones" anchor={refs.alerts}>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
-                padding: "6px 0", marginBottom: 16,
-              }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 2 }}>
-                    Recibir alertas por email
-                  </div>
-                  <div style={{ fontSize: 12, color: t.textMute, fontWeight: 500 }}>
-                    Te avisamos cuando aparezcan nuevas ofertas que encajen con tu perfil.
-                  </div>
-                </div>
-                <Switch t={t} value={alertActive} onChange={setAlertActive}/>
-              </div>
-
-              {alertActive && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 700, color: t.textSub, minWidth: 120 }}>
-                      Compatibilidad mín.
-                    </label>
-                    <input type="range" min="50" max="95" step="5" value={alertThreshold}
-                      onChange={(e) => setAlertThreshold(Number(e.target.value))}
-                      style={{ flex: 1, accentColor: t.teal }}/>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: t.teal, minWidth: 38, textAlign: "right" }}>
-                      {alertThreshold}%
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 700, color: t.textSub, minWidth: 120 }}>
-                      Frecuencia
-                    </label>
-                    <select value={alertFrequency} onChange={(e) => setAlertFrequency(e.target.value)} style={{
-                      flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8,
-                      padding: "8px 10px", fontSize: 12, fontWeight: 600, color: t.text,
-                      fontFamily: t.font, outline: "none", cursor: "pointer",
-                    }}>
-                      <option value="daily">Diario</option>
-                      <option value="weekly">Semanal</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <button type="button" onClick={handleSaveAlert} disabled={alertSaving} style={{
-                all: "unset", cursor: alertSaving ? "default" : "pointer",
-                width: "100%", boxSizing: "border-box",
-                padding: "12px 16px", textAlign: "center", borderRadius: 8,
-                background: alertSaving ? t.border : t.teal, color: alertSaving ? t.textMute : "#fff",
-                fontSize: 13, fontWeight: 700, fontFamily: t.font, transition: "background .15s",
-              }}>
-                {alertSaving ? "Guardando…" : alertActive ? "Guardar alerta" : "Guardar cambios"}
-              </button>
             </SectionCard>
 
             {/* ── Seguridad ────────────────────────────────────────────── */}

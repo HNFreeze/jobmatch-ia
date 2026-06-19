@@ -77,14 +77,6 @@ const ZapIcon = () => (
     <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
   </svg>
 );
-const BellIcon = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
-    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-    <path d="M4 2C2.8 3.7 2 5.7 2 8"/>
-    <path d="M22 8c0-2.3-.8-4.3-2-6"/>
-  </svg>
-);
 const CheckIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={TEAL} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 6 9 17l-5-5"/>
@@ -379,7 +371,7 @@ export default function Landing({ onStartClick, onAboutClick }) {
               {
                 num: "03",
                 title: "Actúa y haz seguimiento",
-                desc: "Guarda favoritos, registra tus candidaturas con estado, genera cartas de presentación personalizadas y activa alertas para no perderte ninguna oferta nueva.",
+                desc: "Guarda favoritos, registra tus candidaturas con estado y genera cartas de presentación personalizadas para cada oferta.",
                 icon: "🚀",
                 accent: "#7c3aed",
               },
@@ -475,12 +467,6 @@ export default function Landing({ onStartClick, onAboutClick }) {
                 title: "Match en Tiempo Real",
                 desc: "No esperes días. Te conectamos instantáneamente con las empresas en el momento en que publican una vacante ideal para ti.",
               },
-              {
-                icon: <BellIcon />,
-                iconBg: "#F3E8FF",
-                title: "Alertas de Empleo Inteligentes",
-                desc: "Recibe notificaciones por email cuando aparecen nuevas ofertas que encajan con tu perfil. Configura tu umbral de compatibilidad y frecuencia.",
-              },
             ].map((f, i) => (
               <div key={i} className="lv2-feature-card" style={{
                 padding: "32px 28px", borderRadius: 24,
@@ -562,7 +548,7 @@ export default function Landing({ onStartClick, onAboutClick }) {
                   "Matching en tiempo real con ofertas",
                   "Plan de mejora de skills",
                   "Carta de presentación IA",
-                  "Alertas de empleo personalizadas",
+                  "Simulador de entrevista con IA",
                   "Historial de búsquedas",
                 ].map(item => (
                   <li key={item} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500, color: "#374151" }}>

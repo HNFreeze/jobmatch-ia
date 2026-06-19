@@ -33,7 +33,6 @@ from app.models.cv_ats_result import CVAtsResult  # noqa: F401
 from app.models.cv_improvement import CVImprovement  # noqa: F401
 from app.models.cv_edit_session import CVEditSession  # noqa: F401
 from app.models.cv_offer_variant import CVOfferVariant  # noqa: F401
-from app.models.job_alert import JobAlert  # noqa: F401
 from app.models.match_feedback import MatchFeedback  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.interview_session import InterviewSession  # noqa: F401
