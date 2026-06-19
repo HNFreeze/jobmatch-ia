@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Motor de matching: puntúa y explica el encaje entre el perfil del candidato y cada oferta, combinando heurísticas y señales extraídas por IA (cacheadas)."""
 import hashlib
 import html as html_module
 import json

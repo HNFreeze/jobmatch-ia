@@ -1,3 +1,4 @@
+"""Router de candidaturas: alta y seguimiento de las candidaturas del usuario (estado, notas y fecha de seguimiento)."""
 from typing import List, Optional
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, status

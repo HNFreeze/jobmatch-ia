@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Servicio de seguridad: emisión y validación de tokens JWT, hashing de tokens y utilidades de identificación de cliente."""
 import hashlib
 import os
 import secrets

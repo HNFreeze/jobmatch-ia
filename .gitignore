@@ -26,3 +26,7 @@ Thumbs.db
 *.log
 backend/*.log
 frontend/*.log
+
+# Documentación interna de desarrollo (no forma parte de la entrega)
+CLAUDE.md
+context.md

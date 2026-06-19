@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de usuario: perfil, preferencias, cuota de IA, cambio de contraseña, consentimiento y export/borrado de datos (RGPD)."""
 from datetime import datetime
 from typing import List, Optional
 

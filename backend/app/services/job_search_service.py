@@ -1,3 +1,4 @@
+"""Servicio de búsqueda de ofertas: combina las fuentes oficiales (ATS) con los agregadores (Adzuna, JSearch) y ordena por relevancia al perfil."""
 import asyncio
 import os
 

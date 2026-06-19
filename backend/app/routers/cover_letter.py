@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de cartas de presentación: genera con IA una carta personalizada para una oferta concreta."""
 import os
 from typing import List, Optional
 

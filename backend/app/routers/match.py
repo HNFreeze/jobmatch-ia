@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de matching: lanza la búsqueda de ofertas y devuelve el ranking explicado según el perfil del usuario."""
 import hashlib
 import json
 import os

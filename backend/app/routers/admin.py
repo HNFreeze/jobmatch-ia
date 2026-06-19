@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router del panel de administración: métricas globales, gestión de usuarios y cuotas, costes de IA y control del índice de ofertas."""
 import csv
 import io
 import os

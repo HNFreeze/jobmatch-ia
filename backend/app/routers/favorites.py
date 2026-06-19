@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de favoritos: guardar, listar y eliminar las ofertas marcadas por el usuario."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends

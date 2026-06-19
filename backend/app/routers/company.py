@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de datos de empresa: expone la información y los logos de empresa cacheados para enriquecer las ofertas."""
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session

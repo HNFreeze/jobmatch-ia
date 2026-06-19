@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de simulación de entrevista: inicia la sesión, procesa los turnos de conversación con Claude y genera el feedback final."""
 from datetime import datetime
 from typing import Optional
 

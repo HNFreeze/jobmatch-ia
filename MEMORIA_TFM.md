@@ -46,7 +46,7 @@ El TFM se planteó con los siguientes objetivos concretos:
 **Objetivos específicos:**
 
 - Integrar la API de Claude (Anthropic) para análisis semántico de compatibilidad entre perfil y oferta.
-- Construir un sistema de extracción y normalización de ofertas desde múltiples fuentes (Adzuna, InfoJobs, portales ATS directos).
+- Construir un sistema de extracción y normalización de ofertas desde múltiples fuentes (Adzuna, JSearch, portales ATS directos).
 - Implementar un módulo de análisis y mejora de CVs con detección de problemas ATS y generación de versión mejorada.
 - Desarrollar un generador de cartas de presentación personalizadas.
 - Crear una interfaz de usuario intuitiva, responsive y sin dependencias de librerías UI externas.
@@ -63,15 +63,17 @@ Las funciones principales que ofrece al usuario final son:
 
 **Búsqueda inteligente de ofertas:** el usuario configura su perfil (tecnologías, años de experiencia, nivel de inglés, ubicaciones preferidas, modalidad de trabajo) y lanza una búsqueda. El sistema extrae ofertas actualizadas de múltiples fuentes, las analiza con Claude y devuelve un ranking categorizado en tres niveles: **APLICA**, **QUIZÁ** y **NO ENCAJA**, con explicaciones en español de puntos fuertes, brechas y razones de la decisión.
 
+**Agente de empleo con IA:** el usuario describe en lenguaje natural lo que busca (p. ej. *"ofertas de React junior en remoto"*) y un agente supervisado ejecuta una máquina de estados persistida que interpreta la instrucción, busca, filtra, puntúa y **explica** cada oferta, solicitando **confirmación humana** antes de guardar los resultados elegidos. La interpretación usa una única llamada a Claude validada con Pydantic, con un *fallback* determinista si la IA falla. Es la funcionalidad diferenciadora del proyecto.
+
 **Análisis y mejora de CV:** el usuario sube su CV en PDF. El sistema extrae el texto, analiza la estructura con Claude, detecta problemas de compatibilidad ATS, genera una versión mejorada con puntuación antes/después, y permite editar el resultado y exportar a PDF con dos plantillas diferentes.
 
 **Generador de carta de presentación:** dado el título, empresa y descripción de una oferta, Claude genera una carta personalizada en español que conecta el perfil del candidato con los requisitos específicos del puesto.
 
-**Gestión de candidaturas:** tablero Kanban donde el usuario registra el estado de sus candidaturas (guardada, en proceso, entrevista, rechazada, etc.), añade notas y establece fechas de seguimiento con alertas visuales de urgencia.
+**Simulación de entrevista con IA:** el usuario practica una entrevista conversacional con Claude (que interpreta el rol de entrevistador) sobre una candidatura concreta, con voz en el navegador (Web Speech API) y un *feedback* estructurado al finalizar.
+
+**Gestión de candidaturas:** tablero Kanban donde el usuario registra el estado de sus candidaturas (guardada, en proceso, entrevista, rechazada, etc.), añade notas y establece fechas de seguimiento con indicadores visuales de urgencia.
 
 **Dashboard de actividad:** resumen visual del historial de búsquedas, métricas de encaje, recordatorios de seguimiento próximos, tendencia de resultados y análisis de mercado (tecnologías más demandadas vs. perfil del usuario).
-
-**Mapa de ofertas:** visualización geográfica de las ofertas disponibles con filtros de modalidad y habilidades, usando Leaflet.js.
 
 **Panel de administración:** gestión de usuarios, cuotas, actividad, costes de IA, estado del índice de ofertas y ejecución de tareas de ingestión de datos.
 
@@ -84,8 +86,8 @@ La arquitectura sigue un modelo de tres capas bien definidas:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  FRONTEND (React SPA)                                        │
-│  Create React App · Inline CSS · react-leaflet               │
-│  Render / Static Site                                        │
+│  Create React App · Inline CSS · Radix (headless)            │
+│  Vercel / Static Hosting                                     │
 └──────────────────────┬──────────────────────────────────────┘
                        │  HTTP / JSON
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -95,12 +97,12 @@ La arquitectura sigue un modelo de tres capas bien definidas:
 │                                                              │
 │  ┌───────────────┐  ┌───────────────┐  ┌─────────────────┐  │
 │  │  Routers      │  │  Services     │  │  Background     │  │
-│  │  auth, user   │  │  matching     │  │  Tasks          │  │
-│  │  match, cv    │  │  cv_service   │  │  job ingestion  │  │
-│  │  favorites    │  │  quota        │  │  alert trigger  │  │
-│  │  applications │  │  pdf_service  │  └─────────────────┘  │
-│  │  alerts       │  └───────────────┘                       │
-│  │  admin        │                                          │
+│  │  auth, user   │  │  matching     │  │  Task           │  │
+│  │  match, cv    │  │  agent_service│  │  job ingestion  │  │
+│  │  agent        │  │  cv_service   │  └─────────────────┘  │
+│  │  favorites    │  │  quota        │                       │
+│  │  applications │  │  pdf_service  │                       │
+│  │  admin        │  └───────────────┘                       │
 │  └───────────────┘                                          │
 └──────────────────────┬──────────────────────────────────────┘
                        │
@@ -108,7 +110,7 @@ La arquitectura sigue un modelo de tres capas bien definidas:
          │             │                      │
 ┌────────▼───┐  ┌──────▼──────┐  ┌───────────▼──────────┐
 │ PostgreSQL │  │ Claude API  │  │ External Job Sources  │
-│ (Render)   │  │ (Anthropic) │  │ Adzuna, InfoJobs,     │
+│ (Supabase) │  │ (Anthropic) │  │ Adzuna, JSearch,      │
 │            │  │             │  │ Greenhouse, Ashby,    │
 └────────────┘  └─────────────┘  │ Lever, Recruitee      │
                                  └──────────────────────┘
@@ -118,9 +120,9 @@ La arquitectura sigue un modelo de tres capas bien definidas:
 
 **Backend → Claude:** llamadas síncronas con el SDK de Anthropic. El backend actúa como intermediario: nunca expone la API key al cliente, controla el uso mediante el sistema de cuotas y loguea cada llamada con coste estimado.
 
-**Backend → PostgreSQL:** ORM SQLAlchemy con pool de conexiones. Las migraciones se aplican automáticamente al arrancar el servidor con Alembic, sin necesidad de intervención manual en producción.
+**Backend → PostgreSQL:** ORM SQLAlchemy con pool de conexiones. La base de datos es PostgreSQL gestionado en Supabase. Las migraciones se aplican automáticamente al arrancar el servidor con Alembic, sin necesidad de intervención manual en producción.
 
-**Tareas en background:** dos loops async que se ejecutan en segundo plano desde el arranque del servidor — ingestión de ofertas cada 12 horas y procesamiento de alertas cada 24 horas.
+**Tarea en background:** un loop async que se ejecuta en segundo plano desde el arranque del servidor para la ingestión automática de ofertas cada 12 horas.
 
 ---
 
@@ -148,25 +150,28 @@ La arquitectura sigue un modelo de tres capas bien definidas:
 
 | Componente | Tecnología | Versión |
 |------------|-----------|---------|
-| Framework UI | React | 19.2.4 |
+| Framework UI | React | 19 |
 | Build tool | Create React App | 5.0.1 |
-| Mapas | Leaflet + react-leaflet | 1.9.4 / 5.0.0 |
-| Estilos | Inline CSS (sin librerías) | — |
+| Primitivos accesibles | Radix UI (headless) | latest |
+| Estilos | Inline CSS + tokens de tema | — |
 | Lenguaje | JavaScript (JSX) | ES2022 |
 
-La decisión de no usar ninguna librería de componentes (ni MUI, ni Tailwind, ni styled-components) fue deliberada: el objetivo era tener control total sobre el aspecto visual, aprender a construir componentes desde cero, y eliminar dependencias que añaden complejidad para un proyecto unipersonal.
+La decisión de no usar ninguna librería de componentes con estilos propios (ni MUI, ni Tailwind, ni styled-components) fue deliberada: el objetivo era tener control total sobre el aspecto visual y construir los componentes desde cero. La única excepción son los **primitivos headless de Radix UI** (diálogo, select), adoptados únicamente por accesibilidad (gestión de foco, roles ARIA, navegación por teclado), ya que no imponen estilos visuales.
 
 ### Servicios externos
 
 | Servicio | Propósito |
 |----------|-----------|
-| Anthropic Claude API | Matching de ofertas, análisis de CV, generación de carta |
+| Anthropic Claude API | Agente, matching de ofertas, análisis de CV, generación de carta, entrevista |
 | Adzuna API | Fuente principal de ofertas de empleo |
-| InfoJobs API | Fuente secundaria de ofertas |
+| JSearch API (RapidAPI) | Agregador secundario de ofertas |
 | Greenhouse / Ashby / Lever / Recruitee | ATSs con APIs públicas de oferta |
 | Cloudflare Turnstile | CAPTCHA anti-bot en registro |
-| Brevo / SMTP | Envío de emails (verificación, alertas) |
-| Render | Hosting del backend y frontend |
+| Brevo / SMTP | Envío de emails (verificación de cuenta) |
+| ElevenLabs (opcional) | TTS de voz para la entrevista (desactivable) |
+| Vercel | Hosting del frontend |
+| Render | Hosting del backend (Web Service) |
+| Supabase | PostgreSQL gestionado |
 
 ---
 
@@ -196,7 +201,19 @@ El sistema distingue tres niveles de encaje:
 - **QUIZÁ**: cumplimiento parcial. Puede que falte una tecnología secundaria o que la experiencia esté en el límite. Merece consideración.
 - **NO ENCAJA**: brechas significativas entre perfil y requisitos. El sistema explica qué falta concretamente.
 
-### 6.2 Análisis y mejora de CV (módulo ATS)
+### 6.2 Agente de empleo con IA — orquestación supervisada
+
+El agente es la funcionalidad diferenciadora del proyecto: convierte una instrucción en lenguaje natural en una búsqueda completa, ejecutada paso a paso y con el usuario en control.
+
+**Máquina de estados persistida.** Cada ejecución se modela como un `AgentRun` en base de datos que avanza por estados explícitos: `CREATED → INTERPRETING → SEARCHING → FILTERING → ANALYZING → RANKING → WAITING_FOR_USER → EXECUTING_APPROVED_ACTION → COMPLETED` (con `FAILED` y `CANCELLED` como estados terminales de error). Esto hace el proceso trazable y auditable, frente a una "caja negra".
+
+**La IA solo interpreta.** Se realiza **una única** llamada a Claude (Haiku) en el paso de interpretación, cuyo resultado se valida con un esquema **Pydantic** (`SearchInstruction`: rol, tecnologías, ubicación, modalidad, seniority…). Si la IA falla o devuelve un JSON inválido, un **fallback determinista** extrae la intención por heurística. El resto de pasos (buscar, filtrar, puntuar, explicar) **reutiliza el motor de matching ya cacheado**, por lo que el agente no añade coste de IA por oferta.
+
+**Confirmación humana (*human-in-the-loop*).** Al llegar a `WAITING_FOR_USER`, el agente presenta los resultados puntuados y explicados, pero **no actúa solo**: el usuario revisa y confirma qué ofertas guardar. La acción (guardar como favoritos) solo se ejecuta tras la aprobación explícita.
+
+**Seguridad.** Todas las consultas se filtran por `user_id` (prevención de IDOR) y la instrucción del usuario se trata como dato no confiable (defensa frente a inyección de prompts en el paso de interpretación).
+
+### 6.3 Análisis y mejora de CV (módulo ATS)
 
 El flujo de mejora de CV es uno de los más complejos del sistema:
 
@@ -211,23 +228,23 @@ La generación de PDF usa `fpdf2` con Helvetica como fuente nativa, con una func
 
 **Variantes por oferta:** el usuario puede crear versiones del CV optimizadas específicamente para cada oferta concreta. El sistema guarda un snapshot de la oferta junto con la variante del CV, de modo que el usuario puede mantener múltiples versiones del mismo CV, cada una orientada a un rol o empresa diferente.
 
-### 6.3 Generación de cartas de presentación
+### 6.4 Generación de cartas de presentación
 
 Para este módulo se usa **claude-sonnet-4-6** en lugar de Haiku, porque la carta requiere un tono más natural, creatividad en la redacción y capacidad de conectar con detalle el perfil del candidato con la oferta específica.
 
 El prompt incluye: título del puesto, empresa, descripción completa, stack tecnológico del candidato y años de experiencia. Claude genera una carta de cuatro párrafos en español, profesional pero humana, que menciona la empresa por su nombre y conecta las tecnologías del candidato con los requisitos concretos del puesto.
 
-### 6.4 Simulación de entrevista con IA y voz
+### 6.5 Simulación de entrevista con IA y voz
 
-El módulo de simulación de entrevistas es la feature más compleja del proyecto, combina tres tecnologías en tiempo real: Claude como cerebro conversacional, ElevenLabs para síntesis de voz y Web Speech API para reconocimiento de voz.
+El módulo de simulación de entrevistas combina a Claude como cerebro conversacional con las APIs de voz del navegador (Web Speech API) para la síntesis y el reconocimiento de voz. La síntesis con ElevenLabs es opcional y está **desactivada por defecto**, de modo que el módulo funciona con coste de voz cero.
 
 **Flujo de la entrevista:**
 
 1. El usuario mueve una candidatura a la columna "Entrevista" en el Kanban y pulsa el botón "Simular entrevista" que aparece en la tarjeta.
 2. Se crea una sesión en base de datos (`InterviewSession`) vinculada a la candidatura.
 3. Claude actúa como "Alex", un entrevistador de RRHH, con un system prompt que conoce el puesto y la empresa. La entrevista sigue una estructura: presentación → preguntas técnicas → preguntas situacionales → cierre.
-4. Cada respuesta de Claude se envía a ElevenLabs (`eleven_multilingual_v2`, voz Adam) y el audio mp3 se devuelve codificado en base64.
-5. El frontend decodifica y reproduce el audio vía Web Audio API. Durante la reproducción, el avatar de "Alex" muestra animaciones CSS: anillos pulsantes, barras de onda de audio y la boca del avatar se abre/cierra con `scaleY`.
+4. Cada respuesta de Claude se locuta con la síntesis de voz del navegador (Web Speech API, `SpeechSynthesis`, en español). Opcionalmente, si se habilita `INTERVIEW_ELEVENLABS_ENABLED`, se usa ElevenLabs (`eleven_multilingual_v2`) y el audio mp3 se devuelve en base64.
+5. Durante la locución, el avatar de "Alex" muestra animaciones CSS: anillos pulsantes, barras de onda y la boca del avatar se abre/cierra con `scaleY`.
 6. El usuario puede responder escribiendo (textarea + Enter) o por voz (Web Speech API, `SpeechRecognition`, español).
 7. Cuando Claude termina la entrevista (emite la señal interna `ENTREVISTA_FINALIZADA`), el sistema genera un feedback estructurado en JSON: puntuación 1-10, resumen, puntos fuertes, áreas de mejora y 3 consejos específicos.
 
@@ -237,9 +254,9 @@ El módulo de simulación de entrevistas es la feature más compleja del proyect
 
 **Stack tecnológico del módulo:**
 - Claude Haiku: conversación de entrevista + generación de feedback
-- ElevenLabs `eleven_multilingual_v2`: TTS con voz natural en español
+- Web Speech API (`SpeechSynthesis`): locución del entrevistador en el navegador (coste cero)
 - Web Speech API (`SpeechRecognition`): reconocimiento de voz del candidato (Chrome/Edge)
-- Web Audio API: reproducción del audio devuelto por ElevenLabs
+- ElevenLabs `eleven_multilingual_v2` (opcional): TTS de mayor calidad si se habilita por configuración
 
 ### 6.6 Validación de fiabilidad del motor de matching — Batería de pruebas
 
@@ -442,11 +459,11 @@ DATA_SPECIFIC_SKILLS = frozenset({
 - **0 ghost survivors en 1864 ofertas**: la cadena de filtros es robusta a escala.
 - **El motor escala bien**: 100 perfiles completados en 4 minutos gracias al caching de señales por oferta. El coste incremental de añadir perfiles es casi cero una vez que las señales están cacheadas.
 
-### 6.5 Análisis de mercado y brecha de habilidades
+### 6.7 Análisis de mercado y brecha de habilidades
 
 El endpoint de análisis de mercado (`GET /api/match/market-analysis`) no requiere una llamada a Claude sino que opera sobre los datos del índice de ofertas ya almacenado en la base de datos. Analiza las habilidades más frecuentes en las ofertas activas, construye un ranking de demanda y lo cruza con el perfil del usuario para identificar las tecnologías de alta demanda que el candidato no tiene — con el objetivo de priorizar su plan de formación.
 
-### 6.5 Modelos utilizados y consideraciones de coste
+### 6.8 Modelos utilizados y consideraciones de coste
 
 | Modelo | Usos | Razón de elección |
 |--------|------|-------------------|
@@ -482,9 +499,10 @@ Se usa PostgreSQL con SQLAlchemy como ORM y Alembic para gestionar las migracion
 - **cv_edit_sessions** — sesiones de edición del CV por el usuario (JSON editable, log de acciones para contexto en futuras llamadas a Claude).
 - **cv_offer_variants** — variantes del CV optimizadas para ofertas específicas (snapshot de la oferta, JSON del CV editado, log de acciones).
 
-### Notificaciones y alertas
-- **job_alerts** — configuración de alertas del usuario (umbral mínimo de puntuación, frecuencia de email, activa/inactiva).
+### Notificaciones y agente
 - **notifications** — notificaciones en aplicación (título, mensaje, tipo, leída/no leída).
+- **agent_runs** — ejecuciones del agente de empleo: instrucción original del usuario, instrucción interpretada, estado de la máquina de estados, resultados puntuados y acción confirmada.
+- **match_feedback** — feedback del usuario sobre la utilidad del matching (señal para evaluación).
 
 ### Empresas
 - **company_logos** — caché de logos y datos de empresa (Glassdoor rating/reviews, Indeed rating, LinkedIn URL). Se enriquece de forma asíncrona y se reutiliza en todas las búsquedas.
@@ -560,8 +578,10 @@ El backend expone una API REST con 60+ endpoints organizados en routers por domi
 **Notificaciones (`/api/notifications`):**
 - Listar, marcar leídas (individual y masivo)
 
-**Alertas (`/api/alerts`):**
-- Configurar, actualizar y desactivar alertas de empleo
+**Agente (`/api/agent`):**
+- Crear una ejecución del agente a partir de una instrucción en lenguaje natural
+- Consultar el estado y los resultados puntuados de una ejecución
+- Confirmar las ofertas seleccionadas (se guardan como favoritos)
 
 **Administración (`/api/admin`):**
 - Dashboard de métricas globales
@@ -615,7 +635,7 @@ Se definieron constantes de diseño centralizadas que se usan en todos los compo
 
 **Favoritos:** lista de ofertas guardadas con logos de empresa.
 
-**MapaOfertas:** mapa interactivo con Leaflet.js mostrando la distribución geográfica de ofertas.
+**Agente de empleo (AgentSearch):** página donde el usuario escribe una instrucción en lenguaje natural y sigue la ejecución del agente mediante una línea de tiempo de estados, revisa los resultados explicados y confirma cuáles guardar.
 
 **Dashboard:** panel central de actividad con:
 - **Skeleton loaders** mientras carga (sustituyen el spinner genérico con placeholders de la forma real del contenido).
@@ -730,27 +750,28 @@ El sistema calcula señales de calidad para cada oferta que se muestran como bad
 
 ## 13. Despliegue e infraestructura
 
-### Plataforma: Render
+### Plataforma
 
-Tanto el backend como el frontend están desplegados en Render:
+El proyecto se despliega en tres servicios gestionados, con auto-deploy en cada push a `master`:
 
-- **Backend:** servicio Web (Docker o buildpack Python). La URL es pública. Las migraciones de Alembic se ejecutan automáticamente al arrancar. El servidor escucha en el puerto que Render asigna (`$PORT`).
-- **Frontend:** Static Site. El build es `npm run build` (Create React App) y Render sirve el directorio `build/` resultante.
+- **Frontend → Vercel:** build `react-scripts build` (Create React App). URL pública: https://jobmatch-ia-alpha.vercel.app/
+- **Backend → Render:** servicio Web (buildpack Python). La URL es pública y las migraciones de Alembic se ejecutan automáticamente al arrancar. El servidor escucha en el puerto que Render asigna (`$PORT`).
+- **Base de datos → Supabase:** PostgreSQL gestionado.
 
 ### CI/CD
 
-Ambos servicios están configurados para hacer auto-deploy en cada push a la rama `master`. No hay pipeline de CI separado; Render construye y despliega directamente.
+Existe un pipeline de integración continua con **GitHub Actions** que, en cada push y *pull request*, ejecuta para el backend los tests (pytest), el linter (ruff) y la evaluación offline del motor de matching; y para el frontend el linter (ESLint), los tests y el build de producción. Una vez en `master`, Vercel y Render hacen auto-deploy.
 
 ### Variables de entorno
 
-Las variables sensibles se gestionan desde el panel de Render, nunca en el repositorio. Las más relevantes son:
+Las variables sensibles se gestionan desde los paneles de Render (backend) y Vercel (frontend), nunca en el repositorio. Las más relevantes son:
 
 ```
 # Backend
 CLAUDE_API_KEY          → Clave de la API de Anthropic
 ADZUNA_APP_ID           → ID de la app de Adzuna
 ADZUNA_APP_KEY          → Clave de la API de Adzuna
-DATABASE_URL            → URL de conexión a PostgreSQL de Render
+DATABASE_URL            → URL de conexión a PostgreSQL (Supabase)
 JWT_SECRET              → Secreto para firmar los JWT
 TURNSTILE_SECRET_KEY    → Clave de validación de Cloudflare Turnstile
 APP_FRONTEND_URL        → URL del frontend (para CORS y emails)
@@ -790,7 +811,7 @@ A modo de resumen exhaustivo, estas son todas las funcionalidades implementadas 
 | Variantes de CV por oferta | Versiones del CV orientadas a ofertas concretas |
 | Descarga de CV en PDF | Exportación con plantillas professional_modern y ats_minimal |
 | Carta de presentación | Generación automática personalizada por oferta |
-| Simulación de entrevista con IA | Avatar animado CSS + voz ElevenLabs + reconocimiento voz + feedback estructurado |
+| Simulación de entrevista con IA | Avatar animado CSS + voz del navegador (Web Speech) + reconocimiento de voz + feedback estructurado |
 | Favoritos | Guardar y gestionar ofertas de interés con logos de empresa |
 | Candidaturas (Kanban) | Tablero de seguimiento con estados, notas y fechas de seguimiento |
 | Recordatorios de seguimiento | Badges de urgencia en Dashboard (vencida / próxima / futura) |
@@ -798,7 +819,7 @@ A modo de resumen exhaustivo, estas son todas las funcionalidades implementadas 
 | Historial de búsquedas | Últimas 3 búsquedas con posibilidad de relanzarlas |
 | Tendencia de encaje | Mini gráfico de barras de % APLICA por búsqueda histórica |
 | Análisis de mercado | Skills más demandados vs. perfil del usuario |
-| Mapa de ofertas | Visualización geográfica con Leaflet.js |
+| Agente de empleo con IA | Búsqueda en lenguaje natural con máquina de estados persistida y confirmación humana |
 | Dashboard | Panel resumen con métricas, recordatorios y actividad reciente |
 | Skeleton loaders | Placeholders animados mientras carga el contenido |
 | Cuota de IA | Contador de usos diarios con widget visual |

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de autenticación: registro, login (JWT), verificación de email y refresco de token, con rate limiting y Cloudflare Turnstile."""
 import os
 from datetime import datetime, timedelta
 from typing import Optional

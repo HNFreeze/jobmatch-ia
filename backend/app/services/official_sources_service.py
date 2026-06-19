@@ -1,3 +1,4 @@
+"""Servicio de fuentes oficiales: extrae ofertas de tableros ATS públicos (Greenhouse, Lever, Ashby, Recruitee) con cupo por fuente."""
 import os
 import re
 

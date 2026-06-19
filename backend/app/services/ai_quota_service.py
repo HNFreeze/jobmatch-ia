@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Servicio de cuotas de IA: controla y contabiliza el uso diario de las funciones de IA por usuario y tipo de acción."""
 from datetime import date, datetime
 
 from fastapi import HTTPException

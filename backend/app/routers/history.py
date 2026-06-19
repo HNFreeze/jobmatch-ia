@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router del historial de búsquedas: guarda y consulta las últimas búsquedas del usuario."""
 from datetime import datetime
 from typing import List, Optional
 

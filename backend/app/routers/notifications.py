@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Router de notificaciones in-app: listar y marcar como leídas las notificaciones del usuario."""
 from datetime import datetime
 from typing import Optional
 

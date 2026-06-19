@@ -1,3 +1,4 @@
+"""Servicio de ingestión: orquesta la actualización periódica del índice de ofertas desde las fuentes externas y registra cada ejecución."""
 import asyncio
 import json
 import os
