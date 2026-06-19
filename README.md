@@ -1,14 +1,26 @@
 # JobMatch IA
 
-Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnológicas, potenciada por Claude AI (Anthropic). Proyecto TFM de Máster en Inteligencia Artificial Aplicada.
+Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnológicas, potenciada por Claude AI (Anthropic). Proyecto de Trabajo de Fin de Máster (Máster de Desarrollo con IA).
 
-## ¿Qué hace?
+## 🌐 Demo en producción
 
-- Sube tu CV en PDF y obtén ofertas de empleo ordenadas por encaje real con tu perfil
-- Mejora tu CV con sugerencias ATS generadas por IA
-- Genera cartas de presentación personalizadas por oferta
-- Simula entrevistas técnicas con voz usando Claude + ElevenLabs TTS
-- Panel de administración para gestión de usuarios y monitorización
+- **Aplicación**: https://jobmatch-ia-alpha.vercel.app/
+- **Usuario de prueba**: `demo@jobmatch.ia`  ·  **Contraseña**: `DemoJobMatch2026!`
+- **Presentación (slides)**: _(pendiente de añadir)_
+- **Vídeo de presentación**: _(pendiente de añadir)_
+
+> El backend usa el plan gratuito de Render: tras un rato de inactividad, la primera petición puede tardar ~30-60 s en "despertar". Si ves un error puntual al entrar, recarga pasados unos segundos.
+
+## ¿Qué hace? (funcionalidades principales)
+
+- **Agente de empleo con IA**: describe en lenguaje natural lo que buscas y un agente supervisado interpreta la instrucción, busca, filtra, puntúa y **explica** cada oferta — con confirmación humana antes de guardar resultados.
+- **Matching explicable**: sube tu CV en PDF (o usa tu perfil) y obtén ofertas ordenadas por encaje real, con motivos (fortalezas, carencias y bloqueantes) por oferta.
+- **Mejora de CV con IA**: sugerencias ATS y descarga del CV mejorado en PDF.
+- **Cartas de presentación** personalizadas para cada oferta.
+- **Simulación de entrevista con IA**: conversación con Claude y voz en el navegador (Web Speech API).
+- **Gestión de candidaturas**: favoritos, pipeline de estados e historial de búsquedas.
+- **Panel de administración**: gestión de usuarios, métricas de uso de IA y monitorización.
+- **RGPD**: exportación y borrado de los datos del usuario.
 
 ## Stack tecnológico
 
@@ -17,14 +29,13 @@ Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnoló
 | Backend API | FastAPI 0.136 + Python 3.11 |
 | Base de datos | PostgreSQL + SQLAlchemy 2.0 + Alembic |
 | IA | Claude Haiku / Sonnet (Anthropic SDK) |
-| Frontend | React 19 (Create React App, sin UI libs) |
-| Mapas | Leaflet / react-leaflet |
+| Frontend | React 19 (Create React App, estilos inline + primitivos headless Radix) |
 | PDF | fpdf2 |
 | Auth | JWT (HS256) + bcrypt + verificación por email |
 | Email | Brevo (SMTP) |
 | Bot protection | Cloudflare Turnstile |
-| TTS | ElevenLabs |
-| Deploy | Render.com (backend Web Service + frontend Static Site) |
+| Voz (entrevista) | Web Speech API del navegador (ElevenLabs TTS opcional) |
+| Deploy | Vercel (frontend) + Render (backend Web Service) |
 
 ## Estructura del proyecto
 
@@ -138,12 +149,23 @@ pytest tests/ -v
 
 ## Deploy
 
-El proyecto se despliega automáticamente en [Render.com](https://render.com) al hacer push a la rama `master`:
+Despliegue automático al hacer push a la rama `master`:
 
-- **Backend**: Web Service → `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- **Frontend**: Static Site → `npm run build` → directorio `frontend/build`
+- **Frontend** → [Vercel](https://vercel.com): build `react-scripts build`. URL pública: https://jobmatch-ia-alpha.vercel.app/
+- **Backend** → [Render](https://render.com) (Web Service): `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
 Las migraciones Alembic se ejecutan automáticamente en el startup del backend.
+
+### Usuario de prueba
+
+El usuario demo (`demo@jobmatch.ia` / `DemoJobMatch2026!`) se crea con un script idempotente que también deja un perfil de ejemplo relleno:
+
+```bash
+cd backend
+python -m app.create_demo_user   # usa la DATABASE_URL del entorno
+```
+
+En producción, ejecútalo una vez desde la *Shell* del servicio de Render (donde `DATABASE_URL` ya está configurada).
 
 ## Motor de matching
 
