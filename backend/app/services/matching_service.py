@@ -656,7 +656,7 @@ def _persist_offer_signals(db, offers: list[dict], signals_by_id: dict[int, dict
         db.commit()
 
 
-def _extract_offer_signals(offers: list[dict], api_key: str, db=None, user_id: int | None = None) -> dict[int, dict]:
+def _extract_offer_signals(offers: list[dict], api_key: str, db=None, user_id: int | None = None, ai_signals: bool = True) -> dict[int, dict]:
     cached_by_id: dict[int, dict] = {}
     uncached_offers = offers
 
@@ -666,8 +666,11 @@ def _extract_offer_signals(offers: list[dict], api_key: str, db=None, user_id: i
             print(f"[MATCH_SIGNALS] {len(cached_by_id)} ofertas reutilizan senales cacheadas")
 
     resolved_by_id = dict(cached_by_id)
-    offers_for_ai = uncached_offers[:MATCH_MAX_OFFERS_ANALYZED]
-    offers_for_fallback = uncached_offers[MATCH_MAX_OFFERS_ANALYZED:]
+    # Con ai_signals=False no se hacen llamadas nuevas a Claude: se usan señales
+    # cacheadas y, para el resto, heurística. Útil en peticiones con presupuesto
+    # de tiempo ajustado (p. ej. análisis de CV en hosting con timeout corto).
+    offers_for_ai = uncached_offers[:MATCH_MAX_OFFERS_ANALYZED] if ai_signals else []
+    offers_for_fallback = uncached_offers[MATCH_MAX_OFFERS_ANALYZED:] if ai_signals else uncached_offers
     ai_results: dict[int, dict] = {}
     failed_ai_ids: set[int] = set()
 
@@ -1324,6 +1327,7 @@ def match_profile_with_offers(
     db=None,
     profile_hash: str = None,
     user_id: int | None = None,
+    ai_signals: bool = True,
 ) -> list:
     del profile_hash
 
@@ -1335,7 +1339,7 @@ def match_profile_with_offers(
     if filtered_count:
         print(f"[MATCH_FILTER] {filtered_count}/{len(offers)} ofertas descartadas (sin indicadores tech)")
 
-    signals_by_id = _extract_offer_signals(tech_offers, api_key, db=db, user_id=user_id)
+    signals_by_id = _extract_offer_signals(tech_offers, api_key, db=db, user_id=user_id, ai_signals=ai_signals)
     results = []
     for offer in tech_offers:
         signals = signals_by_id.get(offer["id"], _heuristic_offer_signals(offer))

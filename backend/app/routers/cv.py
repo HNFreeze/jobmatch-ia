@@ -368,6 +368,7 @@ async def analyze_cv(
                 db=db,
                 profile_hash=profile_hash,
                 user_id=user.id,
+                ai_signals=False,  # sin nuevas llamadas a Claude: evita timeout/502
             )
         except Exception as e:
             err = str(e)
@@ -1036,6 +1037,7 @@ async def search_from_improvement(
             results = match_profile_with_offers(
                 matching_profile, offers, api_key, db=db,
                 profile_hash=profile_hash, user_id=user.id,
+                ai_signals=False,  # sin nuevas llamadas a Claude: evita timeout/502
             )
         except Exception as e:
             err = str(e)
