@@ -62,36 +62,56 @@ async def fetch_offers_for_search(
     skills: list[str],
     locations: list[str] | None = None,
     db=None,
+    live: bool = True,
 ) -> list[dict] | None:
-    if db:
+    """Obtiene ofertas para una búsqueda.
+
+    Con ``live=True`` (por defecto) consulta fuentes oficiales (ATS) y agregadores
+    (Adzuna/JSearch) en vivo además del índice en BD. Con ``live=False`` usa solo
+    el índice ya cacheado en BD — mucho más rápido y sin latencia externa, ideal
+    para flujos pesados como el análisis de CV (evita timeouts/502 en hosting con
+    pocos recursos).
+    """
+    if db and live:
         try:
             await refresh_stale_job_offers(db)
         except Exception:
             pass
 
-    cached_offers = get_recent_db_offers(db, skills) if db else []
-    official_offers = await fetch_offers_from_public_sources(skills, locations=locations) or []
-
-    # Enriquecer con agregadores de mercado (Adzuna ES + JSearch) en paralelo.
+    # Para el flujo cacheado (live=False) ampliamos la ventana de recencia: así
+    # devuelve ofertas del índice aunque la ingesta automática no se haya ejecutado
+    # hace poco (p. ej. en hosting gratuito que se duerme).
+    cached_hours = 24 if live else int(os.getenv("SEARCH_CACHED_HOURS", "720"))
+    cached_offers = get_recent_db_offers(db, skills, hours=cached_hours) if db else []
+    official_offers: list[dict] = []
     aggregator_offers: list[dict] = []
-    if _enrich_with_aggregators():
-        adzuna_task = fetch_offers_from_adzuna(skills, locations=locations, db=None, fallback_query=None)
-        jsearch_task = fetch_offers_from_jsearch(skills, locations=locations, results_per_skill=10)
-        adz, js = await asyncio.gather(adzuna_task, jsearch_task, return_exceptions=True)
-        if not isinstance(adz, Exception) and adz:
-            aggregator_offers.extend(adz)
-        if not isinstance(js, Exception) and js:
-            aggregator_offers.extend(js)
 
-    if db:
-        if official_offers:
-            save_offers_to_db(db, official_offers, skills)
-        if aggregator_offers:
-            save_offers_to_db(db, aggregator_offers, skills)
+    if live:
+        official_offers = await fetch_offers_from_public_sources(skills, locations=locations) or []
+        # Enriquecer con agregadores de mercado (Adzuna ES + JSearch) en paralelo.
+        if _enrich_with_aggregators():
+            adzuna_task = fetch_offers_from_adzuna(skills, locations=locations, db=None, fallback_query=None)
+            jsearch_task = fetch_offers_from_jsearch(skills, locations=locations, results_per_skill=10)
+            adz, js = await asyncio.gather(adzuna_task, jsearch_task, return_exceptions=True)
+            if not isinstance(adz, Exception) and adz:
+                aggregator_offers.extend(adz)
+            if not isinstance(js, Exception) and js:
+                aggregator_offers.extend(js)
+
+        if db:
+            if official_offers:
+                save_offers_to_db(db, official_offers, skills)
+            if aggregator_offers:
+                save_offers_to_db(db, aggregator_offers, skills)
 
     merged = _dedupe_and_sort_offers([*cached_offers, *official_offers, *aggregator_offers], skills=skills)
     if not merged:
         return None
+
+    # Tope de seguridad: limita el coste del matching/IA y el uso de memoria.
+    max_offers = int(os.getenv("SEARCH_MAX_OFFERS", "40"))
+    if max_offers > 0:
+        merged = merged[:max_offers]
 
     for index, offer in enumerate(merged, 1):
         offer["id"] = index

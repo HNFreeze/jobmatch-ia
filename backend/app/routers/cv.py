@@ -335,11 +335,14 @@ async def analyze_cv(
         matching_profile = build_matching_profile(structured_profile)
         search_skills, search_locations = build_adzuna_search_params(structured_profile)
 
-        # 5. Obtener ofertas de Adzuna
+        # 5. Ofertas del índice ya cacheado (rápido, sin llamadas externas en vivo).
+        #    Evita timeouts/502 en el análisis de CV; el índice se mantiene fresco
+        #    con la ingesta automática en segundo plano.
         offers = await fetch_offers_for_search(
             skills=search_skills,
             locations=search_locations if search_locations else None,
             db=db,
+            live=False,
         )
 
         if not offers:
@@ -1015,6 +1018,7 @@ async def search_from_improvement(
             skills=search_skills,
             locations=search_locations if search_locations else None,
             db=db,
+            live=False,
         )
 
         if not offers:
