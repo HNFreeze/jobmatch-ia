@@ -86,7 +86,7 @@ def add_favorite(body: FavoriteRequest, user_id: int = Depends(get_current_user_
         db.close()
 
 
-@router.delete("/api/favorites/{adzuna_id}")
+@router.delete("/api/favorites")
 def remove_favorite(adzuna_id: str, user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     try:
         row = db.query(Favorite).filter(

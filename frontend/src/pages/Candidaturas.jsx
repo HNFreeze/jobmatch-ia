@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { getApplications, updateApplication, deleteApplication } from "../services/api";
 import { typography, palette } from "../constants/theme";
 import Modal from "../components/ui/Modal";
@@ -62,45 +62,50 @@ function getFollowUpStatus(dateStr) {
   return { label: `${formatDate(dateStr)}`, color: "#64748b", bg: "#f8fafc", dmBg: "rgba(100,116,139,0.12)" };
 }
 
-function AppCard({ app, col, dm, isDragging, onDelete, onNotesChange, onStatusChange, onFollowUpChange, onStartInterview }) {
+function AppCard({ app, col, dm, isDragging, onDragStart, onDragMove, onDragEnd, onDelete, onNotesChange, onStatusChange, onFollowUpChange, onStartInterview }) {
   const [notesVal, setNotesVal] = useState(app.notes || "");
   const fuStatus = getFollowUpStatus(app.follow_up_date);
 
   return (
     <div
-      draggable
-      onDragStart={e => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", String(app.id));
-      }}
       style={{
         background: dm ? "#1e293b" : "#fff",
         border: `1px solid ${dm ? "rgba(255,255,255,0.07)" : "#e8ecf1"}`,
         borderRadius: 12,
-        padding: "14px 16px",
+        padding: "8px 16px 14px",
         display: "flex",
         flexDirection: "column",
         gap: 10,
-        cursor: "grab",
-        opacity: isDragging ? 0.45 : 1,
+        opacity: isDragging ? 0.4 : 1,
         boxShadow: isDragging
-          ? "0 8px 24px rgba(0,0,0,0.18)"
+          ? "0 10px 28px rgba(0,0,0,0.20)"
           : (dm ? "none" : "0 1px 4px rgba(0,0,0,0.04)"),
         transition: "opacity .15s, box-shadow .15s",
         position: "relative",
-        userSelect: "none",
       }}
     >
-      {/* Status dot */}
-      <span style={{
-        position: "absolute", top: 14, right: 14,
-        width: 9, height: 9, borderRadius: "50%",
-        background: dm ? col.dmColor : col.color,
-        opacity: 0.85,
-      }}/>
+      {/* Tirador de arrastre — funciona con ratón y táctil (móvil) */}
+      <div
+        onPointerDown={e => onDragStart(e, app)}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        title="Arrastra para mover de columna"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          margin: "0 -8px 0", padding: "4px 8px",
+          cursor: "grab", touchAction: "none", userSelect: "none",
+          borderRadius: 8,
+        }}
+      >
+        <span aria-hidden style={{ letterSpacing: 2, fontSize: 14, lineHeight: 1, color: dm ? "#475569" : "#cbd5e1" }}>⠿</span>
+        <span style={{
+          width: 9, height: 9, borderRadius: "50%",
+          background: dm ? col.dmColor : col.color, opacity: 0.9,
+        }}/>
+      </div>
 
       {/* Title + company */}
-      <div style={{ paddingRight: 18 }}>
+      <div style={{ paddingRight: 2 }}>
         <div style={{
           fontSize: 14, fontWeight: 700,
           color: dm ? "#f1f5f9" : "#111827",
@@ -277,9 +282,10 @@ function AppCard({ app, col, dm, isDragging, onDelete, onNotesChange, onStatusCh
 }
 
 // ── Column ──────────────────────────────────────────────────────────────────────
-function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragOver, onDragEnter, onDragLeave, onDelete, onNotesChange, onStatusChange, onFollowUpChange, onStartInterview }) {
+function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, dragHandlers, onDelete, onNotesChange, onStatusChange, onFollowUpChange, onStartInterview }) {
   const isOver = dragOverCol === col.id;
   const isDragging = draggingId !== null;
+  const isInterviewOver = isOver && col.id === "entrevista";
 
   return (
     <div
@@ -313,10 +319,7 @@ function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragO
 
       {/* Drop zone */}
       <div
-        onDragOver={onDragOver}
-        onDragEnter={e => onDragEnter(e, col.id)}
-        onDragLeave={e => onDragLeave(e, col.id)}
-        onDrop={e => onDrop(e, col.id)}
+        data-col-id={col.id}
         style={{
           minHeight: 80,
           display: "flex", flexDirection: "column", gap: 10,
@@ -328,7 +331,11 @@ function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragO
           background: isOver
             ? (dm ? col.dmBg : col.bg)
             : "transparent",
-          transition: "border-color .12s, background .12s",
+          transition: "border-color .12s, background .12s, box-shadow .12s",
+          boxShadow: isInterviewOver
+            ? `0 0 0 3px ${dm ? "rgba(124,58,237,0.4)" : "rgba(124,58,237,0.3)"}`
+            : "none",
+          animation: isInterviewOver ? "cand-pulse 1.1s ease-in-out infinite" : "none",
         }}
       >
         {cards.map(app => (
@@ -338,6 +345,9 @@ function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragO
             col={col}
             dm={dm}
             isDragging={draggingId === app.id}
+            onDragStart={dragHandlers.start}
+            onDragMove={dragHandlers.move}
+            onDragEnd={dragHandlers.end}
             onDelete={onDelete}
             onNotesChange={onNotesChange}
             onStatusChange={onStatusChange}
@@ -360,7 +370,9 @@ function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragO
             borderRadius: 8,
             transition: "color .15s",
           }}>
-            {isDragging ? "Suelta aquí" : "Sin candidaturas"}
+            {isDragging
+              ? (col.id === "entrevista" ? "🎤 Suelta para practicar" : "Suelta aquí")
+              : "Sin candidaturas"}
           </div>
         )}
 
@@ -374,7 +386,9 @@ function KanbanColumn({ col, cards, dm, draggingId, dragOverCol, onDrop, onDragO
             fontWeight: 700,
             fontFamily: typography.family,
           }}>
-            Suelta aquí para mover a {col.label}
+            {col.id === "entrevista"
+              ? "🎤 Suelta para practicar la entrevista"
+              : `Suelta aquí para mover a ${col.label}`}
           </div>
         )}
       </div>
@@ -387,9 +401,12 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [draggingId, setDraggingId] = useState(null);
-  const [dragOverCol, setDragOverCol] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [overCol, setOverCol] = useState(null);
+  const [ghost, setGhost] = useState(null);          // { app, x, y } — tarjeta fantasma
   const [pendingDelete, setPendingDelete] = useState(null);
+  const dragRef = useRef(null);                       // { id, status } en curso
+  const overColRef = useRef(null);                    // columna bajo el puntero
 
   const dm = darkMode;
   const t = palette(dm);
@@ -422,29 +439,7 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
     })();
   }, []);
 
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }, []);
-
-  const handleDragEnter = useCallback((e, colId) => {
-    e.preventDefault();
-    setDragOverCol(colId);
-  }, []);
-
-  const handleDragLeave = useCallback((e, colId) => {
-    if (!e.currentTarget.contains(e.relatedTarget)) {
-      setDragOverCol(prev => (prev === colId ? null : prev));
-    }
-  }, []);
-
-  const moveCard = useCallback(async (e, targetColId) => {
-    e.preventDefault();
-    setDragOverCol(null);
-    const appId = parseInt(e.dataTransfer.getData("text/plain"), 10);
-    if (!appId) { setDraggingId(null); return; }
-    setDraggingId(null);
-
+  const moveCardTo = useCallback(async (appId, targetColId) => {
     let prevStatus = null;
     setApps(prev => {
       const app = prev.find(a => a.id === appId);
@@ -452,7 +447,6 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
       prevStatus = app.status;
       return prev.map(a => a.id === appId ? { ...a, status: targetColId } : a);
     });
-
     if (!prevStatus) return;
     try {
       await updateApplication(appId, { status: targetColId });
@@ -461,6 +455,43 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
       addToast?.("Error al mover la candidatura", "error");
     }
   }, [addToast]);
+
+  // ── Arrastre con Pointer Events (ratón + táctil) ─────────────────────────────
+  const dragStart = useCallback((e, app) => {
+    if (e.button != null && e.button !== 0) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    dragRef.current = { id: app.id, status: app.status };
+    overColRef.current = app.status;
+    setDragId(app.id);
+    setOverCol(app.status);
+    setGhost({ app, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const dragMove = useCallback((e) => {
+    if (!dragRef.current) return;
+    const x = e.clientX, y = e.clientY;
+    setGhost(g => (g ? { ...g, x, y } : g));
+    const el = document.elementFromPoint(x, y);
+    const colEl = el && el.closest ? el.closest("[data-col-id]") : null;
+    const colId = colEl ? colEl.getAttribute("data-col-id") : null;
+    overColRef.current = colId;
+    setOverCol(colId);
+  }, []);
+
+  const dragEnd = useCallback(() => {
+    const drag = dragRef.current;
+    const target = overColRef.current;
+    dragRef.current = null;
+    overColRef.current = null;
+    setDragId(null);
+    setOverCol(null);
+    setGhost(null);
+    if (drag && target && target !== drag.status) {
+      moveCardTo(drag.id, target);
+    }
+  }, [moveCardTo]);
+
+  const dragHandlers = useMemo(() => ({ start: dragStart, move: dragMove, end: dragEnd }), [dragStart, dragMove, dragEnd]);
 
   async function handleStatusChange(id, newStatus) {
     const prev = apps.find(a => a.id === id);
@@ -538,6 +569,10 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
     }}>
       <style>{`
         @keyframes cand-spin { to { transform: rotate(360deg); } }
+        @keyframes cand-pulse {
+          0%, 100% { box-shadow: 0 0 0 3px rgba(124,58,237,0.30); }
+          50%      { box-shadow: 0 0 0 8px rgba(124,58,237,0.12); }
+        }
         @media (max-width: 640px) {
           .cand-board { flex-direction: column !important; overflow-x: visible !important; }
           .cand-col   { flex: 1 1 auto !important; width: 100% !important; }
@@ -674,8 +709,6 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
         <div
           className="cand-board"
           style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 24, alignItems: "flex-start" }}
-          onDragStart={e => setDraggingId(parseInt(e.dataTransfer.getData("text/plain"), 10) || null)}
-          onDragEnd={() => { setDraggingId(null); setDragOverCol(null); }}
         >
           {STATUSES.map(col => (
             <div key={col.id} className="cand-col" style={{ flex: "0 0 280px" }}>
@@ -683,12 +716,9 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
                 col={col}
                 cards={apps.filter(a => a.status === col.id)}
                 dm={dm}
-                draggingId={draggingId}
-                dragOverCol={dragOverCol}
-                onDrop={moveCard}
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
+                draggingId={dragId}
+                dragOverCol={overCol}
+                dragHandlers={dragHandlers}
                 onDelete={requestDelete}
                 onNotesChange={handleNotesChange}
                 onStatusChange={handleStatusChange}
@@ -697,6 +727,32 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
               />
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Tarjeta fantasma que sigue al cursor/dedo durante el arrastre */}
+      {ghost && (
+        <div style={{
+          position: "fixed", left: ghost.x, top: ghost.y,
+          transform: "translate(-50%, -50%) rotate(-3deg)",
+          zIndex: 10000, pointerEvents: "none",
+          width: 240, maxWidth: "70vw",
+          padding: "12px 14px", borderRadius: 12,
+          background: dm ? "#1e293b" : "#fff",
+          border: `1px solid ${dm ? "rgba(255,255,255,0.14)" : "#e2e8f0"}`,
+          boxShadow: "0 18px 44px rgba(0,0,0,0.32)",
+          fontFamily: typography.family,
+        }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: dm ? "#f1f5f9" : "#111827", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ghost.app.titulo}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: dm ? "#5eead4" : TEAL, marginTop: 2 }}>🏢 {ghost.app.empresa}</div>
+          {overCol && (
+            <div style={{
+              marginTop: 6, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase",
+              color: overCol === "entrevista" ? "#a78bfa" : (dm ? "#94a3b8" : "#64748b"),
+            }}>
+              {overCol === "entrevista" ? "🎤 Practicar entrevista" : `→ ${STATUSES.find(s => s.id === overCol)?.label || ""}`}
+            </div>
+          )}
         </div>
       )}
 

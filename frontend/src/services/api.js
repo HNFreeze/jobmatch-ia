@@ -272,7 +272,7 @@ export async function addFavorite(data) {
 }
 
 export async function removeFavorite(adzunaId) {
-  const response = await fetch(`${API_URL}/api/favorites/${encodeURIComponent(adzunaId)}`, {
+  const response = await fetch(`${API_URL}/api/favorites?adzuna_id=${encodeURIComponent(adzunaId)}`, {
     method: "DELETE",
     headers: authHeaders(),
   });

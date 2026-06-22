@@ -530,12 +530,18 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     if (!SR) return;
     const rec = new SR();
     rec.lang = "es-ES";
-    rec.continuous = false;
-    rec.interimResults = false;
+    rec.continuous = true;       // sigue escuchando hasta que el usuario pulsa parar
+    rec.interimResults = true;   // muestra el texto en tiempo real mientras habla
+    // Partimos de lo ya escrito para poder añadir por voz a lo que haya en el cuadro
+    const base = input.trim() ? input.trim() + " " : "";
     rec.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      setIsListening(false);
-      handleSend(transcript);
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) {
+        text += e.results[i][0].transcript;
+      }
+      // No se envía: se vuelca en el cuadro de texto como si lo hubiese escrito,
+      // para que pueda corregir o añadir antes de enviar.
+      setInput((base + text).replace(/\s+/g, " ").trimStart());
     };
     rec.onerror = () => setIsListening(false);
     rec.onend   = () => setIsListening(false);

@@ -42,7 +42,7 @@ def test_favorites_crud_flow(monkeypatch):
     client.post("/api/favorites", json={"adzuna_id": "f1"})
     assert len(client.get("/api/favorites").json()) == 1
 
-    rm = client.delete("/api/favorites/f1")
+    rm = client.delete("/api/favorites?adzuna_id=f1")
     assert rm.status_code == 200
     assert client.get("/api/favorites").json() == []
 
