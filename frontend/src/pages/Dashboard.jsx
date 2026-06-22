@@ -382,23 +382,25 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
   const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
+    // Datos esenciales del Inicio: en cuanto llegan, mostramos la pantalla.
     Promise.allSettled([
       getUserProfile(),
       getFavorites(),
       getApplications(),
       getHistory(),
       getAiQuota(),
-      getMarketAnalysis(),
-    ]).then(([p, f, a, h, q, mk]) => {
-      if (p.status  === "fulfilled") setProfile(p.value);
-      if (f.status  === "fulfilled") setFavorites(f.value || []);
-      if (a.status  === "fulfilled") setApplications(a.value || []);
-      if (h.status  === "fulfilled") setHistory(h.value || []);
-      if (q.status  === "fulfilled") setQuota(q.value);
-      if (mk.status === "fulfilled") setMarket(mk.value);
-      if (mk.status === "rejected")  setMarketError(true);
+    ]).then(([p, f, a, h, q]) => {
+      if (p.status === "fulfilled") setProfile(p.value);
+      if (f.status === "fulfilled") setFavorites(f.value || []);
+      if (a.status === "fulfilled") setApplications(a.value || []);
+      if (h.status === "fulfilled") setHistory(h.value || []);
+      if (q.status === "fulfilled") setQuota(q.value);
       setLoading(false);
     });
+    // Análisis de mercado: es más pesado; se carga aparte para no bloquear el Inicio.
+    getMarketAnalysis()
+      .then(data => setMarket(data))
+      .catch(() => setMarketError(true));
   }, []);
 
   // Roadmap: carga lazy tras datos del perfil (llama a Claude, puede tardar)
@@ -614,6 +616,17 @@ export default function Dashboard({ darkMode = false, addToast = () => {}, onNav
         }}>
           {/* ---- COLUMNA IZQUIERDA ---- */}
           <div style={{ display: "flex", flexDirection: "column", gap: t.gapLg }}>
+
+            {/* Análisis del mercado — cargando (se carga aparte del resto del Inicio) */}
+            {!marketData && !marketError && (
+              <Section t={t} eyebrow="Análisis del mercado" title={null} padding>
+                <style>{`@keyframes mkt-pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", color: t.textSub, fontSize: 13, animation: "mkt-pulse 1.4s ease-in-out infinite" }}>
+                  <span style={{ fontSize: 16 }}>📊</span>
+                  Analizando el mercado laboral…
+                </div>
+              </Section>
+            )}
 
             {/* Análisis del mercado — error state */}
             {!marketData && marketError && (

@@ -278,7 +278,8 @@ function App() {
   const isAdminSession = Boolean(currentUser?.is_admin);
   const showNavbar = PROTECTED.includes(page) && page !== "admin" && page !== "entrevista" && !isAdminSession;
   const profileComplete = profileCompletion >= 60;
-  const progressDone = profileComplete && hasSearched;
+  // La barra de progreso superior desaparece al completar el perfil.
+  const progressDone = profileComplete;
 
   if (authLoading) {
     return (
