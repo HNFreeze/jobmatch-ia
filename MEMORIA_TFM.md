@@ -122,7 +122,7 @@ La arquitectura sigue un modelo de tres capas bien definidas:
 
 **Backend → PostgreSQL:** ORM SQLAlchemy con pool de conexiones. La base de datos es PostgreSQL gestionado en Supabase. Las migraciones se aplican automáticamente al arrancar el servidor con Alembic, sin necesidad de intervención manual en producción.
 
-**Tarea en background:** un loop async que se ejecuta en segundo plano desde el arranque del servidor para la ingestión automática de ofertas cada 12 horas.
+**Tarea en background:** al arrancar, el servidor lanza un loop asíncrono que actualiza el índice de ofertas de forma periódica (intervalo configurable con `JOB_INGESTION_INTERVAL_HOURS`, 12 h por defecto). En el plan gratuito de Render el servicio se suspende por inactividad, por lo que en la práctica esta actualización se ejecuta mientras el servicio está activo (no de forma estrictamente periódica) y también puede lanzarse manualmente desde el panel de administración.
 
 ---
 
@@ -736,7 +736,7 @@ Para las empresas que publican sus ofertas en plataformas como **Greenhouse**, *
 
 ### Ingestión en background
 
-Cada 12 horas, una tarea asyncio realiza una pasada de actualización: busca nuevas ofertas en todas las fuentes configuradas, deduplicadas por `adzuna_id`, actualiza las existentes y marca como inactivas las que ya no aparecen. El historial de cada ejecución queda registrado en `job_ingestion_runs` con estado, conteos y tiempos.
+Una tarea asíncrona en segundo plano realiza pasadas de actualización del índice (intervalo configurable con `JOB_INGESTION_INTERVAL_HOURS`, 12 h por defecto): busca nuevas ofertas en todas las fuentes configuradas, deduplicadas por `adzuna_id`, actualiza las existentes y marca como inactivas las que ya no aparecen. Cada ejecución queda registrada en `job_ingestion_runs` con estado, conteos y tiempos. Nota: en el plan gratuito de Render el servicio se suspende por inactividad, por lo que la actualización no es estrictamente periódica; también puede dispararse manualmente desde el panel de administración (`POST /api/admin/job-ingestion/run`).
 
 ### Señales de confianza de las ofertas
 
