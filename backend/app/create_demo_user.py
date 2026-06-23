@@ -4,15 +4,18 @@
 Uso:  python -m app.create_demo_user
 
 Inserta un usuario demo ya verificado y con perfil completo, para que el
-revisor del TFM pueda entrar y probar el matching/agente sin registrarse ni
-verificar email. Idempotente: si ya existe, restablece su contraseña y perfil.
-Requiere DATABASE_URL. Ejecútalo contra la BD donde quieras el usuario
-(local o la base de Render de producción).
+revisor pueda entrar y probar el matching/agente sin registrarse ni verificar
+email. Idempotente: si ya existe, restablece su contraseña y perfil.
 
-Credenciales resultantes:
-    email:    demo@jobmatch.ia
-    password: DemoJobMatch2026!
+Requiere DATABASE_URL y las credenciales del usuario demo por variable de
+entorno (no se hardcodean en el repositorio):
+
+    DEMO_USER_EMAIL     (opcional, por defecto demo@jobmatch.ia)
+    DEMO_USER_PASSWORD  (obligatoria)
+
+Ejecútalo contra la BD donde quieras el usuario (local o la de producción).
 """
+import os
 import sys
 from datetime import datetime
 
@@ -21,8 +24,8 @@ import bcrypt
 from app.database import get_session_local
 from app.models.user import User
 
-DEMO_EMAIL = "demo@jobmatch.ia"
-DEMO_PASSWORD = "DemoJobMatch2026!"
+DEMO_EMAIL = os.getenv("DEMO_USER_EMAIL", "demo@jobmatch.ia")
+DEMO_PASSWORD = os.getenv("DEMO_USER_PASSWORD", "")
 
 DEMO_PROFILE = dict(
     alias="Candidato Demo",
@@ -44,6 +47,10 @@ DEMO_PROFILE = dict(
 
 
 def run() -> int:
+    if not DEMO_PASSWORD:
+        print("Define DEMO_USER_PASSWORD (y opcionalmente DEMO_USER_EMAIL) para crear el usuario demo.")
+        return 1
+
     SessionLocal = get_session_local()
     if SessionLocal is None:
         print("DATABASE_URL no configurada — no se puede crear el usuario demo.")
