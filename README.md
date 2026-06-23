@@ -5,7 +5,7 @@ Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnoló
 ## 🌐 Demo en producción
 
 - **Aplicación**: https://jobmatch-ia-alpha.vercel.app/
-- **Usuario de prueba**: `demo@jobmatch.ia`  ·  **Contraseña**: `DemoJobMatch2026!`
+- **Usuario de prueba**: se facilita en el formulario de entrega.
 - **Presentación (slides)**: _(pendiente de añadir)_
 - **Vídeo de presentación**: _(pendiente de añadir)_
 
@@ -158,14 +158,12 @@ Las migraciones Alembic se ejecutan automáticamente en el startup del backend.
 
 ### Usuario de prueba
 
-El usuario demo (`demo@jobmatch.ia` / `DemoJobMatch2026!`) se crea con un script idempotente que también deja un perfil de ejemplo relleno:
+Hay un script idempotente que crea un usuario de prueba verificado con un perfil de ejemplo ya relleno (las credenciales se definen dentro del script / por entorno):
 
 ```bash
 cd backend
 python -m app.create_demo_user   # usa la DATABASE_URL del entorno
 ```
-
-En producción, ejecútalo una vez desde la *Shell* del servicio de Render (donde `DATABASE_URL` ya está configurada).
 
 ## Motor de matching
 
