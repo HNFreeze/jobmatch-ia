@@ -66,7 +66,7 @@ jobmatch-ia/
 - Node.js 18+
 - PostgreSQL 14+ (local o en Render)
 - Clave API de Anthropic (`CLAUDE_API_KEY`)
-- Cuentas opcionales: Adzuna, ElevenLabs, Brevo, Cloudflare Turnstile
+- Cuentas opcionales: Adzuna, Brevo, Cloudflare Turnstile
 
 ## Setup local
 
@@ -117,7 +117,6 @@ La app estará disponible en `http://localhost:3001`. El backend en `http://loca
 | `JWT_SECRET` | Secreto para firmar tokens JWT (mínimo 32 chars) |
 | `APP_FRONTEND_URL` | URL del frontend en producción (para CORS) |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Credenciales API de Adzuna |
-| `ELEVENLABS_API_KEY` | Para TTS en entrevistas simuladas |
 | `BREVO_API_KEY` | Para envío de emails transaccionales |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile (bot protection) |
 | `DEFAULT_DAILY_AI_QUOTA` | Cuota de IA diaria por usuario (default: 8) |

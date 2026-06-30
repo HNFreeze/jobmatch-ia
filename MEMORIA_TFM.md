@@ -69,7 +69,7 @@ Las funciones principales que ofrece al usuario final son:
 
 **Generador de carta de presentación:** dado el título, empresa y descripción de una oferta, Claude genera una carta personalizada en español que conecta el perfil del candidato con los requisitos específicos del puesto.
 
-**Simulación de entrevista con IA:** el usuario practica una entrevista conversacional con Claude (que interpreta el rol de entrevistador) sobre una candidatura concreta, con voz en el navegador (Web Speech API) y un *feedback* estructurado al finalizar.
+**Simulación de entrevista con IA:** el usuario practica una entrevista conversacional con Claude (que interpreta el rol de entrevistador) sobre una candidatura concreta, por chat de texto y con un *feedback* estructurado al finalizar.
 
 **Gestión de candidaturas:** tablero Kanban donde el usuario registra el estado de sus candidaturas (guardada, en proceso, entrevista, rechazada, etc.), añade notas y establece fechas de seguimiento con indicadores visuales de urgencia.
 
@@ -168,7 +168,6 @@ La decisión de no usar ninguna librería de componentes con estilos propios (ni
 | Greenhouse / Ashby / Lever / Recruitee | ATSs con APIs públicas de oferta |
 | Cloudflare Turnstile | CAPTCHA anti-bot en registro |
 | Brevo / SMTP | Envío de emails (verificación de cuenta) |
-| ElevenLabs (opcional) | TTS de voz para la entrevista (desactivable) |
 | Vercel | Hosting del frontend |
 | Render | Hosting del backend (Web Service) |
 | Supabase | PostgreSQL gestionado |
@@ -234,29 +233,24 @@ Para este módulo se usa **claude-sonnet-4-6** en lugar de Haiku, porque la cart
 
 El prompt incluye: título del puesto, empresa, descripción completa, stack tecnológico del candidato y años de experiencia. Claude genera una carta de cuatro párrafos en español, profesional pero humana, que menciona la empresa por su nombre y conecta las tecnologías del candidato con los requisitos concretos del puesto.
 
-### 6.5 Simulación de entrevista con IA y voz
+### 6.5 Simulación de entrevista con IA
 
-El módulo de simulación de entrevistas combina a Claude como cerebro conversacional con las APIs de voz del navegador (Web Speech API) para la síntesis y el reconocimiento de voz. La síntesis con ElevenLabs es opcional y está **desactivada por defecto**, de modo que el módulo funciona con coste de voz cero.
+El módulo de simulación de entrevistas usa a Claude como entrevistador conversacional. La interacción es por **chat de texto**, sin dependencias de voz, por lo que funciona en cualquier navegador y sin coste de síntesis de voz.
 
 **Flujo de la entrevista:**
 
 1. El usuario mueve una candidatura a la columna "Entrevista" en el Kanban y pulsa el botón "Simular entrevista" que aparece en la tarjeta.
 2. Se crea una sesión en base de datos (`InterviewSession`) vinculada a la candidatura.
 3. Claude actúa como "Alex", un entrevistador de RRHH, con un system prompt que conoce el puesto y la empresa. La entrevista sigue una estructura: presentación → preguntas técnicas → preguntas situacionales → cierre.
-4. Cada respuesta de Claude se locuta con la síntesis de voz del navegador (Web Speech API, `SpeechSynthesis`, en español). Opcionalmente, si se habilita `INTERVIEW_ELEVENLABS_ENABLED`, se usa ElevenLabs (`eleven_multilingual_v2`) y el audio mp3 se devuelve en base64.
-5. Durante la locución, el avatar de "Alex" muestra animaciones CSS: anillos pulsantes, barras de onda y la boca del avatar se abre/cierra con `scaleY`.
-6. El usuario puede responder escribiendo (textarea + Enter) o por voz (Web Speech API, `SpeechRecognition`, español).
-7. Cuando Claude termina la entrevista (emite la señal interna `ENTREVISTA_FINALIZADA`), el sistema genera un feedback estructurado en JSON: puntuación 1-10, resumen, puntos fuertes, áreas de mejora y 3 consejos específicos.
+4. El usuario responde escribiendo (textarea + Enter); las preguntas y respuestas se muestran en un hilo de chat con el avatar de "Alex" presidiéndolo.
+5. Cuando Claude termina la entrevista (emite la señal interna `ENTREVISTA_FINALIZADA`), el sistema genera un feedback estructurado en JSON: puntuación 1-10, resumen, puntos fuertes, áreas de mejora y 3 consejos específicos.
 
 **Cuota:** 1 entrevista por usuario al día (contador `interview_count` en `AIDailyUsage`, independiente de la cuota general).
 
-**Avatar "Alex":** SVG puro con ojos, cejas y boca animada mediante CSS keyframes. Sin ninguna librería 3D. Estados visuales: `isSpeaking` (rings + wave bars + mouthTalk animation), `isListening` (punto rojo pulsante), idle.
+**Avatar "Alex":** SVG puro con ojos, cejas y boca, dibujado con CSS y sin ninguna librería 3D.
 
 **Stack tecnológico del módulo:**
 - Claude Haiku: conversación de entrevista + generación de feedback
-- Web Speech API (`SpeechSynthesis`): locución del entrevistador en el navegador (coste cero)
-- Web Speech API (`SpeechRecognition`): reconocimiento de voz del candidato (Chrome/Edge)
-- ElevenLabs `eleven_multilingual_v2` (opcional): TTS de mayor calidad si se habilita por configuración
 
 ### 6.6 Validación de fiabilidad del motor de matching — Batería de pruebas
 
@@ -656,7 +650,6 @@ Se definieron constantes de diseño centralizadas que se usan en todos los compo
 - **CompanyLogo:** muestra el logo de empresa con fallback al icono genérico, enlaza a Glassdoor/LinkedIn.
 - **OfferTrustSignals:** badges visuales de señales de confianza de la oferta.
 - **CVEditorModal:** editor complejo de CV en modal, con previsualización, selección de plantilla y descarga PDF.
-- **Onboarding:** flujo guiado de configuración del perfil para nuevos usuarios.
 - **TurnstileWidget:** wrapper del CAPTCHA de Cloudflare.
 - **ConsentBanner:** banner de consentimiento de analítica (GDPR).
 
@@ -811,7 +804,7 @@ A modo de resumen exhaustivo, estas son todas las funcionalidades implementadas 
 | Variantes de CV por oferta | Versiones del CV orientadas a ofertas concretas |
 | Descarga de CV en PDF | Exportación con plantillas professional_modern y ats_minimal |
 | Carta de presentación | Generación automática personalizada por oferta |
-| Simulación de entrevista con IA | Avatar animado CSS + voz del navegador (Web Speech) + reconocimiento de voz + feedback estructurado |
+| Simulación de entrevista con IA | Chat de texto con Claude (entrevistador "Alex") + avatar SVG + feedback estructurado al finalizar |
 | Favoritos | Guardar y gestionar ofertas de interés con logos de empresa |
 | Candidaturas (Kanban) | Tablero de seguimiento con estados, notas y fechas de seguimiento |
 | Recordatorios de seguimiento | Badges de urgencia en Dashboard (vencida / próxima / futura) |
@@ -828,7 +821,7 @@ A modo de resumen exhaustivo, estas son todas las funcionalidades implementadas 
 | Verificación de email | Flujo completo de confirmación de cuenta |
 | Cambio de contraseña | Con validación de contraseña actual |
 | Eliminación de cuenta | Con confirmación doble y cascada completa de datos |
-| Onboarding | Flujo guiado para nuevos usuarios |
+| Alta de perfil para nuevos usuarios | Al registrarse, el usuario es llevado a su perfil para completarlo (stack, idiomas, ubicaciones, modalidad) |
 | GDPR / consentimiento | Banner de analítica con aceptación/rechazo |
 | PWA | Manifest para instalación como app nativa |
 | ErrorBoundary | Captura de errores de renderizado con UI de fallback |
