@@ -377,13 +377,19 @@ def delete_admin_user(
             "applications",
             "notifications",
         ]
+        # Solo borramos de las tablas que realmente existen en esta BD, para no
+        # reventar si alguna migración no llegó a producción.
+        existing_tables = set(inspect(db.bind).get_table_names())
         for table_name in child_tables:
-            db.execute(text(f"DELETE FROM {table_name} WHERE user_id = :uid"), {"uid": user.id})
+            if table_name in existing_tables:
+                db.execute(text(f"DELETE FROM {table_name} WHERE user_id = :uid"), {"uid": user.id})
         # job_ingestion_runs guarda histórico de ingestas: desvincula en vez de borrar.
-        db.execute(
-            text("UPDATE job_ingestion_runs SET triggered_by_user_id = NULL WHERE triggered_by_user_id = :uid"),
-            {"uid": user.id},
-        )
+        if "job_ingestion_runs" in existing_tables:
+            db.execute(
+                text("UPDATE job_ingestion_runs SET triggered_by_user_id = NULL WHERE triggered_by_user_id = :uid"),
+                {"uid": user.id},
+            )
+        deleted_email = user.email
         db.query(RateLimitBucket).filter(RateLimitBucket.bucket_key == f"email:{user.email}").delete(synchronize_session=False)
         db.delete(user)
         db.commit()
@@ -391,15 +397,17 @@ def delete_admin_user(
         return JSONResponse(content={
             "detail": "Usuario eliminado correctamente",
             "user_id": user_id,
-            "deleted_email": user.email,
+            "deleted_email": deleted_email,
             "deleted_by": admin_user.email,
         })
     except HTTPException:
         db.rollback()
         raise
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         db.rollback()
-        raise
+        # Devolvemos el error real (con cabeceras CORS) en vez de dejar que se
+        # propague como 500 sin CORS, que el navegador enmascara como error CORS.
+        return JSONResponse(status_code=500, content={"detail": f"No se pudo eliminar el usuario: {exc}"})
     finally:
         db.close()
 

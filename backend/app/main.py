@@ -66,10 +66,29 @@ logger = logging.getLogger("jobmatch.scheduler")
 app = FastAPI(title="JobMatch-IA API")
 
 
+def _cors_headers_for(request):
+    """Cabeceras CORS para respuestas de error. El handler global vive por fuera
+    del CORSMiddleware (ServerErrorMiddleware es el más externo), así que un 500
+    saldría sin CORS y el navegador lo enmascara como error de CORS en vez de
+    mostrar el error real. Reflejamos el Origin para que el front pueda leerlo."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
+    }
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     logger.error("Error no manejado: %s", exc, exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor"},
+        headers=_cors_headers_for(request),
+    )
 
 
 @app.exception_handler(RequestValidationError)
