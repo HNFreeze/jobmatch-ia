@@ -563,6 +563,7 @@ export default function UserProfile({
         ubicaciones,
         modalidad,
         stack_years: stackYears,
+        onboarding_completed: true,
       });
       addToast?.("Perfil actualizado correctamente", "success");
       setTimeout(() => onProfileSaved?.(), 900);

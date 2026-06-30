@@ -2,14 +2,13 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { ThemeContext } from "./context/ThemeContext";
 import Navbar from "./components/Navbar";
 import Toast from "./components/Toast";
-import Onboarding from "./components/Onboarding";
 // Eager: ruta de entrada (primer render anónimo + home tras login).
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import VerifyEmail from "./pages/VerifyEmail";
 import Dashboard from "./pages/Dashboard";
 import {
-  getUserProfile, updateUserProfile, getHistory, updateConsent,
+  getUserProfile, getHistory, updateConsent,
   getAiQuota, getNotifications, markAllNotificationsRead,
   refreshToken, getTokenExpiresAt,
 } from "./services/api";
@@ -88,7 +87,6 @@ function App() {
   const [forceAnalyze, setForceAnalyze] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
   const [toasts, setToasts] = useState([]);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -169,15 +167,6 @@ function App() {
     }
   }, [currentUser?.id, currentUser?.analytics_consent]);
 
-  async function handleDismissOnboarding() {
-    setShowOnboarding(false);
-    try {
-      await updateUserProfile({ onboarding_completed: true });
-    } catch {
-      // non-critical
-    }
-  }
-
   const navigateTo = useCallback((newPage) => {
     window.location.hash = newPage;
     setPage(newPage);
@@ -190,7 +179,6 @@ function App() {
     localStorage.removeItem("alias");
     setAnalysisResults(null);
     setForceAnalyze(false);
-    setShowOnboarding(false);
     setProfileCompletion(0);
     setHasSearched(false);
     setCurrentUser(null);
@@ -369,7 +357,6 @@ function App() {
         />
       )}
 
-      {showOnboarding && <Onboarding onDismiss={() => { handleDismissOnboarding(); navigateTo("buscar"); }} darkMode={darkMode} alias={currentUser?.alias || ""} />}
 
       <Suspense fallback={<PageFallback darkMode={darkMode} />}>
       {(page === "home" || page === "landing") && (
@@ -385,12 +372,14 @@ function App() {
           onAuthSuccess={async () => {
             try {
               const profile = await getUserProfile();
-              if (!profile.onboarding_completed) {
-                setShowOnboarding(true);
-              }
               setCurrentUser(profile);
               setProfileCompletion(computeCompletion(profile));
-              const targetPage = profile.is_admin ? "admin" : "dashboard";
+              // Usuario nuevo (sin onboarding): lo llevamos a su perfil para
+              // que lo complete bien; el resto, a su pantalla habitual.
+              let targetPage;
+              if (profile.is_admin) targetPage = "admin";
+              else if (!profile.onboarding_completed) targetPage = "user-profile";
+              else targetPage = "dashboard";
               navigateTo(targetPage);
             } catch {
               navigateTo("buscar");
