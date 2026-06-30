@@ -12,7 +12,7 @@ from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -42,6 +42,14 @@ def _build_app(monkeypatch):
     from app.routers.user import require_admin_user
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    # Activa la comprobación de FK en SQLite (off por defecto) para que el test
+    # exija el orden de borrado correcto, igual que PostgreSQL en producción.
+    @event.listens_for(engine, "connect")
+    def _enable_fk(dbapi_conn, _rec):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
     Base.metadata.create_all(bind=engine)
     # Tabla legada SIN modelo (feature de alertas retirada): simula que sigue en
     # la BD de producción con FK a users. El borrado debe limpiarla igualmente.
@@ -66,6 +74,10 @@ def _seed_user_with_children(SessionLocal):
     from app.models.agent_run import AgentRun
     from app.models.application import Application
     from app.models.cv_analysis import CVAnalysis
+    from app.models.cv_ats_result import CVAtsResult
+    from app.models.cv_edit_session import CVEditSession
+    from app.models.cv_improvement import CVImprovement
+    from app.models.cv_offer_variant import CVOfferVariant
     from app.models.favorite import Favorite
     from app.models.interview_session import InterviewSession
     from app.models.match_feedback import MatchFeedback
@@ -80,16 +92,27 @@ def _seed_user_with_children(SessionLocal):
         db.refresh(user)
         uid = user.id
 
+        # Cadena cv con FK entre tablas hijas: variant/edit -> improvement -> ats_result.
+        # Es la que rompía el borrado por orden incorrecto.
+        ats = CVAtsResult(user_id=uid, cv_text_hash="h", original_cv_text="x",
+                          ats_score_before=50, feedback_json="{}")
+        db.add(ats); db.flush()
+        imp = CVImprovement(user_id=uid, improved_cv_text="x", ats_score_before=50,
+                            ats_score_after=70, ats_result_id=ats.id)
+        db.add(imp); db.flush()
+
         db.add_all([
-            # tablas que el endpoint ya limpiaba
-            Favorite(user_id=uid, adzuna_id="f1"),
-            Application(user_id=uid, adzuna_id="a1"),
-            # tablas que NO limpiaba (causaban el fallo de FK en prod)
-            AgentRun(user_id=uid, raw_instruction="busca react remoto"),
+            CVOfferVariant(user_id=uid, improvement_id=imp.id, name="v1",
+                           edited_cv_json="{}", action_log_json="[]"),
+            CVEditSession(user_id=uid, improvement_id=imp.id,
+                          edited_cv_json="{}", action_log_json="[]"),
             CVAnalysis(user_id=uid, file_size_bytes=100, content_type="application/pdf",
                        structured_profile_json="{}"),
+            Application(user_id=uid, adzuna_id="a1"),
+            AgentRun(user_id=uid, raw_instruction="busca react remoto"),
             InterviewSession(user_id=uid, job_title="Backend Dev"),
             MatchFeedback(user_id=uid, adzuna_id="a1", rating="up"),
+            Favorite(user_id=uid, adzuna_id="f1"),
             Notification(user_id=uid, title="hola"),
             RateLimitBucket(action="auth_register_email", bucket_key=f"email:{user.email}",
                             window_start=datetime.utcnow()),
@@ -132,6 +155,7 @@ def test_delete_user_cleans_all_child_tables(monkeypatch):
     # tabla legada job_alerts, que es la que bloqueaba el borrado en prod).
     for table in [
         "favoritos", "applications", "agent_runs", "cv_analyses",
+        "cv_ats_results", "cv_improvements", "cv_offer_variants", "cv_edit_sessions",
         "interview_sessions", "match_feedback", "notifications", "job_alerts",
     ]:
         assert _count(SessionLocal, table, uid) == 0, f"quedaron filas en {table}"

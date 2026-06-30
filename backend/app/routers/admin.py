@@ -358,23 +358,27 @@ def delete_admin_user(
             raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta de administrador")
 
         # Limpia TODAS las tablas con FK a users.id antes de borrar al usuario.
-        # Si se omite alguna, el DELETE final revienta por foreign key, hace
-        # rollback y el usuario queda sin borrar (no podría re-registrarse).
-        # Orden: primero las tablas que dependen de otras tablas hijas.
+        # Si se omite una, o se borra en mal orden, el DELETE revienta por
+        # foreign key. ORDEN = primero la tabla que referencia, luego la
+        # referenciada. Dependencias entre tablas hijas:
+        #   cv_offer_variants -> cv_improvements
+        #   cv_edit_sessions  -> cv_improvements
+        #   cv_improvements   -> cv_ats_results
+        #   interview_sessions -> applications
         child_tables = [
             "cv_offer_variants",
             "cv_edit_sessions",
+            "cv_improvements",
             "cv_ats_results",
             "cv_analyses",
-            "cv_improvements",
             "interview_sessions",
+            "applications",
             "match_feedback",
             "agent_runs",
             "favoritos",
             "historial_busquedas",
             "ai_daily_usage",
             "email_verification_tokens",
-            "applications",
             "notifications",
             "job_alerts",  # feature retirada: la tabla puede seguir en BD con FK a users
         ]
