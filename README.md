@@ -7,7 +7,7 @@ Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnoló
 - **Aplicación**: https://jobmatch-ia-alpha.vercel.app/
 - **Usuario de prueba**: se facilita en el formulario de entrega.
 - **Presentación (slides)**: [docs/JobMatch_IA_BigSchool.pptx](docs/JobMatch_IA_BigSchool.pptx)
-- **Vídeo de presentación**: _(pendiente de añadir)_
+- **Vídeo de presentación**: https://www.youtube.com/watch?v=Kg8axl-nocA
 
 > El backend usa el plan gratuito de Render: tras un rato de inactividad, la primera petición puede tardar ~30-60 s en "despertar". Si ves un error puntual al entrar, recarga pasados unos segundos.
 
