@@ -1,29 +1,51 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { ThemeContext } from "./context/ThemeContext";
 import Navbar from "./components/Navbar";
 import Toast from "./components/Toast";
 import Onboarding from "./components/Onboarding";
+// Eager: ruta de entrada (primer render anónimo + home tras login).
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
-import Profile from "./pages/Profile";
-import UserProfile from "./pages/UserProfile";
-import Favoritos from "./pages/Favoritos";
-import Candidaturas from "./pages/Candidaturas";
 import VerifyEmail from "./pages/VerifyEmail";
-import Admin from "./pages/Admin";
-import CVSearch from "./pages/CVSearch";
 import Dashboard from "./pages/Dashboard";
-import Interview from "./pages/Interview";
-import AgentSearch from "./pages/AgentSearch";
 import {
   getUserProfile, updateUserProfile, getHistory, updateConsent,
   getAiQuota, getNotifications, markAllNotificationsRead,
   refreshToken, getTokenExpiresAt,
 } from "./services/api";
-import About from "./pages/About";
 import ConsentBanner from "./components/ConsentBanner";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { initClarity, stopClarity } from "./services/clarity";
+
+// Lazy: páginas pesadas/secundarias — se descargan en su propio chunk al
+// entrar por primera vez en cada pestaña (no lastran el bundle inicial).
+const Profile = lazy(() => import("./pages/Profile"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
+const Favoritos = lazy(() => import("./pages/Favoritos"));
+const Candidaturas = lazy(() => import("./pages/Candidaturas"));
+const Admin = lazy(() => import("./pages/Admin"));
+const CVSearch = lazy(() => import("./pages/CVSearch"));
+const Interview = lazy(() => import("./pages/Interview"));
+const AgentSearch = lazy(() => import("./pages/AgentSearch"));
+const About = lazy(() => import("./pages/About"));
+
+function PageFallback({ darkMode }) {
+  return (
+    <div style={{
+      minHeight: "60vh",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: darkMode ? "#0f172a" : "#f8f9fc",
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: "50%",
+        border: `3px solid ${darkMode ? "#1e293b" : "#e2e8f0"}`,
+        borderTopColor: "#7c3aed",
+        animation: "app-spin 0.8s linear infinite",
+      }} />
+      <style>{"@keyframes app-spin{to{transform:rotate(360deg)}}"}</style>
+    </div>
+  );
+}
 
 const PROTECTED = ["buscar", "agente", "cv-buscar", "user-profile", "favoritos", "candidaturas", "admin", "dashboard", "entrevista"];
 const AUTH_ONLY = ["home", "landing", "auth", "verify-email"];
@@ -281,6 +303,30 @@ function App() {
   // La barra de progreso superior desaparece al completar el perfil.
   const progressDone = profileComplete;
 
+  // Precarga en segundo plano los chunks de las páginas una vez el usuario
+  // está autenticado: el bundle inicial sigue siendo pequeño, pero al cambiar
+  // de pestaña el chunk ya está en caché y no se ve el spinner de Suspense.
+  useEffect(() => {
+    if (!currentUser) return;
+    const prefetch = () => {
+      if (currentUser.is_admin) {
+        import("./pages/Admin");
+        return;
+      }
+      import("./pages/Profile");
+      import("./pages/CVSearch");
+      import("./pages/AgentSearch");
+      import("./pages/Favoritos");
+      import("./pages/Candidaturas");
+      import("./pages/UserProfile");
+      import("./pages/Interview");
+    };
+    const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1200));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    const handle = idle(prefetch);
+    return () => cancel(handle);
+  }, [currentUser]);
+
   if (authLoading) {
     return (
       <>
@@ -325,6 +371,7 @@ function App() {
 
       {showOnboarding && <Onboarding onDismiss={() => { handleDismissOnboarding(); navigateTo("buscar"); }} darkMode={darkMode} alias={currentUser?.alias || ""} />}
 
+      <Suspense fallback={<PageFallback darkMode={darkMode} />}>
       {(page === "home" || page === "landing") && (
         <Landing onStartClick={() => navigateTo("auth")} onAboutClick={() => navigateTo("sobre")} />
       )}
@@ -465,6 +512,7 @@ function App() {
           toggleDarkMode={toggleDarkMode}
         />
       )}
+      </Suspense>
 
       {showConsentBanner && (
         <ConsentBanner
