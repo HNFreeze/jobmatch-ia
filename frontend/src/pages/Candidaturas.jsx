@@ -507,9 +507,13 @@ export default function Candidaturas({ darkMode, addToast, onNavigate, onStartIn
   }
 
   async function handleNotesChange(id, notes) {
+    // Merge SOLO las notas: no reemplazamos el objeto entero con la respuesta
+    // del servidor, porque si un cambio de estado (drag) sigue en vuelo, esa
+    // respuesta podría traer el estado anterior y la tarjeta "volvería" a su
+    // columna original. Actualizamos local de forma optimista.
+    setApps(curr => curr.map(a => a.id === id ? { ...a, notes } : a));
     try {
-      const updated = await updateApplication(id, { notes });
-      setApps(curr => curr.map(a => a.id === id ? updated : a));
+      await updateApplication(id, { notes });
     } catch {
       addToast?.("Error al guardar notas", "error");
     }

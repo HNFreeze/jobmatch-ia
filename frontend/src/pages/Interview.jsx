@@ -353,6 +353,8 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
   const audioCtxRef    = useRef(null);
   const audioSrcRef    = useRef(null);   // BufferSourceNode activo
   const recognitionRef = useRef(null);
+  const manualStopRef  = useRef(false);  // true = el usuario pulsó parar (no reanudar)
+  const voiceBaseRef   = useRef("");     // texto acumulado entre reanudaciones
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
   const sessionIdRef   = useRef(null);
@@ -381,6 +383,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
   useEffect(() => {
     return () => {
       stopAudio();
+      manualStopRef.current = true;
       recognitionRef.current?.stop();
       audioCtxRef.current?.close().catch(() => {});
     };
@@ -522,6 +525,8 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
 
   function toggleVoice() {
     if (isListening) {
+      // Parada manual: marcamos para que onend NO reinicie la escucha.
+      manualStopRef.current = true;
       recognitionRef.current?.stop();
       setIsListening(false);
       return;
@@ -532,21 +537,42 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     rec.lang = "es-ES";
     rec.continuous = true;       // sigue escuchando hasta que el usuario pulsa parar
     rec.interimResults = true;   // muestra el texto en tiempo real mientras habla
-    // Partimos de lo ya escrito para poder añadir por voz a lo que haya en el cuadro
-    const base = input.trim() ? input.trim() + " " : "";
+    manualStopRef.current = false;
+    // Lo ya escrito es la base; el texto final reconocido se va acumulando ahí
+    // (en un ref) para no perderlo cuando Chrome corta y reanudamos la escucha.
+    voiceBaseRef.current = input.trim() ? input.trim() + " " : "";
     rec.onresult = (e) => {
-      let text = "";
-      for (let i = 0; i < e.results.length; i++) {
-        text += e.results[i][0].transcript;
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          voiceBaseRef.current += transcript + " ";
+        } else {
+          interim += transcript;
+        }
       }
       // No se envía: se vuelca en el cuadro de texto como si lo hubiese escrito,
       // para que pueda corregir o añadir antes de enviar.
-      setInput((base + text).replace(/\s+/g, " ").trimStart());
+      setInput((voiceBaseRef.current + interim).replace(/\s+/g, " ").trimStart());
     };
-    rec.onerror = () => setIsListening(false);
-    rec.onend   = () => setIsListening(false);
+    rec.onerror = (e) => {
+      // Sin permiso de micrófono no tiene sentido reintentar.
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        manualStopRef.current = true;
+        setIsListening(false);
+      }
+    };
+    rec.onend = () => {
+      // Chrome corta tras un silencio aunque continuous=true: reanudamos
+      // mientras el usuario no haya pulsado parar.
+      if (manualStopRef.current) {
+        setIsListening(false);
+        return;
+      }
+      try { rec.start(); } catch { setIsListening(false); }
+    };
     recognitionRef.current = rec;
-    rec.start();
+    try { rec.start(); } catch { setIsListening(false); return; }
     setIsListening(true);
     stopAudio();
   }
@@ -645,7 +671,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
           </p>
         </div>
         <button
-          onClick={() => { stopAudio(); recognitionRef.current?.stop(); onExit(); }}
+          onClick={() => { stopAudio(); manualStopRef.current = true; recognitionRef.current?.stop(); onExit(); }}
           style={{ padding: "7px 16px", borderRadius: 20, border: `1px solid ${dm ? "rgba(255,255,255,0.12)" : "#e2e8f0"}`, background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: dm ? "#94a3b8" : "#6b7280" }}
         >
           ← Salir
