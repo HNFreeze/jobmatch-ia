@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, case, func, inspect, literal
+from sqlalchemy import and_, case, func, inspect, literal, text
 from sqlalchemy.orm import aliased
 
 from app.database import get_session_local
@@ -16,7 +16,6 @@ from app.models.ai_daily_usage import AIDailyUsage
 from app.models.ai_api_cost_event import AIAPICostEvent
 from app.models.application import Application
 from app.models.cache import SearchCache
-from app.models.email_verification_token import EmailVerificationToken
 from app.models.favorite import Favorite
 from app.models.job_ingestion_run import JobIngestionRun
 from app.models.job_offer import JobOffer
@@ -358,11 +357,33 @@ def delete_admin_user(
         if user.id == admin_user.id:
             raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta de administrador")
 
-        db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).delete(synchronize_session=False)
-        db.query(AIDailyUsage).filter(AIDailyUsage.user_id == user.id).delete(synchronize_session=False)
-        db.query(Favorite).filter(Favorite.user_id == user.id).delete(synchronize_session=False)
-        db.query(SearchHistory).filter(SearchHistory.user_id == user.id).delete(synchronize_session=False)
-        db.query(Application).filter(Application.user_id == user.id).delete(synchronize_session=False)
+        # Limpia TODAS las tablas con FK a users.id antes de borrar al usuario.
+        # Si se omite alguna, el DELETE final revienta por foreign key, hace
+        # rollback y el usuario queda sin borrar (no podría re-registrarse).
+        # Orden: primero las tablas que dependen de otras tablas hijas.
+        child_tables = [
+            "cv_offer_variants",
+            "cv_edit_sessions",
+            "cv_ats_results",
+            "cv_analyses",
+            "cv_improvements",
+            "interview_sessions",
+            "match_feedback",
+            "agent_runs",
+            "favoritos",
+            "historial_busquedas",
+            "ai_daily_usage",
+            "email_verification_tokens",
+            "applications",
+            "notifications",
+        ]
+        for table_name in child_tables:
+            db.execute(text(f"DELETE FROM {table_name} WHERE user_id = :uid"), {"uid": user.id})
+        # job_ingestion_runs guarda histórico de ingestas: desvincula en vez de borrar.
+        db.execute(
+            text("UPDATE job_ingestion_runs SET triggered_by_user_id = NULL WHERE triggered_by_user_id = :uid"),
+            {"uid": user.id},
+        )
         db.query(RateLimitBucket).filter(RateLimitBucket.bucket_key == f"email:{user.email}").delete(synchronize_session=False)
         db.delete(user)
         db.commit()
