@@ -354,7 +354,8 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
   const audioSrcRef    = useRef(null);   // BufferSourceNode activo
   const recognitionRef = useRef(null);
   const manualStopRef  = useRef(false);  // true = el usuario pulsó parar (no reanudar)
-  const voiceBaseRef   = useRef("");     // texto acumulado entre reanudaciones
+  const voiceBaseRef   = useRef("");     // texto final acumulado entre reanudaciones
+  const interimRef     = useRef("");     // texto provisional aún sin finalizar
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
   const sessionIdRef   = useRef(null);
@@ -538,9 +539,10 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     rec.continuous = true;       // sigue escuchando hasta que el usuario pulsa parar
     rec.interimResults = true;   // muestra el texto en tiempo real mientras habla
     manualStopRef.current = false;
-    // Lo ya escrito es la base; el texto final reconocido se va acumulando ahí
-    // (en un ref) para no perderlo cuando Chrome corta y reanudamos la escucha.
+    // Lo ya escrito es la base; el texto reconocido se va acumulando en refs
+    // para no perderlo cuando Chrome corta y reanudamos la escucha.
     voiceBaseRef.current = input.trim() ? input.trim() + " " : "";
+    interimRef.current = "";
     rec.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -551,6 +553,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
           interim += transcript;
         }
       }
+      interimRef.current = interim;
       // No se envía: se vuelca en el cuadro de texto como si lo hubiese escrito,
       // para que pueda corregir o añadir antes de enviar.
       setInput((voiceBaseRef.current + interim).replace(/\s+/g, " ").trimStart());
@@ -563,6 +566,13 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
       }
     };
     rec.onend = () => {
+      // Si Chrome cortó sin finalizar lo provisional, lo confirmamos para no
+      // perderlo, y volcamos SIEMPRE el texto completo al cuadro.
+      if (interimRef.current) {
+        voiceBaseRef.current += interimRef.current + " ";
+        interimRef.current = "";
+      }
+      setInput(voiceBaseRef.current.replace(/\s+/g, " ").trimStart());
       // Chrome corta tras un silencio aunque continuous=true: reanudamos
       // mientras el usuario no haya pulsado parar.
       if (manualStopRef.current) {
