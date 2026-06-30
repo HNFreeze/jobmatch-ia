@@ -483,7 +483,7 @@ export default function UserProfile({
   function toggleModality(key) {
     const labels = { presencial: "Presencial", hibrido: "Híbrido", remoto: "Remoto" };
     const label = labels[key];
-    if (modalidad.some(m => m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") === label.normalize("NFD").replace(/[\u0300-\u036f]/g,""))) {
+    if (modalidad.some(m => m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") === label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""))) {
       setModalidad(prev => prev.filter(m => m.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"") !== label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")));
     } else {
       setModalidad(prev => [...prev, label]);
