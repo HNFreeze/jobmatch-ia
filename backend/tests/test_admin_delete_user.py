@@ -43,6 +43,10 @@ def _build_app(monkeypatch):
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
+    # Tabla legada SIN modelo (feature de alertas retirada): simula que sigue en
+    # la BD de producción con FK a users. El borrado debe limpiarla igualmente.
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE job_alerts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"))
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # El endpoint usa get_session_local() directamente: lo apuntamos a la BD de test.
@@ -90,6 +94,8 @@ def _seed_user_with_children(SessionLocal):
             RateLimitBucket(action="auth_register_email", bucket_key=f"email:{user.email}",
                             window_start=datetime.utcnow()),
         ])
+        # Fila en la tabla legada sin modelo (FK a users).
+        db.execute(text("INSERT INTO job_alerts (user_id) VALUES (:uid)"), {"uid": uid})
         db.commit()
         return uid
     finally:
@@ -122,10 +128,11 @@ def test_delete_user_cleans_all_child_tables(monkeypatch):
     )
     assert resp.status_code == 200, resp.text
 
-    # El usuario y TODOS sus registros hijos han desaparecido.
+    # El usuario y TODOS sus registros hijos han desaparecido (incluida la
+    # tabla legada job_alerts, que es la que bloqueaba el borrado en prod).
     for table in [
         "favoritos", "applications", "agent_runs", "cv_analyses",
-        "interview_sessions", "match_feedback", "notifications",
+        "interview_sessions", "match_feedback", "notifications", "job_alerts",
     ]:
         assert _count(SessionLocal, table, uid) == 0, f"quedaron filas en {table}"
 

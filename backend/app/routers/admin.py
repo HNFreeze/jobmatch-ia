@@ -376,6 +376,7 @@ def delete_admin_user(
             "email_verification_tokens",
             "applications",
             "notifications",
+            "job_alerts",  # feature retirada: la tabla puede seguir en BD con FK a users
         ]
         # Solo borramos de las tablas que realmente existen en esta BD, para no
         # reventar si alguna migración no llegó a producción.
