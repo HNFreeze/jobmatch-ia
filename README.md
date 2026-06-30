@@ -17,7 +17,7 @@ Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnoló
 - **Matching explicable**: sube tu CV en PDF (o usa tu perfil) y obtén ofertas ordenadas por encaje real, con motivos (fortalezas, carencias y bloqueantes) por oferta.
 - **Mejora de CV con IA**: sugerencias ATS y descarga del CV mejorado en PDF.
 - **Cartas de presentación** personalizadas para cada oferta.
-- **Simulación de entrevista con IA**: conversación con Claude y voz en el navegador (Web Speech API).
+- **Simulación de entrevista con IA**: conversación por chat con Claude (entrevistador "Alex") y feedback final con puntos fuertes y áreas de mejora.
 - **Gestión de candidaturas**: favoritos, pipeline de estados e historial de búsquedas.
 - **Panel de administración**: gestión de usuarios, métricas de uso de IA y monitorización.
 - **RGPD**: exportación y borrado de los datos del usuario.
@@ -34,7 +34,6 @@ Plataforma inteligente de matching entre candidatos y ofertas de empleo tecnoló
 | Auth | JWT (HS256) + bcrypt + verificación por email |
 | Email | Brevo (SMTP) |
 | Bot protection | Cloudflare Turnstile |
-| Voz (entrevista) | Web Speech API del navegador (ElevenLabs TTS opcional) |
 | Deploy | Vercel (frontend) + Render (backend Web Service) |
 
 ## Estructura del proyecto

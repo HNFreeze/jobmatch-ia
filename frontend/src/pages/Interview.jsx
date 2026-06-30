@@ -340,22 +340,11 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
   const [phase, setPhase]             = useState("ready"); // ready | starting | active | finished
   const [messages, setMessages]       = useState([]);
   const [input, setInput]             = useState("");
-  const [isSpeaking, setIsSpeaking]   = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [isThinking, setIsThinking]   = useState(false);
-  const [voiceMode, setVoiceMode]     = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
   const [feedback, setFeedback]       = useState(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [error, setError]             = useState(null);
 
-  // Audio via Web Audio API (desbloqueado por gesto del usuario en handleBegin)
-  const audioCtxRef    = useRef(null);
-  const audioSrcRef    = useRef(null);   // BufferSourceNode activo
-  const recognitionRef = useRef(null);
-  const manualStopRef  = useRef(false);  // true = el usuario pulsó parar (no reanudar)
-  const voiceBaseRef   = useRef("");     // texto final acumulado entre reanudaciones
-  const interimRef     = useRef("");     // texto provisional aún sin finalizar
   const messagesEndRef = useRef(null);
   const inputRef       = useRef(null);
   const sessionIdRef   = useRef(null);
@@ -369,103 +358,14 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     return () => { const s = document.getElementById("interview-keyframes"); if (s) s.remove(); };
   }, []);
 
-  // Check voice support
-  useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setVoiceSupported(!!SR);
-  }, []);
-
   // Auto-scroll messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopAudio();
-      manualStopRef.current = true;
-      recognitionRef.current?.stop();
-      audioCtxRef.current?.close().catch(() => {});
-    };
-  }, []); // eslint-disable-line
-
-  // ── Audio playback (Web Audio API) ─────────────────────────────────────────
-
-  function stopAudio() {
-    if (audioSrcRef.current) {
-      try { audioSrcRef.current.stop(); } catch {}
-      audioSrcRef.current = null;
-    }
-    // Cancela también la voz del navegador (Web Speech API).
-    try { window.speechSynthesis?.cancel(); } catch {}
-    setIsSpeaking(false);
-  }
-
-  // Voz del entrevistador con la Web Speech API del navegador (coste 0).
-  // Se usa cuando el backend no devuelve audio (ElevenLabs desactivado por defecto).
-  function speakWithBrowser(text) {
-    const synth = window.speechSynthesis;
-    const clean = (text || "").trim();
-    if (!synth || !clean) { setIsSpeaking(false); return; }
-    try {
-      synth.cancel();
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.lang = "es-ES";
-      utter.rate = 1.0;
-      utter.onstart = () => setIsSpeaking(true);
-      utter.onend = () => setIsSpeaking(false);
-      utter.onerror = () => setIsSpeaking(false);
-      synth.speak(utter);
-    } catch {
-      setIsSpeaking(false);
-    }
-  }
-
-  // Reproduce la respuesta: audio de ElevenLabs si viene, si no voz del navegador.
-  async function speakResponse(data) {
-    if (data?.audio_b64) await playAudio(data.audio_b64);
-    else speakWithBrowser(data?.text);
-  }
-
-  async function playAudio(b64) {
-    const ctx = audioCtxRef.current;
-    if (!ctx || !b64) return;
-    stopAudio();
-    try {
-      // Decodificar base64 → ArrayBuffer
-      const raw = atob(b64);
-      const buf = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
-
-      // Asegurarse de que el contexto está activo
-      if (ctx.state === "suspended") await ctx.resume();
-
-      const audioBuffer = await ctx.decodeAudioData(buf.buffer.slice(0));
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-      source.onended = () => { setIsSpeaking(false); audioSrcRef.current = null; };
-      audioSrcRef.current = source;
-      setIsSpeaking(true);
-      source.start(0);
-    } catch (e) {
-      console.warn("[Interview] Audio error:", e);
-      setIsSpeaking(false);
-    }
-  }
-
-  // ── Comenzar entrevista (click del usuario = gesto = AudioContext desbloqueado) ──
+  // ── Comenzar entrevista ──────────────────────────────────────────────────────
 
   async function handleBegin() {
-    // Crear AudioContext dentro del evento click para desbloquear autoplay
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      const ctx = new AudioCtx();
-      await ctx.resume();
-      audioCtxRef.current = ctx;
-    }
-
     setPhase("starting");
     try {
       const data = await startInterview({
@@ -476,7 +376,6 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
       sessionIdRef.current = data.session_id;
       setMessages([{ role: "assistant", text: data.text }]);
       setPhase("active");
-      await speakResponse(data);
       if (data.is_final) handleFinish(data.session_id);
     } catch (err) {
       setError(err?.detail || err?.message || "No se pudo iniciar la entrevista.");
@@ -488,24 +387,22 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
 
   const handleSend = useCallback(async (overrideText) => {
     const text = (overrideText ?? input).trim();
-    if (!text || isThinking || isSpeaking || !sessionIdRef.current) return;
+    if (!text || isThinking || !sessionIdRef.current) return;
 
     setInput("");
     setMessages(prev => [...prev, { role: "user", text }]);
     setIsThinking(true);
-    stopAudio();
 
     try {
       const data = await sendInterviewMessage(sessionIdRef.current, text);
       setMessages(prev => [...prev, { role: "assistant", text: data.text }]);
-      await speakResponse(data);
       if (data.is_final) handleFinish(sessionIdRef.current);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", text: "Lo siento, ha ocurrido un error. ¿Podrías repetir tu respuesta?" }]);
     } finally {
       setIsThinking(false);
     }
-  }, [input, isThinking, isSpeaking]); // eslint-disable-line
+  }, [input, isThinking]); // eslint-disable-line
 
   // ── Finish & feedback ────────────────────────────────────────────────────────
 
@@ -520,71 +417,6 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
     } finally {
       setLoadingFeedback(false);
     }
-  }
-
-  // ── Voice input ──────────────────────────────────────────────────────────────
-
-  function toggleVoice() {
-    if (isListening) {
-      // Parada manual: marcamos para que onend NO reinicie la escucha.
-      manualStopRef.current = true;
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.lang = "es-ES";
-    rec.continuous = true;       // sigue escuchando hasta que el usuario pulsa parar
-    rec.interimResults = true;   // muestra el texto en tiempo real mientras habla
-    manualStopRef.current = false;
-    // Lo ya escrito es la base; el texto reconocido se va acumulando en refs
-    // para no perderlo cuando Chrome corta y reanudamos la escucha.
-    voiceBaseRef.current = input.trim() ? input.trim() + " " : "";
-    interimRef.current = "";
-    rec.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const transcript = e.results[i][0].transcript;
-        if (e.results[i].isFinal) {
-          voiceBaseRef.current += transcript + " ";
-        } else {
-          interim += transcript;
-        }
-      }
-      interimRef.current = interim;
-      // No se envía: se vuelca en el cuadro de texto como si lo hubiese escrito,
-      // para que pueda corregir o añadir antes de enviar.
-      setInput((voiceBaseRef.current + interim).replace(/\s+/g, " ").trimStart());
-    };
-    rec.onerror = (e) => {
-      // Sin permiso de micrófono no tiene sentido reintentar.
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        manualStopRef.current = true;
-        setIsListening(false);
-      }
-    };
-    rec.onend = () => {
-      // Si Chrome cortó sin finalizar lo provisional, lo confirmamos para no
-      // perderlo, y volcamos SIEMPRE el texto completo al cuadro.
-      if (interimRef.current) {
-        voiceBaseRef.current += interimRef.current + " ";
-        interimRef.current = "";
-      }
-      setInput(voiceBaseRef.current.replace(/\s+/g, " ").trimStart());
-      // Chrome corta tras un silencio aunque continuous=true: reanudamos
-      // mientras el usuario no haya pulsado parar.
-      if (manualStopRef.current) {
-        setIsListening(false);
-        return;
-      }
-      try { rec.start(); } catch { setIsListening(false); }
-    };
-    recognitionRef.current = rec;
-    try { rec.start(); } catch { setIsListening(false); return; }
-    setIsListening(true);
-    stopAudio();
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -622,7 +454,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
             <p style={{ fontSize: 14, color: dm ? "#94a3b8" : "#6b7280", margin: "0 0 6px" }}>{company}</p>
           )}
           <p style={{ fontSize: 13, color: dm ? "#64748b" : "#9ca3af", margin: 0 }}>
-            Alex te hará preguntas y evaluará tus respuestas. Puedes usar texto o voz.
+            Alex te hará preguntas y evaluará tus respuestas. Responde por escrito.
           </p>
         </div>
         <button
@@ -681,7 +513,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
           </p>
         </div>
         <button
-          onClick={() => { stopAudio(); manualStopRef.current = true; recognitionRef.current?.stop(); onExit(); }}
+          onClick={onExit}
           style={{ padding: "7px 16px", borderRadius: 20, border: `1px solid ${dm ? "rgba(255,255,255,0.12)" : "#e2e8f0"}`, background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: dm ? "#94a3b8" : "#6b7280" }}
         >
           ← Salir
@@ -693,7 +525,7 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
 
         {/* Avatar */}
         <div style={{ padding: "32px 0 24px", display: "flex", justifyContent: "center" }}>
-          <AlexAvatar isSpeaking={isSpeaking} isListening={isListening} dm={dm}/>
+          <AlexAvatar isSpeaking={false} isListening={false} dm={dm}/>
         </div>
 
         {/* Messages */}
@@ -760,83 +592,43 @@ export default function Interview({ darkMode, jobTitle, company, applicationId, 
           padding: "14px 16px",
         }}>
           <div style={{ maxWidth: 680, margin: "0 auto" }}>
-            {/* Voice/text toggle */}
-            {voiceSupported && (
-              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                {[{ id: false, label: "✏️ Texto" }, { id: true, label: "🎤 Voz" }].map(opt => (
-                  <button
-                    key={String(opt.id)}
-                    onClick={() => setVoiceMode(opt.id)}
-                    style={{
-                      padding: "5px 14px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                      border: `1px solid ${voiceMode === opt.id ? "transparent" : (dm ? "rgba(255,255,255,0.12)" : "#e2e8f0")}`,
-                      background: voiceMode === opt.id ? TEAL : "none",
-                      color: voiceMode === opt.id ? "#fff" : (dm ? "#94a3b8" : "#6b7280"),
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Text input */}
-            {!voiceMode ? (
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Escribe tu respuesta… (Enter para enviar)"
-                  rows={2}
-                  disabled={isThinking || isSpeaking}
-                  style={{
-                    flex: 1, resize: "none", borderRadius: 14, padding: "11px 14px",
-                    border: `1px solid ${dm ? "rgba(255,255,255,0.12)" : "#d1d5db"}`,
-                    background: dm ? "#1e293b" : "#fff",
-                    color: dm ? "#f1f5f9" : "#111827",
-                    fontSize: 14, fontFamily: "system-ui, sans-serif", lineHeight: 1.5, outline: "none",
-                  }}
-                />
-                <button
-                  onClick={() => handleSend()}
-                  disabled={!input.trim() || isThinking || isSpeaking}
-                  style={{
-                    padding: "11px 20px", borderRadius: 14, border: "none",
-                    background: !input.trim() || isThinking || isSpeaking ? (dm ? "#334155" : "#e5e7eb") : TEAL,
-                    color: !input.trim() || isThinking || isSpeaking ? (dm ? "#64748b" : "#9ca3af") : "#fff",
-                    fontSize: 14, fontWeight: 700,
-                    cursor: !input.trim() || isThinking || isSpeaking ? "not-allowed" : "pointer",
-                    fontFamily: "system-ui, sans-serif", flexShrink: 0, alignSelf: "stretch",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  Enviar →
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <button
-                  onClick={toggleVoice}
-                  disabled={isThinking || isSpeaking}
-                  style={{
-                    width: 68, height: 68, borderRadius: "50%", border: "none",
-                    cursor: isThinking || isSpeaking ? "not-allowed" : "pointer",
-                    background: isListening ? "#ef4444" : TEAL,
-                    boxShadow: isListening ? "0 0 0 8px rgba(239,68,68,0.2)" : "0 4px 20px rgba(0,117,138,0.4)",
-                    fontSize: 26, display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {isListening ? "⏹" : "🎤"}
-                </button>
-              </div>
-            )}
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="Escribe tu respuesta… (Enter para enviar)"
+                rows={2}
+                disabled={isThinking}
+                style={{
+                  flex: 1, resize: "none", borderRadius: 14, padding: "11px 14px",
+                  border: `1px solid ${dm ? "rgba(255,255,255,0.12)" : "#d1d5db"}`,
+                  background: dm ? "#1e293b" : "#fff",
+                  color: dm ? "#f1f5f9" : "#111827",
+                  fontSize: 14, fontFamily: "system-ui, sans-serif", lineHeight: 1.5, outline: "none",
+                }}
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim() || isThinking}
+                style={{
+                  padding: "11px 20px", borderRadius: 14, border: "none",
+                  background: !input.trim() || isThinking ? (dm ? "#334155" : "#e5e7eb") : TEAL,
+                  color: !input.trim() || isThinking ? (dm ? "#64748b" : "#9ca3af") : "#fff",
+                  fontSize: 14, fontWeight: 700,
+                  cursor: !input.trim() || isThinking ? "not-allowed" : "pointer",
+                  fontFamily: "system-ui, sans-serif", flexShrink: 0, alignSelf: "stretch",
+                  transition: "all 0.15s",
+                }}
+              >
+                Enviar →
+              </button>
+            </div>
 
             <p style={{ textAlign: "center", fontSize: 11, color: dm ? "#475569" : "#9ca3af", margin: "8px 0 0", fontFamily: "system-ui, sans-serif" }}>
-              {isThinking ? "Alex está pensando…" : isSpeaking ? "Alex está hablando — puedes interrumpir" : "Turno del candidato"}
+              {isThinking ? "Alex está pensando…" : "Turno del candidato"}
             </p>
           </div>
         </div>
